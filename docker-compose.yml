@@ -1,0 +1,20 @@
+services:
+  api:
+    build: ./api
+    environment:
+      DATA_DIR: /data
+      PORT: "8080"
+    volumes:
+      - shirmo-data:/data
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      - api
+    ports:
+      - "8088:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./web:/srv/web:ro
+
+volumes:
+  shirmo-data:
