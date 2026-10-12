@@ -155,6 +155,7 @@ window.ShirmoCodex = (function () {
   function mount(host, ctx) {
     if (host._codexOff) host._codexOff();
     let tab = "places";
+    const wareOpen = {};
     let timer = 0;
     let dirty = false;
     let draftName = "";
@@ -340,7 +341,18 @@ window.ShirmoCodex = (function () {
         }).join("");
         const bound = (book().squads || []).filter(function (squad) { return squad.placeId === place.id; });
         const squadLine = bound.length ? '<p class="note">Отряд: ' + bound.map(function (squad) { return esc(squad.name || "Отряд"); }).join(", ") + "</p>" : "";
-        return '<article class="place-card"><div class="codex-row"><input data-field="name" data-i="' + index + '" type="text" value="' + esc(place.name || "") + '" title="Название места" aria-label="Название места"><button type="button" data-act="del" data-i="' + index + '" title="Удалить место" aria-label="Удалить">×</button></div>' +
+        const scene = place.backdrop ? ' style="background-image:url(&quot;' + esc(place.backdrop) + '&quot;)"' : "";
+        const face = place.portrait
+          ? '<button type="button" class="npc-portrait" data-act="face" data-i="' + index + '" title="Настроить, какая часть изображения видна"><img alt="" src="' + esc(place.portrait) + '" style="' + faceStyle(place) + '"></button>'
+          : '<span class="npc-portrait npc-portrait-empty" aria-hidden="true"></span>';
+        return '<article class="place-card"><div class="npc-scene"' + scene + ">" + face +
+          '<div class="npc-pics">' +
+          '<label class="file-btn" title="Загрузить изображение места, как портрет у НПС">' + FACE + '<input type="file" accept="image/*" data-pic="portrait" data-i="' + index + '" aria-label="Изображение места"></label>' +
+          '<label class="file-btn" title="Загрузить фон карточки места">' + SCENE + '<input type="file" accept="image/*" data-pic="backdrop" data-i="' + index + '" aria-label="Фон места"></label>' +
+          (place.portrait ? '<button type="button" data-act="clear-pic" data-pic="portrait" data-i="' + index + '" title="Убрать изображение" aria-label="Убрать изображение">×</button>' : "") +
+          (place.backdrop ? '<button type="button" data-act="clear-pic" data-pic="backdrop" data-i="' + index + '" title="Убрать фон" aria-label="Убрать фон">×</button>' : "") +
+          "</div></div>" +
+          '<div class="codex-row"><input data-field="name" data-i="' + index + '" type="text" value="' + esc(place.name || "") + '" title="Название места" aria-label="Название места"><button type="button" data-act="del" data-i="' + index + '" title="Удалить место" aria-label="Удалить">×</button></div>' +
           squadLine +
           '<div class="place-people">' + (people || '<span class="note">На месте никого нет.</span>') + "</div>" +
           (npcs.length
@@ -430,7 +442,12 @@ window.ShirmoCodex = (function () {
         const sheetPick = '<select data-good-sheet data-i="' + index + '" data-item="' + itemIndex + '" title="Положить товар в лист этого персонажа" aria-label="Лист товаров"><option value="">Свои</option>' +
           sheets.map(function (sheet) { return '<option value="' + esc(sheet.id) + '">' + esc(sheet.name || "Лист") + "</option>"; }).join("") +
           '<option value="__new">Новый лист</option></select>';
-        return '<span class="place-person">' + icon + esc(item.name || "Товар") +
+        const off = !!item.off;
+        return '<span class="place-person' + (off ? " is-off" : "") + '">' + icon +
+          '<input data-good-name data-i="' + index + '" data-item="' + itemIndex + '" type="text" value="' + esc(item.name || "") + '" aria-label="Название товара">' +
+          '<input data-good-note data-i="' + index + '" data-item="' + itemIndex + '" type="text" value="' + esc(item.note || "") + '" placeholder="Заметка" title="Заметка, игрокам не уходит" aria-label="Заметка">' +
+          '<button type="button" class="icon-btn" data-good-edit data-i="' + index + '" data-item="' + itemIndex + '" title="Иконка и цвет" aria-label="Иконка и цвет">' + (window.ShirmoGlyph ? window.ShirmoGlyph.pencil : "✎") + "</button>" +
+          '<button type="button" class="icon-btn eye' + (off ? " is-off" : "") + '" data-good-eye data-i="' + index + '" data-item="' + itemIndex + '" title="' + (off ? "Показать товар игрокам" : "Скрыть товар от игроков") + '" aria-label="' + (off ? "Показать товар игрокам" : "Скрыть товар от игроков") + '">' + (window.ShirmoGlyph ? (off ? window.ShirmoGlyph.hide : window.ShirmoGlyph.eye) : "●") + "</button>" +
           sheetPick +
           '<input data-good-qty data-i="' + index + '" data-item="' + itemIndex + '" class="num" type="number" min="0" value="' + qty + '" title="Количество. Пустое поле — без ограничения" aria-label="Количество">' +
           '<label class="check icon-btn" title="Скрывать у игроков, когда количество станет нулём">' + (window.ShirmoGlyph ? window.ShirmoGlyph.hide : "") + '<input data-good-hide data-i="' + index + '" data-item="' + itemIndex + '" type="checkbox"' + (item.hideEmpty ? " checked" : "") + ' aria-label="Скрывать при нуле"></label>' +
@@ -449,23 +466,28 @@ window.ShirmoCodex = (function () {
       const catalog = (book().goods || []).filter(function (row) { return row && row.image; }).map(function (row) {
         return '<option value="' + esc(row.image) + '">' + esc(row.name || "Предмет") + "</option>";
       }).join("");
-      const face = item.icon ? '<img class="cat-thumb" alt="" src="' + esc(item.icon) + '">' : "";
+      const face = item.icon ? '<img alt="" src="' + esc(item.icon) + '">' : (window.ShirmoGlyph ? window.ShirmoGlyph.bag : "");
       const mark = ' data-stock="' + sheetIndex + '" data-item="' + itemIndex + '"';
-      return '<div class="ware-row">' +
-        '<button type="button" class="ware-face-btn" data-ware-icon' + mark + ' title="Иконка из справочника предметов. Нажмите, чтобы поменять">' + face + "</button>" +
-        '<input data-ware="name"' + mark + ' type="text" value="' + esc(item.name || "") + '" placeholder="Название" title="Название товара" aria-label="Название товара">' +
+      const key = sheetIndex + ":" + itemIndex;
+      const open = !!wareOpen[key];
+      const eye = window.ShirmoGlyph ? (item.off ? window.ShirmoGlyph.hide : window.ShirmoGlyph.eye) : (item.off ? "○" : "●");
+      const pencil = window.ShirmoGlyph ? window.ShirmoGlyph.pencil : "✎";
+      const fold = window.ShirmoGlyph ? window.ShirmoGlyph.fold : "▾";
+      return '<article class="ware-item' + (item.off ? " is-off" : "") + '"' + (item.ink ? ' style="color:' + esc(item.ink) + '"' : "") + mark + ">" +
+        '<div class="ware-head"><span class="ware-face">' + face + "</span>" +
+        '<span class="ware-title"><input data-ware="name"' + mark + ' type="text" value="' + esc(item.name || "") + '" placeholder="Название" title="Название товара" aria-label="Название товара">' +
+        '<input data-ware="note"' + mark + ' class="ware-note" type="text" value="' + esc(item.note || "") + '" placeholder="Заметка" title="Заметка, игрокам не уходит" aria-label="Заметка"></span>' +
+        '<button type="button" class="icon-btn" data-ware-edit' + mark + ' title="Иконка и цвет" aria-label="Иконка и цвет">' + pencil + "</button>" +
+        '<button type="button" class="icon-btn shop-fold' + (open ? " is-open" : "") + '" data-ware-fold="' + esc(key) + '" title="Параметры товара" aria-label="Параметры товара" aria-expanded="' + (open ? "true" : "false") + '">' + fold + "</button>" +
+        '<button type="button" class="icon-btn eye' + (item.off ? " is-off" : "") + '" data-ware-eye' + mark + ' title="' + (item.off ? "Показать товар игрокам" : "Скрыть товар от игроков") + '" aria-label="' + (item.off ? "Показать товар игрокам" : "Скрыть товар от игроков") + '">' + eye + "</button>" +
+        '<button type="button" data-act="ware-del"' + mark + ' title="Убрать товар" aria-label="Убрать">×</button></div>' +
+        '<div class="ware-more"' + (open ? "" : " hidden") + ">" +
         (window.ShirmoCoins ? window.ShirmoCoins.fields(item, ctx.campaign, 'data-ware="price"' + mark, 'data-ware="coin"' + mark) : "") +
-        '<input data-ware="note"' + mark + ' type="text" value="' + esc(item.note || "") + '" placeholder="Заметка" title="Заметка" aria-label="Заметка">' +
-        '<button type="button" data-act="ware-del"' + mark + ' title="Убрать товар" aria-label="Убрать">×</button>' +
-        '<div class="ware-tools">' +
-        '<label class="file-btn" title="Своя иконка. Попадёт в библиотеку, в раздел «Иконки товаров»">' + (window.ShirmoGlyph ? window.ShirmoGlyph.upload : "") + '<input type="file" accept="image/*" data-ware-file' + mark + ' aria-label="Загрузить иконку"></label>' +
-        '<select data-ware-lib' + mark + ' title="Иконка из библиотеки" aria-label="Иконка из библиотеки"><option value="">Библиотека</option>' + lib + "</select>" +
-        '<select data-ware-cat' + mark + ' title="Иконка предмета из справочника" aria-label="Иконка предмета"><option value="">Из предмета</option>' + catalog + "</select>" +
-        '<input data-ware="qty"' + mark + ' class="num" type="number" min="0" value="' + (item.qty == null || item.qty === "" ? "" : esc(String(item.qty))) + '" placeholder="∞" title="Количество. Пустое поле — без ограничения" aria-label="Количество">' +
-        '<label class="check icon-btn" title="Скрывать у игроков, когда количество станет нулём">' + (window.ShirmoGlyph ? window.ShirmoGlyph.hide : "") + '<input data-ware-hide' + mark + ' type="checkbox"' + (item.hideEmpty ? " checked" : "") + ' aria-label="Скрывать при нуле"></label>' +
-        '<input data-ware="ink"' + mark + ' type="color" value="' + esc(item.ink || "#f3ead8") + '" title="Цвет строки" aria-label="Цвет строки">' +
-        '<div class="ware-find"><input data-item-find' + mark + ' type="text" placeholder="Поиск" aria-label="Поиск предмета для иконки" title="Иконка из общего списка предметов"><div class="ware-hits" hidden></div></div>' +
-        "</div></div>";
+        '<label title="Количество. Пустое поле — без ограничения">Количество<input data-ware="qty"' + mark + ' class="num" type="number" min="0" value="' + (item.qty == null || item.qty === "" ? "" : esc(String(item.qty))) + '" placeholder="∞" aria-label="Количество"></label>' +
+        '<label class="check" title="Скрывать у игроков, когда количество станет нулём"><input data-ware-hide' + mark + ' type="checkbox"' + (item.hideEmpty ? " checked" : "") + "> Скрывать при нуле</label>" +
+        '<select data-ware-lib' + mark + ' title="Иконка из библиотеки" aria-label="Иконка из библиотеки" hidden><option value="">Библиотека</option>' + lib + "</select>" +
+        '<select data-ware-cat' + mark + ' hidden><option value="">Из предмета</option>' + catalog + "</select>" +
+        "</div></article>";
     }
     function waresHtml() {
       const sheets = book().wares || [];
@@ -476,7 +498,7 @@ window.ShirmoCodex = (function () {
       return head + sheets.map(function (sheet, index) {
         const owners = book().npcs.filter(function (npc) { return npc.wareId === sheet.id; }).map(function (npc) { return npc.name || "Без имени"; });
         const items = (sheet.items || []).map(function (item, itemIndex) { return wareItemHtml(index, item, itemIndex); }).join("");
-        return '<article class="place-card"><div class="codex-row"><input data-field="name" data-i="' + index + '" type="text" value="' + esc(sheet.name || "") + '" title="Название листа" aria-label="Название листа"><button type="button" data-act="show-sheet" data-i="' + index + '" title="Показать этот лист игрокам">Показать игрокам</button><button type="button" data-act="del" data-i="' + index + '" title="Удалить лист" aria-label="Удалить">×</button></div>' +
+        return '<article class="place-card"><div class="codex-row"><input data-field="name" data-i="' + index + '" type="text" value="' + esc(sheet.name || "") + '" title="Название листа" aria-label="Название листа"><button type="button" class="icon-btn" data-act="show-sheet" data-i="' + index + '" title="Показать этот лист игрокам" aria-label="Показать игрокам">' + (window.ShirmoGlyph ? window.ShirmoGlyph.cast : "↗") + '</button><button type="button" data-act="del" data-i="' + index + '" title="Удалить лист" aria-label="Удалить">×</button></div>' +
           '<div class="codex-row"><select data-ware-owner data-i="' + index + '" title="Отдать этот лист персонажу" aria-label="Кому отдать лист">' + npcOptions("Отдать НПС") + "</select></div>" +
           (owners.length ? '<p class="note">Лист у: ' + esc(owners.join(", ")) + "</p>" : "") +
           items +
@@ -489,22 +511,28 @@ window.ShirmoCodex = (function () {
           if (!item || !String(item.name || "").trim()) return "";
           const mark = ' data-own="' + npcIndex + '" data-item="' + itemIndex + '"';
           const sheets = (book().wares || []).filter(function (sheet) { return sheet && (sheet.npcId === npc.id || sheet.id === npc.wareId); });
-          const face = item.icon ? '<img class="cat-thumb" alt="" src="' + esc(item.icon) + '">' : "";
-          return '<div class="ware-row"' + (item.ink ? ' style="color:' + esc(item.ink) + '"' : "") + ">" +
-            '<button type="button" class="ware-face-btn" data-ware-icon' + mark + ' title="Иконка из справочника предметов. Нажмите, чтобы поменять">' + face + "</button>" +
-            '<input data-own-field="name"' + mark + ' type="text" value="' + esc(item.name || "") + '" aria-label="Название товара">' +
+          const face = item.icon ? '<img alt="" src="' + esc(item.icon) + '">' : (window.ShirmoGlyph ? window.ShirmoGlyph.bag : "");
+          const key = "own:" + npcIndex + ":" + itemIndex;
+          const open = !!wareOpen[key];
+          const eye = window.ShirmoGlyph ? (item.off ? window.ShirmoGlyph.hide : window.ShirmoGlyph.eye) : (item.off ? "○" : "●");
+          return '<article class="ware-item' + (item.off ? " is-off" : "") + '"' + (item.ink ? ' style="color:' + esc(item.ink) + '"' : "") + mark + ">" +
+            '<div class="ware-head"><span class="ware-face">' + face + "</span>" +
+            '<span class="ware-title"><input data-own-field="name"' + mark + ' type="text" value="' + esc(item.name || "") + '" aria-label="Название товара">' +
+            '<input data-own-field="note"' + mark + ' class="ware-note" type="text" value="' + esc(item.note || "") + '" placeholder="Заметка" title="Заметка, игрокам не уходит" aria-label="Заметка"></span>' +
+            '<button type="button" class="icon-btn" data-ware-edit' + mark + ' title="Иконка и цвет" aria-label="Иконка и цвет">' + (window.ShirmoGlyph ? window.ShirmoGlyph.pencil : "✎") + "</button>" +
+            '<button type="button" class="icon-btn shop-fold' + (open ? " is-open" : "") + '" data-ware-fold="' + esc(key) + '" title="Параметры товара" aria-label="Параметры товара" aria-expanded="' + (open ? "true" : "false") + '">' + (window.ShirmoGlyph ? window.ShirmoGlyph.fold : "▾") + "</button>" +
+            '<button type="button" class="icon-btn eye' + (item.off ? " is-off" : "") + '" data-own-eye' + mark + ' title="' + (item.off ? "Показать товар игрокам" : "Скрыть товар от игроков") + '" aria-label="' + (item.off ? "Показать товар игрокам" : "Скрыть товар от игроков") + '">' + eye + "</button>" +
+            '<button type="button" data-act="drop-own"' + mark + ' title="Убрать товар" aria-label="Убрать">×</button></div>' +
+            '<div class="ware-more"' + (open ? "" : " hidden") + ">" +
             (window.ShirmoCoins ? window.ShirmoCoins.fields(item, ctx.campaign, 'data-own-field="price"' + mark, 'data-own-field="coin"' + mark) : "") +
-            '<span></span><button type="button" data-act="drop-own"' + mark + ' title="Убрать товар" aria-label="Убрать">×</button>' +
-            '<div class="ware-tools">' +
+            '<label title="Количество. Пустое поле — без ограничения">Количество<input data-own-field="qty"' + mark + ' class="num" type="number" min="0" value="' + (item.qty == null || item.qty === "" ? "" : esc(String(item.qty))) + '" placeholder="∞" aria-label="Количество"></label>' +
+            '<label class="check" title="Скрывать у игроков, когда количество станет нулём"><input data-own-hide' + mark + ' type="checkbox"' + (item.hideEmpty ? " checked" : "") + "> Скрывать при нуле</label>" +
             '<label title="Положить в лист этого персонажа">Лист<select data-own-sheet' + mark + ' aria-label="Лист товаров"><option value="">Свои</option>' +
             sheets.map(function (sheet) { return '<option value="' + esc(sheet.id) + '">' + esc(sheet.name || "Лист") + "</option>"; }).join("") +
-            '<option value="__new">Новый лист</option></select></label>' +
-            '<input data-own-field="ink"' + mark + ' type="color" value="' + esc(item.ink || "#f3ead8") + '" title="Цвет строки" aria-label="Цвет строки">' +
-            '<div class="ware-find"><input data-item-find' + mark + ' type="text" placeholder="Поиск" aria-label="Поиск предмета для иконки" title="Иконка из общего списка предметов"><div class="ware-hits" hidden></div></div>' +
-            "</div></div>";
+            '<option value="__new">Новый лист</option></select></label></div></article>';
         }).join("");
         if (!goods) return "";
-        return '<article class="place-card"><div class="codex-row"><p class="note">Свои товары: ' + esc(npc.name || "НПС") + '</p><button type="button" data-act="show-own" data-i="' + npcIndex + '" title="Показать эти товары игрокам">Показать игрокам</button></div>' + goods + "</article>";
+        return '<article class="place-card"><div class="codex-row"><p class="note">Свои товары: ' + esc(npc.name || "НПС") + '</p><button type="button" class="icon-btn" data-act="show-own" data-i="' + npcIndex + '" title="Показать эти товары игрокам" aria-label="Показать игрокам">' + (window.ShirmoGlyph ? window.ShirmoGlyph.cast : "↗") + "</button></div>" + goods + "</article>";
       }).join("");
     }
     function peopleHtml() {
@@ -725,11 +753,13 @@ window.ShirmoCodex = (function () {
         saveSoon();
         return;
       }
-      if (event.target.hasAttribute("data-good-qty") || event.target.hasAttribute("data-good-hide")) {
+      if (event.target.hasAttribute("data-good-qty") || event.target.hasAttribute("data-good-hide") || event.target.hasAttribute("data-good-name") || event.target.hasAttribute("data-good-note")) {
         const person = list()[Number(event.target.getAttribute("data-i"))];
         const item = person && person.goods && person.goods[Number(event.target.getAttribute("data-item"))];
         if (!item) return;
         if (event.target.hasAttribute("data-good-hide")) item.hideEmpty = event.target.checked;
+        else if (event.target.hasAttribute("data-good-name")) item.name = event.target.value;
+        else if (event.target.hasAttribute("data-good-note")) item.note = event.target.value;
         else item.qty = event.target.value === "" ? "" : Math.max(0, Math.round(Number(event.target.value) || 0));
         saveSoon();
         return;
@@ -778,11 +808,20 @@ window.ShirmoCodex = (function () {
         if (!item) return;
         const key = event.target.getAttribute("data-own-field");
         if (key === "price" || key === "coin") window.ShirmoCoins.take(item, event.target);
+        else if (key === "qty") item.qty = event.target.value === "" ? "" : Math.max(0, Math.round(Number(event.target.value) || 0));
         else item[key] = event.target.value;
         if (key === "ink") {
-          const row = event.target.closest(".ware-row");
+          const row = event.target.closest(".ware-item, .ware-row");
           if (row) row.style.color = event.target.value;
         }
+        saveSoon();
+        return;
+      }
+      if (event.target.hasAttribute("data-own-hide")) {
+        const person = book().npcs[Number(event.target.getAttribute("data-own"))];
+        const item = person && person.goods && person.goods[Number(event.target.getAttribute("data-item"))];
+        if (!item) return;
+        item.hideEmpty = event.target.checked;
         saveSoon();
         return;
       }
@@ -897,7 +936,7 @@ window.ShirmoCodex = (function () {
         ctx.upload(file).then(function (url) {
           if (!alive) return;
           row[slot] = url;
-          if (slot === "portrait" && window.ShirmoNpc) {
+          if (slot === "portrait" && isPerson(tab) && window.ShirmoNpc) {
             window.ShirmoNpc.apply(row);
             row.portrait = url;
             window.ShirmoNpc.write(row);
@@ -951,7 +990,7 @@ window.ShirmoCodex = (function () {
         if (shiftX && document.activeElement !== shiftX) shiftX.value = String(Math.round(100 - face.x));
         if (shiftY && document.activeElement !== shiftY) shiftY.value = String(Math.round(100 - face.y));
         if (zoomNode && document.activeElement !== zoomNode) zoomNode.value = String(Math.round(face.zoom * 100));
-        if (window.ShirmoNpc) window.ShirmoNpc.write(row);
+        if (isPerson(tab) && window.ShirmoNpc) window.ShirmoNpc.write(row);
         saveSoon();
       }
       function bindShift(node, key) {
@@ -1070,7 +1109,124 @@ window.ShirmoCodex = (function () {
         if (pop.parentNode) card.innerHTML = '<p class="note">Каталог не загрузился.</p>';
       });
     }
+    function goodBy(node) {
+      if (!node) return null;
+      if (node.hasAttribute("data-stock")) {
+        const sheet = book().wares[Number(node.getAttribute("data-stock"))];
+        return sheet && sheet.items && sheet.items[Number(node.getAttribute("data-item"))];
+      }
+      if (node.hasAttribute("data-own")) {
+        const person = book().npcs[Number(node.getAttribute("data-own"))];
+        return person && person.goods && person.goods[Number(node.getAttribute("data-item"))];
+      }
+      if (node.hasAttribute("data-i") && isPerson(tab)) {
+        const person = list()[Number(node.getAttribute("data-i"))];
+        return person && person.goods && person.goods[Number(node.getAttribute("data-item"))];
+      }
+      return null;
+    }
+    function openWareEdit(item) {
+      if (!item) return;
+      const old = document.getElementById("good-edit");
+      if (old) old.remove();
+      const images = (ctx.campaign.library && ctx.campaign.library.images) || [];
+      const lib = images.map(function (image) {
+        return '<option value="' + esc(image.url) + '"' + (image.url === item.icon ? " selected" : "") + ">" + esc(image.name || "Картинка") + "</option>";
+      }).join("");
+      const face = item.icon ? '<img alt="" src="' + esc(item.icon) + '">' : "";
+      const pop = document.createElement("div");
+      pop.id = "good-edit";
+      pop.className = "pop";
+      pop.innerHTML = '<div class="pop-card ware-edit" role="dialog" aria-label="Иконка и цвет">' +
+        '<div class="pop-head"><h2>Иконка и цвет</h2><button type="button" data-pop-close title="Закрыть" aria-label="Закрыть">×</button></div>' +
+        '<div class="ware-edit-face">' + face + "</div>" +
+        '<label title="Цвет строки товара">Цвет<input data-edit-ink type="color" value="' + esc(item.ink || "#f3ead8") + '"></label>' +
+        '<label class="file-btn" title="Своя иконка. Попадёт в библиотеку, в раздел «Иконки товаров»">Загрузить<input data-edit-file type="file" accept="image/*" aria-label="Загрузить иконку"></label>' +
+        '<label title="Иконка из библиотеки">Библиотека<select data-edit-lib><option value="">Нет</option>' + lib + "</select></label>" +
+        '<div class="ware-find"><input data-edit-find type="text" placeholder="Поиск предмета" aria-label="Поиск предмета для иконки" title="Иконка из общего списка предметов"><div class="ware-hits" hidden></div></div></div>';
+      document.body.appendChild(pop);
+      function shut() { if (pop.parentNode) pop.remove(); }
+      pop.addEventListener("click", function (event) { if (event.target === pop) shut(); });
+      pop.querySelector("[data-pop-close]").addEventListener("click", shut);
+      function shown() {
+        const slot = pop.querySelector(".ware-edit-face");
+        if (slot) slot.innerHTML = item.icon ? '<img alt="" src="' + esc(item.icon) + '">' : "";
+        paint();
+        saveSoon();
+      }
+      pop.querySelector("[data-edit-ink]").addEventListener("input", function (event) {
+        item.ink = event.target.value;
+        saveSoon();
+      });
+      pop.querySelector("[data-edit-lib]").addEventListener("change", function (event) {
+        if (!event.target.value) return;
+        item.icon = event.target.value;
+        shown();
+      });
+      pop.querySelector("[data-edit-file]").addEventListener("change", function (event) {
+        const file = event.target.files && event.target.files[0];
+        if (!file || !ctx.upload) return;
+        ctx.upload(file).then(function (url) {
+          item.icon = url;
+          if (!ctx.campaign.library) ctx.campaign.library = { fonts: [], images: [], notes: [] };
+          if (window.ShirmoLib) window.ShirmoLib.keep(ctx.campaign.library, {
+            url: url,
+            name: item.name || file.name.replace(/\.[^.]+$/, ""),
+            section: "icons",
+            sectionName: "Иконки товаров"
+          });
+          shown();
+        });
+      });
+      const find = pop.querySelector("[data-edit-find]");
+      find.addEventListener("input", function () {
+        const box = find.parentNode.querySelector(".ware-hits");
+        const q = find.value.trim().toLowerCase();
+        if (!window.ShirmoItems || q.length < 2) { box.hidden = true; box.innerHTML = ""; return; }
+        window.ShirmoItems.ready().then(function () {
+          if (!pop.isConnected) return;
+          const hits = window.ShirmoItems.find(q).slice(0, 8);
+          box._hits = hits;
+          box.hidden = !hits.length;
+          box.innerHTML = hits.map(function (row, index) {
+            const icon = window.ShirmoItems.icon(row);
+            return '<button type="button" data-edit-hit="' + index + '">' + (icon ? '<img alt="" src="' + esc(icon) + '">' : "") + esc(window.ShirmoItems.title(row)) + "</button>";
+          }).join("");
+        });
+      });
+      pop.addEventListener("click", function (event) {
+        const hit = event.target.closest("[data-edit-hit]");
+        if (!hit) return;
+        const row = (find.parentNode.querySelector(".ware-hits")._hits || [])[Number(hit.getAttribute("data-edit-hit"))];
+        if (!row || !window.ShirmoItems) return;
+        const icon = window.ShirmoItems.icon(row);
+        if (icon) item.icon = icon;
+        if (!String(item.name || "").trim()) item.name = window.ShirmoItems.title(row);
+        shown();
+      });
+    }
     function onClick(event) {
+      const fold = event.target.closest("[data-ware-fold]");
+      if (fold && host.contains(fold)) {
+        const key = fold.getAttribute("data-ware-fold");
+        wareOpen[key] = !wareOpen[key];
+        paint();
+        return;
+      }
+      const eye = event.target.closest("[data-ware-eye], [data-own-eye], [data-good-eye]");
+      if (eye && host.contains(eye)) {
+        const item = goodBy(eye);
+        if (!item) return;
+        item.off = !item.off;
+        paint();
+        saveSoon();
+        return;
+      }
+      const edit = event.target.closest("[data-ware-edit], [data-good-edit]");
+      if (edit && host.contains(edit)) {
+        openWareEdit(goodBy(edit));
+        return;
+      }
       const face = event.target.closest("[data-ware-icon]");
       if (face && host.contains(face)) {
         openIconPop(face);
@@ -1186,7 +1342,7 @@ window.ShirmoCodex = (function () {
           ? ((book().wares[Number(button.getAttribute("data-i"))] || {}).items || [])
           : ((book().npcs[Number(button.getAttribute("data-i"))] || {}).goods || []);
         if (ctx.showGoods) ctx.showGoods(items.filter(function (item) {
-          if (!item || !String(item.name || "").trim()) return false;
+          if (!item || item.off || !String(item.name || "").trim()) return false;
           if (!item.hideEmpty) return true;
           return !(item.qty === 0 || item.qty === "0");
         }).map(function (item) {
@@ -1238,7 +1394,7 @@ window.ShirmoCodex = (function () {
         const slot = button.getAttribute("data-pic");
         if (!row || (slot !== "portrait" && slot !== "backdrop")) return;
         row[slot] = "";
-        if (slot === "portrait" && window.ShirmoNpc) window.ShirmoNpc.write(row);
+        if (slot === "portrait" && isPerson(tab) && window.ShirmoNpc) window.ShirmoNpc.write(row);
         paint();
         saveSoon();
         return;
