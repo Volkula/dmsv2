@@ -7,6 +7,95 @@
       .replace(/"/g, "&quot;");
   }
 
+  const COIN_SEED = [
+    { name: "Медная", code: "мм", copper: 1 },
+    { name: "Серебряная", code: "см", copper: 10 },
+    { name: "Электрумовая", code: "эм", copper: 50 },
+    { name: "Золотая", code: "зм", copper: 100 },
+    { name: "Платиновая", code: "пм", copper: 1000 }
+  ];
+
+  function coinList(campaign) {
+    const book = campaign && campaign.codex;
+    return book && Array.isArray(book.coins) ? book.coins : [];
+  }
+
+  function partsOf(item, coins) {
+    if (item && item.coin) return { amount: item.price == null || item.price === "" ? "" : item.price, coin: item.coin };
+    const text = String(item && item.price || "").trim();
+    const match = text.match(/^(\d+(?:[.,]\d+)?)\s*(.*)$/);
+    if (!match) return { amount: "", coin: "" };
+    const code = match[2].trim().toLowerCase();
+    const found = code ? coins.find(function (coin) {
+      return String(coin.code || "").trim().toLowerCase() === code || String(coin.name || "").trim().toLowerCase() === code;
+    }) : null;
+    return { amount: match[1].replace(",", "."), coin: found ? found.id : "" };
+  }
+
+  window.ShirmoCoins = {
+    list: coinList,
+    ensure: function (campaign) {
+      const book = campaign && campaign.codex;
+      if (!book) return [];
+      if (!Array.isArray(book.coins)) {
+        book.coins = COIN_SEED.map(function (coin) {
+          return { id: crypto.randomUUID(), name: coin.name, code: coin.code, copper: coin.copper };
+        });
+      }
+      return book.coins;
+    },
+    text: function (item, campaign) {
+      if (!item) return "";
+      if (item.coin) {
+        const coin = coinList(campaign).find(function (row) { return row.id === item.coin; });
+        const code = coin ? (coin.code || coin.name || "") : "";
+        const amount = item.price == null || item.price === "" ? "" : String(item.price);
+        return [amount, code].filter(Boolean).join(" ");
+      }
+      return item.price || "";
+    },
+    equation: function (campaign) {
+      const list = coinList(campaign).filter(function (coin) { return Number(coin.copper) > 0; })
+        .slice().sort(function (a, b) { return Number(b.copper) - Number(a.copper); });
+      if (list.length < 2) return "Добавьте вторую монету, чтобы увидеть отношение.";
+      const top = Number(list[0].copper);
+      return list.map(function (coin) {
+        const ratio = top / Number(coin.copper);
+        const text = Math.abs(ratio - Math.round(ratio)) < 0.001 ? String(Math.round(ratio)) : String(Math.round(ratio * 100) / 100);
+        return text + " " + (coin.code || coin.name || "монета");
+      }).join(" = ");
+    },
+    adopt: function (item, text, campaign) {
+      const part = partsOf({ price: text }, coinList(campaign));
+      if (part.amount === "" && text) {
+        item.price = text;
+        item.coin = "";
+        return;
+      }
+      item.price = part.amount;
+      item.coin = part.coin;
+    },
+    fields: function (item, campaign, amountAttr, coinAttr) {
+      const coins = this.ensure(campaign);
+      const part = partsOf(item, coins);
+      const options = '<option value="">—</option>' + coins.map(function (coin) {
+        const label = coin.code ? coin.code + " · " + (coin.name || "") : (coin.name || "Монета");
+        return '<option value="' + esc(coin.id) + '"' + (coin.id === part.coin ? " selected" : "") + ">" + esc(label) + "</option>";
+      }).join("");
+      const amount = part.amount === "" || part.amount == null ? "" : esc(String(part.amount));
+      return '<input class="num" type="number" min="0" step="1" ' + amountAttr + ' value="' + amount + '" placeholder="0" title="Стоимость числом" aria-label="Стоимость">' +
+        '<select class="price-coin" ' + coinAttr + ' title="Валюта из списка" aria-label="Валюта">' + options + "</select>";
+    },
+    take: function (item, input) {
+      const row = input && input.closest(".ware-row, .ware-item, .shop-item");
+      if (!row) return;
+      const num = row.querySelector('input[type="number"][data-good="price"], input[type="number"][data-ware="price"], input[type="number"][data-own-field="price"], input[type="number"][data-shop="price"]');
+      const coin = row.querySelector('select[data-good="coin"], select[data-ware="coin"], select[data-own-field="coin"], select[data-shop="coin"]');
+      if (num) item.price = num.value === "" ? "" : String(Math.max(0, Math.round(Number(num.value) || 0)));
+      if (coin) item.coin = coin.value;
+    }
+  };
+
   function blankView(id) {
     return {
       id: id,
@@ -17,7 +106,8 @@
       locations: [],
       markers: [],
       labels: [],
-      strokes: []
+      strokes: [],
+      focusId: ""
     };
   }
 
@@ -30,6 +120,26 @@
     view.day = view.day || "";
     view.night = view.night || "";
     view.name = view.name || "Вид";
+    view.focusId = view.focusId || "";
+    view.locations.forEach(function (loc) {
+      loc.day = loc.day || "";
+      loc.night = loc.night || "";
+      loc.mode = loc.mode === "night" ? "night" : "day";
+      loc.trashed = !!loc.trashed;
+    });
+    function buried(id) {
+      let cursor = id;
+      let guard = 0;
+      while (cursor && guard < 24) {
+        const loc = view.locations.find(function (item) { return item.id === cursor; });
+        if (!loc) return true;
+        if (loc.trashed) return true;
+        cursor = loc.parentId || "";
+        guard += 1;
+      }
+      return false;
+    }
+    if (!view.focusId || buried(view.focusId)) view.focusId = "";
     return view;
   }
 
@@ -74,9 +184,14 @@
     }).join(" ") + '"' + common + "/>";
   }
 
-  function faces(labels) {
+  function hexColor(value, fallback) {
+    return /^#[0-9a-fA-F]{6}$/.test(String(value || "")) ? String(value) : fallback;
+  }
+
+  function faces(source) {
     const seen = {};
-    return (labels || []).map(function (item) {
+    const items = [].concat(source.labels || [], source.markers || [], source.locations || []);
+    return items.map(function (item) {
       if (!item.fontUrl || seen[item.fontUrl]) return "";
       seen[item.fontUrl] = true;
       const name = String(item.font || "").split(",")[0].replace(/['"]/g, "").trim().replace(/'/g, "");
@@ -84,28 +199,267 @@
     }).join("");
   }
 
+  function captionCss(item, fallbackSize) {
+    const size = Math.min(96, Math.max(10, Number(item.size) || fallbackSize));
+    const stroke = Math.min(8, Math.max(0, Number(item.strokeWidth) || 0));
+    const parts = [
+      "color:" + esc(item.ink || "#f3ead8"),
+      "font-family:" + esc(item.font || "Georgia, serif"),
+      "font-size:" + size + "px",
+      "font-weight:" + (item.bold ? "700" : "500"),
+      "font-style:" + (item.italic ? "italic" : "normal"),
+      "text-decoration:" + (item.underline ? "underline" : "none")
+    ];
+    if (stroke > 0) {
+      parts.push("-webkit-text-stroke:" + stroke + "px " + esc(item.stroke || "#1a140c"));
+      parts.push("paint-order:stroke fill");
+      parts.push("text-shadow:none");
+    }
+    if (item.plate) {
+      parts.push("background:" + esc(item.plate));
+      parts.push("padding:1px 5px");
+      parts.push("border-radius:4px");
+      parts.push("text-shadow:none");
+    }
+    return parts.join(";");
+  }
+
+  function focusNums(item) {
+    const x = Number(item && item.portraitX);
+    const y = Number(item && item.portraitY);
+    const zoom = Number(item && item.portraitZoom);
+    return {
+      x: Number.isFinite(x) ? Math.min(100, Math.max(0, x)) : 50,
+      y: Number.isFinite(y) ? Math.min(100, Math.max(0, y)) : 50,
+      zoom: Number.isFinite(zoom) ? Math.min(3, Math.max(1, zoom)) : 1
+    };
+  }
+
+  function faceStyle(item) {
+    const face = focusNums(item);
+    return "object-position:" + face.x + "% " + face.y + "%;transform:scale(" + face.zoom + ");transform-origin:" + face.x + "% " + face.y + "%";
+  }
+
+  function shownMap(item) {
+    return !(item && item.hidden);
+  }
+
+  function shownScreen(item) {
+    if (!item) return true;
+    if (item.screen === false) return false;
+    if (item.screen === true) return true;
+    return !item.hidden;
+  }
+
+  function eyeSvg(open) {
+    const slash = open ? "" : '<path d="M5 19L19 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>';
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="2.2" fill="none" stroke="currentColor" stroke-width="1.6"/>' + slash + "</svg>";
+  }
+
+  function mapSvg(open) {
+    const slash = open ? "" : '<path d="M5 19L19 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>';
+    return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5l5-2 6 2 5-2v13l-5 2-6-2-5 2v-13z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 4.5v13M15 6.5v13" fill="none" stroke="currentColor" stroke-width="1.6"/>' + slash + "</svg>";
+  }
+
+  function flagMark(kind, open) {
+    const title = kind === "screen"
+      ? (open ? "Показано на экране игроков. Нажмите, чтобы скрыть" : "Скрыто с экрана игроков. Нажмите, чтобы показать")
+      : (open ? "Показано на карте. Нажмите, чтобы скрыть" : "Скрыто на карте. Нажмите, чтобы показать");
+    const label = kind === "screen"
+      ? (open ? "На экране игроков" : "Скрыто с экрана игроков")
+      : (open ? "На карте" : "Скрыто на карте");
+    const icon = kind === "screen" ? eyeSvg(open) : mapSvg(open);
+    return '<span role="button" data-flag="' + kind + '" class="flag' + (open ? "" : " is-off") + '" title="' + esc(title) + '" aria-label="' + esc(label) + '">' + icon + "</span>";
+  }
+
+  function flagBar(flags) {
+    return '<div class="map-flags">' + flagMark("screen", !!flags.screen) + flagMark("map", !!flags.map) + "</div>";
+  }
+
   function pinHtml(item, kind, master) {
     if (!master && item.hidden) return "";
     const tip = item.tip ? '<span class="tip">' + esc(item.tip) + "</span>" : "";
-    return '<button type="button" class="map-pin ' + kind + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="' + kind + '" style="left:' + (item.x * 100) + "%;top:" + (item.y * 100) + '%"><i></i><b>' + esc(item.name || "Без имени") + "</b>" + tip + "</button>";
+    const portrait = kind === "npc" ? item.portrait : "";
+    const size = Math.min(160, Math.max(12, Number(item.pinSize) || (portrait ? 56 : 14)));
+    const badge = master && item.emoji ? '<em class="pin-emoji">' + esc(item.emoji) + "</em>" : "";
+    const dot = portrait ? '<i><img alt="" src="' + esc(portrait) + '" style="' + faceStyle(item) + '">' + badge + "</i>" : "<i></i>";
+    const marks = master && (kind === "npc" || kind === "loc")
+      ? '<span class="pin-flags">' + flagMark("screen", shownScreen(item)) + flagMark("map", shownMap(item)) + "</span>"
+      : "";
+    const caption = '<b style="' + captionCss(item, 14) + '">' + esc(item.name || (kind === "loc" ? "Локация" : "Без имени")) + "</b>";
+    const named = kind === "loc" ? ' aria-label="' + esc(item.name || "Локация") + '"' : "";
+    return '<button type="button" class="map-pin ' + kind + (portrait ? " has-face" : "") + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="' + kind + '"' + named + ' style="left:' + (item.x * 100) + "%;top:" + (item.y * 100) + "%;--pin:" + size + 'px">' + marks + dot + caption + tip + "</button>";
   }
 
   function labelHtml(item) {
-    const style = "left:" + (item.x * 100) + "%;top:" + (item.y * 100) + "%;color:" + esc(item.ink || "#f3ead8") + ";font-family:" + esc(item.font || "Georgia, serif") + ";font-size:" + (Number(item.size) || 28) + "px;font-weight:" + (item.bold ? "700" : "500") + ";font-style:" + (item.italic ? "italic" : "normal") + ";text-decoration:" + (item.underline ? "underline" : "none");
+    const style = "left:" + (item.x * 100) + "%;top:" + (item.y * 100) + "%;" + captionCss(item, 28);
     return '<button type="button" class="map-label" data-pin="' + esc(item.id) + '" data-kind="label" style="' + style + '">' + esc(item.text || "") + "</button>";
+  }
+
+  function onLevel(list, here, key) {
+    return (list || []).filter(function (item) { return ((item && item[key]) || "") === here; });
+  }
+
+  function levelImage(current) {
+    const id = current.focusId || "";
+    const loc = id ? (current.locations || []).find(function (item) { return item.id === id; }) : null;
+    const sheet = loc || current;
+    const night = sheet.mode === "night";
+    const image = night ? (sheet.night || sheet.day || "") : (sheet.day || "");
+    return { image: image, dim: night && !sheet.night };
+  }
+
+  function tabList(current) {
+    const here = current.focusId || "";
+    const locs = current.locations || [];
+    function byId(id) {
+      return locs.find(function (item) { return item.id === id; });
+    }
+    const tabs = [{ id: "", name: current.name || "Карта", on: !here }];
+    const crumbs = [];
+    let id = here;
+    let guard = 0;
+    while (id && guard < 24) {
+      const loc = byId(id);
+      if (!loc) break;
+      crumbs.unshift(loc);
+      id = loc.parentId || "";
+      guard += 1;
+    }
+    crumbs.forEach(function (loc) {
+      tabs.push({ id: loc.id, name: loc.name || "Локация", on: loc.id === here, hidden: !!loc.hidden });
+    });
+    locs.filter(function (loc) { return (loc.parentId || "") === here && !loc.trashed; }).forEach(function (loc) {
+      tabs.push({ id: loc.id, name: loc.name || "Локация", on: false, hidden: !!loc.hidden });
+    });
+    return tabs;
+  }
+
+  function tabHtml(tabs) {
+    return '<div class="map-tabs">' + (tabs || []).map(function (tab) {
+      return '<button type="button" class="map-tab' + (tab.on ? " is-on" : "") + (tab.hidden ? " is-hidden" : "") + '" data-go="' + esc(tab.id || "") + '">' + esc(tab.name || "Локация") + "</button>";
+    }).join("") + "</div>";
+  }
+
+  function clampNum(value, min, max, fallback) {
+    if (value == null || value === "") return fallback;
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(max, Math.max(min, n));
+  }
+
+  function fitFigure(fig) {
+    return {
+      x: clampNum(fig && fig.x, -80, 140, 3),
+      y: clampNum(fig && fig.y, -80, 140, 2),
+      h: clampNum(fig && fig.h, 8, 220, 86)
+    };
+  }
+
+  function figureOf(record, shop) {
+    const own = record && (shop ? record.stall : record.stand);
+    const slot = own || (shop && record ? record.stand : null);
+    return fitFigure(slot);
+  }
+
+  function putFigure(record, shop, fig) {
+    if (!record) return;
+    record[shop ? "stall" : "stand"] = fitFigure(fig);
+  }
+
+  function figureCss(fig) {
+    return "left:" + fig.x + "%;bottom:" + fig.y + "%;height:" + fig.h + "%";
+  }
+
+  function talkHtml(talk, master) {
+    const bg = talk.backdrop ? "url('" + esc(talk.backdrop) + "')" : "none";
+    const fig = talk.figure || figureOf(null, false);
+    const figure = talk.portrait
+      ? '<div class="talk-figure' + (master ? " is-live" : "") + '" style="' + figureCss(fig) + '"' + (master ? ' title="Потяните изображение, чтобы переставить его. Ползунок размера появляется у курсора. Правый клик — реплики и товары"' : "") + '><img alt="" draggable="false" src="' + esc(talk.portrait) + '"></div>'
+      : "";
+    const reps = master && talk.reps && talk.reps.length
+      ? '<div class="talk-reps">' + talk.reps.map(function (rep, index) {
+          const on = index === talk.index ? " is-on" : "";
+          const look = (rep.ink ? "color:" + esc(rep.ink) + ";" : "") + (rep.plate ? "background:" + esc(rep.plate) + ";" : "") + (rep.font ? "font-family:" + esc(rep.font) + ";" : "");
+          return '<button type="button" data-talk="line" data-i="' + index + '" class="' + on + '" style="' + look + '" title="' + esc(rep.text || rep.label) + '">' + esc(rep.label) + "</button>";
+        }).join("") + "</div>"
+      : "";
+    const goods = talk.shop
+      ? '<aside class="talk-shop"><div class="talk-shop-head"><b>Товары</b>' +
+        (master ? '<button type="button" class="icon-btn" data-talk="show-goods" title="Показать игрокам" aria-label="Показать игрокам">' + (window.ShirmoGlyph ? window.ShirmoGlyph.cast : "") + "</button>" : "") +
+        "</div><ul>" + ((talk.goods && talk.goods.length)
+        ? talk.goods.map(function (item) {
+            const icon = item.icon ? '<img class="shop-icon" alt="" src="' + esc(item.icon) + '">' : (master ? '<span class="ware-face shop-icon"></span>' : "");
+            if (!master) {
+              const count = item.qty == null ? "" : '<i class="shop-qty">×' + esc(String(item.qty)) + "</i>";
+              const ink = item.ink ? ' style="color:' + esc(item.ink) + '"' : "";
+              return "<li" + ink + ">" + icon + "<span>" + esc(item.name || "Предмет") + "</span>" + count + "<em>" + esc(item.priceText || item.price || "") + "</em></li>";
+            }
+            const g = window.ShirmoGlyph || {};
+            const open = !!item.open;
+            const eye = item.off ? g.hide : g.eye;
+            const eyeTitle = item.off ? "Показать товар игрокам" : "Скрыть товар от игроков";
+            const mark = ' data-id="' + esc(item.id || "") + '"';
+            const ink = item.ink ? ' style="color:' + esc(item.ink) + '"' : "";
+            return '<li class="shop-item' + (item.off ? " is-off" : "") + (item.hidden ? " is-gone" : "") + '"' + ink + ' data-good="' + esc(item.id || "") + '">' +
+              '<div class="shop-head">' + icon +
+              '<div class="shop-title"><span>' + esc(item.name || "Предмет") + "</span>" +
+              '<input data-shop="note"' + mark + ' type="text" value="' + esc(item.note || "") + '" placeholder="Заметка" aria-label="Заметка"></div>' +
+              '<div class="shop-acts">' +
+              '<button type="button" class="icon-btn" data-shop-edit' + mark + ' title="Редактировать товар" aria-label="Редактировать товар">' + (g.pencil || "") + "</button>" +
+              '<button type="button" class="icon-btn shop-fold" data-shop-fold' + mark + ' aria-expanded="' + (open ? "true" : "false") + '" title="Параметры товара" aria-label="Параметры товара">' + (g.fold || "") + "</button>" +
+              '<button type="button" class="icon-btn' + (item.off ? " is-off" : "") + '" data-shop-eye' + mark + ' title="' + eyeTitle + '" aria-label="' + eyeTitle + '">' + (eye || "") + "</button>" +
+              "</div></div>" +
+              '<div class="shop-more"' + (open ? "" : " hidden") + ">" +
+              (window.ShirmoCoins ? window.ShirmoCoins.fields(item, talk.campaign, 'data-shop="price"' + mark, 'data-shop="coin"' + mark) : "") +
+              '<input data-shop="qty"' + mark + ' class="num shop-qty" type="number" min="0" value="' + (item.qty == null || item.qty === "" ? "" : esc(String(item.qty))) + '" placeholder="∞" title="Количество. Пустое поле — без ограничения" aria-label="Количество">' +
+              '<label class="check icon-btn" title="Скрывать у игроков, когда количество станет нулём">' + (g.hide || "") + '<input data-shop-hide' + mark + ' type="checkbox"' + (item.hideEmpty ? " checked" : "") + ' aria-label="Скрывать при нуле"></label>' +
+              "</div></li>";
+          }).join("")
+        : '<li class="note">У персонажа пока нет товаров.</li>') + "</ul></aside>"
+      : "";
+    const glyph = window.ShirmoGlyph || { speech: "", bag: "" };
+    const top = master
+      ? '<div class="talk-top"><button type="button" data-talk="talk" class="' + (talk.shop ? "" : "is-on") + '" title="Вернуться к разговору">К разговору</button>' +
+        '<button type="button" data-talk="trade" class="' + (talk.shop ? "is-on" : "") + '" title="Открыть торговлю. Изображение можно поставить отдельно">Торговля</button>' +
+        '<button type="button" data-talk="back" title="Вернуться на карту">На карту</button></div>'
+      : "";
+    const moodList = master
+      ? '<div class="talk-mood-list" hidden><button type="button" data-talk="mood-auto" class="' + (talk.hold ? "" : "is-on") + '" title="По реплике. Если у реплики нет своей фазы — эмоция по умолчанию">−</button>' +
+        (talk.phases || []).map(function (phase, index) {
+          const on = talk.hold && phase.on ? " is-on" : "";
+          return '<button type="button" data-talk="phase" data-i="' + index + '" class="' + on + '" title="Закрепить эту эмоцию. Реплики её не сменят" aria-label="Фаза ' + (index + 1) + '">' + esc(phase.emoji || String(index + 1)) + "</button>";
+        }).join("") + "</div>"
+      : "";
+    const face = !master ? "" : (talk.emoji || (talk.hold ? "·" : "−"));
+    const mood = master
+      ? '<div class="talk-mood"><button type="button" data-talk="mood" title="Список эмоций. Минус — по реплике" aria-label="Эмоция">' + esc(face) + "</button>" + moodList + "</div>"
+      : "";
+    const linesBtn = master
+      ? '<button type="button" class="talk-ico" data-talk="lines" title="Реплики: выбор на панели, здесь текст, цвет и смена фазы" aria-label="Реплики">' + glyph.speech + "</button>"
+      : "";
+    const wareBtn = master
+      ? '<button type="button" class="talk-ico talk-ware" data-talk="ware" title="Товары. Если персонаж ещё не торговец, он им станет" aria-label="Товары">' + glyph.bag + "</button>"
+      : "";
+    return '<div class="stage talk-stage" style="background-image:' + bg + '">' + top + figure + goods +
+      '<div class="talk-box">' + wareBtn + '<div class="talk-name">' + mood + "<b>" + esc(talk.name || "НПС") + "</b>" + linesBtn + "</div><p>" + esc(talk.line || "...") + "</p>" + reps + "</div></div>";
   }
 
   function html(view, master) {
     const source = view || {};
+    if (source.talk) return talkHtml(source.talk, master);
     const image = (source.mode === "night" && source.night) ? source.night : (source.day || "");
     const dim = source.mode === "night" && !source.night;
     const strokes = (source.strokes || []).map(strokeSvg).join("");
     const locations = (source.locations || []).map(function (item) { return pinHtml(item, "loc", master); }).join("");
     const markers = (source.markers || []).map(function (item) { return pinHtml(item, item.kind === "npc" ? "npc" : "mark", master); }).join("");
     const labels = (source.labels || []).map(labelHtml).join("");
-    const face = faces(source.labels);
+    const face = faces(source);
+    const bar = master && source.flags ? flagBar(source.flags) : "";
     return (face ? "<style>" + face + "</style>" : "") +
-      '<div class="stage map-stage">' +
+      '<div class="stage map-stage' + (bar ? " has-flags" : "") + '">' +
+      (master ? tabHtml(source.tabs) : "") +
+      bar +
       '<div class="map-photo' + (dim ? " is-night" : "") + '" style="background-image:' + (image ? "url('" + esc(image) + "')" : "none") + '"></div>' +
       '<svg class="map-ink" viewBox="0 0 100 100" preserveAspectRatio="none">' + strokes + "</svg>" +
       locations + markers + labels + "</div>";
@@ -127,6 +481,15 @@
     return '<svg viewBox="0 0 24 24" aria-hidden="true">' + body + "</svg>";
   }
 
+  const ACT = {
+    del: icon('<path d="M6 7h12M9 7V5h6v2M8 7l1 13h6l1-13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'),
+    copy: icon('<rect x="8" y="8" width="10" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 16V6h10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>'),
+    move: icon('<path d="M12 4v16M4 12h16M12 4l-2.4 2.4M12 4l2.4 2.4M12 20l-2.4-2.4M12 20l2.4-2.4M4 12l2.4-2.4M4 12l2.4 2.4M20 12l-2.4-2.4M20 12l-2.4 2.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>'),
+    rename: icon('<path d="M4 20l4-1 11-11-3-3L5 16z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>'),
+    book: icon('<path d="M5 5.5h5.5A2.5 2.5 0 0113 8v11H8a3 3 0 00-3 3zM19 5.5h-5.5A2.5 2.5 0 0011 8v11h5a3 3 0 013 3z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>'),
+    setup: icon('<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 3.5v2M12 18.5v2M3.5 12h2M18.5 12h2M5.8 5.8l1.4 1.4M16.8 16.8l1.4 1.4M18.2 5.8l-1.4 1.4M7.2 16.8l-1.4 1.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>')
+  };
+
   const TOOLS = [
     ["choose", "Выбор", icon('<path d="M5 3l6 16 2-6 6-2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>')],
     ["loc", "Локация", icon('<path d="M12 21s6-5.2 6-10a6 6 0 1 0-12 0c0 4.8 6 10 6 10z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="11" r="1.6" fill="currentColor"/>')],
@@ -146,6 +509,7 @@
     const page = ctx.page;
     let tool = "choose";
     let selected = null;
+    let skipClick = 0;
     let shownForm = "";
     let pendingParent = "";
     let drag = null;
@@ -157,26 +521,35 @@
     let past = [];
     let future = [];
     let timer = 0;
+    let binOpen = false;
+    let setupEl = null;
 
-    host.innerHTML = '<aside class="side">' +
-      '<label>Вид<select id="map-view"></select></label>' +
-      '<label>Название вида<input id="map-view-name" type="text"></label>' +
-      '<div class="row"><button type="button" id="map-view-add">Новый вид</button><button type="button" id="map-view-del">Удалить вид</button></div>' +
-      '<div class="row"><button type="button" id="map-day">День</button><button type="button" id="map-night">Ночь</button></div>' +
-      '<label>Карта дня<select id="map-day-img"></select></label>' +
-      '<label>Карта ночи<select id="map-night-img"></select></label>' +
+    host.innerHTML = '<aside class="side map-side">' +
+      '<div class="map-viewbar">' +
+      '<select id="map-view" aria-label="Вид" title="Какой вид карты открыт"></select>' +
+      '<button type="button" id="map-view-add" title="Новый вид карты" aria-label="Новый вид">' + icon('<path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "</button>" +
+      '<button type="button" id="map-view-del" title="Удалить текущий вид" aria-label="Удалить вид">' + icon('<path d="M6 7h12M9 7V5h6v2M8 7l1 13h6l1-13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>') + "</button>" +
+      '<button type="button" id="map-setup" title="Имя, день и ночь, фоны этого места" aria-label="Настройки карты">' + ACT.setup + "</button></div>" +
       '<div class="map-tools" id="map-tools"></div>' +
-      '<div class="row"><button type="button" id="map-undo">Отмена</button><button type="button" id="map-redo">Повтор</button></div>' +
-      '<label>Цвет линии<input id="map-ink" type="color" value="#e6c36a"></label>' +
-      '<label>Толщина<input id="map-width" type="range" min="1" max="16" value="3"></label>' +
-      '<label>Пинг<select id="map-ping"><option value="rings">Круги</option><option value="flash">Вспышка</option><option value="lights">Огоньки</option></select></label>' +
-      '<label>Текст надписи<input id="map-label" type="text" placeholder="Надпись"></label>' +
-      '<label>Шрифт<select id="map-font"></select></label>' +
-      '<div class="row"><button type="button" id="map-bold">Ж</button><button type="button" id="map-italic">К</button><button type="button" id="map-under">Ч</button></div>' +
-      '<label>Размер надписи<input id="map-label-size" type="range" min="14" max="96" value="28"></label>' +
-      '<p class="note" id="map-hint">Скрытые точки видите только вы.</p>' +
+      '<div class="map-draw">' +
+      '<button type="button" id="map-undo" title="Отменить последний штрих" aria-label="Отмена">' + icon('<path d="M8 8H5v3M5.5 10A7 7 0 1 1 6 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>') + "</button>" +
+      '<button type="button" id="map-redo" title="Вернуть отменённый штрих" aria-label="Повтор">' + icon('<path d="M16 8h3v3M18.5 10A7 7 0 1 0 18 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>') + "</button>" +
+      '<input id="map-ink" type="color" value="#e6c36a" aria-label="Цвет линии" title="Цвет кисти и фигур">' +
+      '<input id="map-width" type="range" min="1" max="16" value="3" aria-label="Толщина" title="Толщина линии">' +
+      '<button type="button" id="map-day" title="Дневной вид этого места" aria-label="День">' + icon('<circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 3.5v2M12 18.5v2M3.5 12h2M18.5 12h2M6 6l1.4 1.4M16.6 16.6L18 18M18 6l-1.4 1.4M7.4 16.6L6 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "</button>" +
+      '<button type="button" id="map-night" title="Ночной вид этого места" aria-label="Ночь">' + icon('<path d="M16 14.5A6.5 6.5 0 0 1 9.2 6 6.5 6.5 0 1 0 16 14.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>') + "</button></div>" +
+      '<div id="map-label-box" hidden>' +
+      '<label title="Текст, который встанет на карту">Текст<input id="map-label" type="text" placeholder="Надпись"></label>' +
+      '<label title="Шрифт новой надписи">Шрифт<select id="map-font"></select></label>' +
+      '<div class="row"><button type="button" id="map-bold" title="Жирный">Ж</button><button type="button" id="map-italic" title="Курсив">К</button><button type="button" id="map-under" title="Подчёркнутый">Ч</button></div>' +
+      '<label title="Размер новой надписи">Размер<input id="map-label-size" type="range" min="14" max="96" value="28"></label></div>' +
+      '<div id="map-ping-box" hidden><label title="Как выглядит вспышка пинга">Пинг<select id="map-ping"><option value="rings">Круги</option><option value="flash">Вспышка</option><option value="lights">Огоньки</option></select></label></div>' +
+      '<div class="map-tree-head"><span>Локации</span>' +
+      '<button type="button" id="map-loc-add" title="Новая локация на текущей карте" aria-label="Добавить локацию">' + icon('<path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "</button>" +
+      '<button type="button" id="map-bin" title="Локации с данными, которые вы убрали" aria-label="Корзина">' + icon('<path d="M5 8h14M9 8V6h6v2M8 8l1 12h6l1-12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>') + '<b id="map-bin-n"></b></button></div>' +
       '<div id="map-tree"></div>' +
-      '<div id="map-selected"></div>' +
+      '<div id="map-bin-list" hidden></div>' +
+      '<p class="note" id="map-hint">Левый клик открывает локацию или разговор, правый — правку. Скрытые точки видите только вы.</p>' +
       '<p class="error" id="map-err"></p></aside>' +
       '<div class="stage-wrap" id="map-board"></div>';
 
@@ -203,19 +576,62 @@
       if (!selected) return null;
       const current = view();
       const list = selected.kind === "label" ? current.labels : (selected.kind === "loc" ? current.locations : current.markers);
-      return list.find(function (item) { return item.id === selected.id; }) || null;
+        return list.find(function (item) { return item.id === selected.id; }) || null;
+    }
+    function enter(id) {
+      const current = view();
+      if (id) {
+        const loc = current.locations.find(function (item) { return item.id === id; });
+        if (!loc || loc.trashed) return;
+      }
+      current.focusId = id || "";
+      current.talkId = "";
+      skipClick = Date.now() + 400;
+      selected = null;
+      closeMenu();
+      closeSetup();
+      paintBoard();
+      paintTools();
+      paintTree();
+      paintSelected();
+      ctx.save();
     }
     function paintBoard() {
       const current = view();
+      if (current.talkId) {
+        const marker = (current.markers || []).find(function (item) { return item.id === current.talkId && item.kind === "npc"; });
+        if (marker) {
+          board.innerHTML = html({ talk: talkView(marker) }, true);
+          if (window.ShirmoFit) window.ShirmoFit(board);
+          bindTalk(marker);
+          return;
+        }
+        current.talkId = "";
+      }
+      const here = current.focusId || "";
+      const shot = levelImage(current);
       const draft = draw ? [draw] : [];
+      const inside = here ? (current.locations || []).find(function (item) { return item.id === here && !item.trashed; }) : null;
       board.innerHTML = html({
-        day: current.day,
-        night: current.night,
-        mode: current.mode,
-        locations: current.locations,
-        markers: current.markers,
-        labels: current.labels,
-        strokes: current.strokes.concat(draft)
+        day: shot.image,
+        night: "",
+        mode: shot.dim ? "night" : "day",
+        flags: inside ? { screen: shownScreen(inside), map: shownMap(inside) } : null,
+        tabs: tabList(current),
+        locations: onLevel(current.locations, here, "parentId").filter(function (item) { return !item.trashed; }),
+        markers: onLevel(current.markers, here, "locId").map(function (item) {
+          const face = faceOf(item);
+          if (!face) return item;
+          return Object.assign({}, item, {
+            portrait: face.url,
+            portraitX: face.x,
+            portraitY: face.y,
+            portraitZoom: face.zoom,
+            emoji: face.emoji || ""
+          });
+        }),
+        labels: onLevel(current.labels, here, "locId"),
+        strokes: onLevel(current.strokes, here, "locId").concat(draft)
       }, true);
       if (window.ShirmoFit) window.ShirmoFit(board);
       const stage = board.querySelector(".stage");
@@ -227,38 +643,231 @@
       }).join("");
       const stage = board.querySelector(".stage");
       if (stage) stage.classList.toggle("is-erase", tool === "erase");
-      host.querySelector("#map-day").classList.toggle("is-on", view().mode !== "night");
-      host.querySelector("#map-night").classList.toggle("is-on", view().mode === "night");
+      const sheet = levelSheet();
+      host.querySelector("#map-day").classList.toggle("is-on", sheet.mode !== "night");
+      host.querySelector("#map-night").classList.toggle("is-on", sheet.mode === "night");
+      host.querySelector("#map-label-box").hidden = tool !== "label";
+      host.querySelector("#map-ping-box").hidden = tool !== "ping";
       host.querySelector("#map-bold").classList.toggle("is-on", styleBold);
       host.querySelector("#map-italic").classList.toggle("is-on", styleItalic);
       host.querySelector("#map-under").classList.toggle("is-on", styleUnderline);
     }
     function treeHtml(parentId, depth) {
-      return view().locations.filter(function (item) { return (item.parentId || "") === parentId; }).map(function (item) {
-        const on = selected && selected.kind === "loc" && selected.id === item.id ? " is-on" : "";
-        return '<div class="map-node" style="margin-left:' + (depth * 12) + 'px"><button type="button" data-loc="' + esc(item.id) + '" class="' + on + '">' + esc(item.name || "Локация") + (item.hidden ? " · скрыта" : "") + "</button></div>" + treeHtml(item.id, depth + 1);
+      return view().locations.filter(function (item) { return (item.parentId || "") === parentId && !item.trashed; }).map(function (item) {
+        const on = (view().focusId || "") === item.id ? " is-on" : "";
+        const ico = function (act, label, body) {
+          return '<button type="button" class="map-ico" data-act="' + act + '" data-id="' + esc(item.id) + '" title="' + label + '" aria-label="' + label + '">' + body + "</button>";
+        };
+        return '<div class="map-node" style="padding-left:' + (depth * 14) + 'px"><button type="button" class="map-loc' + on + '" data-loc="' + esc(item.id) + '" title="Открыть эту локацию">' + esc(item.name || "Локация") + "</button>" +
+          ico("setup", "Имя, подсказка, день и ночь, фоны", ACT.setup) +
+          ico("add", "Добавить локацию внутри этой", icon('<path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>')) +
+          ico("del", "Убрать. Если есть данные — в корзину", icon('<path d="M7 7l10 10M17 7L7 17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>')) +
+          "</div>" + treeHtml(item.id, depth + 1);
       }).join("");
     }
     function paintTree() {
       const htmlTree = treeHtml("", 0);
       host.querySelector("#map-tree").innerHTML = htmlTree || '<p class="roll-empty">Локаций нет</p>';
+      paintBin();
     }
-    function paintLists() {
+    function levelSheet() {
       const current = view();
+      const id = current.focusId || "";
+      if (!id) return current;
+      return current.locations.find(function (item) { return item.id === id; }) || current;
+    }
+    function findLoc(id) {
+      return view().locations.find(function (item) { return item.id === id; }) || null;
+    }
+    function subtree(id) {
+      const ids = {};
+      function walk(locId) {
+        ids[locId] = true;
+        view().locations.forEach(function (loc) {
+          if ((loc.parentId || "") === locId) walk(loc.id);
+        });
+      }
+      walk(id);
+      return ids;
+    }
+    function hasStuff(id) {
+      const current = view();
+      const ids = subtree(id);
+      if (Object.keys(ids).length > 1) return true;
+      const loc = findLoc(id);
+      if (loc && (loc.day || loc.night || String(loc.tip || "").trim())) return true;
+      return ["markers", "labels", "strokes"].some(function (key) {
+        return (current[key] || []).some(function (row) { return row && ids[row.locId]; });
+      });
+    }
+    function leaveFocus(ids, parentId) {
+      const current = view();
+      if (!ids[current.focusId]) return;
+      current.focusId = ids[parentId] ? "" : (parentId || "");
+    }
+    function purge(id) {
+      const current = view();
+      const loc = findLoc(id);
+      const ids = subtree(id);
+      leaveFocus(ids, loc ? loc.parentId || "" : "");
+      ["markers", "labels", "strokes"].forEach(function (key) {
+        current[key] = (current[key] || []).filter(function (row) { return !(row && ids[row.locId]); });
+      });
+      current.locations = current.locations.filter(function (item) { return !ids[item.id]; });
+      if (selected && ids[selected.id]) selected = null;
+    }
+    function dropLocation(id) {
+      const loc = findLoc(id);
+      if (!loc || loc.trashed) return;
+      const ids = subtree(id);
+      if (hasStuff(id)) loc.trashed = true;
+      else {
+        forgetPlace(loc);
+        view().locations = view().locations.filter(function (item) { return item.id !== id; });
+      }
+      leaveFocus(ids, loc.parentId || "");
+      if (selected && selected.kind === "loc" && ids[selected.id]) selected = null;
+      closeMenu();
+      closeSetup();
+      paintBoard();
+      paintTree();
+      ctx.save();
+    }
+    function addLocation(parentId) {
+      const current = view();
+      const parent = parentId || "";
+      const siblings = current.locations.filter(function (item) {
+        return (item.parentId || "") === parent && !item.trashed;
+      });
+      const n = siblings.length;
+      const id = crypto.randomUUID();
+      current.locations.push({
+        id: id,
+        parentId: parent,
+        name: "Локация",
+        x: Math.min(0.88, 0.16 + (n % 6) * 0.12),
+        y: Math.min(0.82, 0.2 + Math.floor(n / 6) * 0.14),
+        tip: "",
+        hidden: true,
+        day: "",
+        night: "",
+        mode: "day",
+        trashed: false
+      });
+      ensurePlace(current.locations[current.locations.length - 1]);
+      paintBoard();
+      paintTree();
+      ctx.save();
+      openSetup(id);
+    }
+    function paintBin() {
+      const box = host.querySelector("#map-bin-list");
+      const rows = view().locations.filter(function (item) { return item.trashed; });
+      const badge = host.querySelector("#map-bin-n");
+      badge.textContent = rows.length ? String(rows.length) : "";
+      host.querySelector("#map-bin").classList.toggle("is-on", binOpen);
+      if (!binOpen) {
+        box.hidden = true;
+        box.innerHTML = "";
+        return;
+      }
+      box.hidden = false;
+      box.innerHTML = rows.length ? rows.map(function (item) {
+        return '<div class="map-bin-row"><span>' + esc(item.name || "Локация") + "</span>" +
+          '<button type="button" data-bin="back" data-id="' + esc(item.id) + '" title="Вернуть локацию на карту">Вернуть</button>' +
+          '<button type="button" class="map-ico" data-bin="gone" data-id="' + esc(item.id) + '" title="Удалить навсегда" aria-label="Удалить навсегда">' + icon('<path d="M7 7l10 10M17 7L7 17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "</button></div>";
+      }).join("") : '<p class="roll-empty">Корзина пуста</p>';
+    }
+    function closeSetup() {
+      if (setupEl) setupEl.remove();
+      setupEl = null;
+    }
+    function openSetup(id) {
+      closeSetup();
+      closeMenu();
+      const current = view();
+      const loc = id ? findLoc(id) : null;
+      if (id && !loc) return;
+      const sheet = loc || current;
       const images = ctx.library().images || [];
       function options(selectedUrl) {
         return '<option value="">Нет</option>' + images.map(function (item) {
           return '<option value="' + esc(item.url) + '"' + (item.url === selectedUrl ? " selected" : "") + ">" + esc(item.name) + "</option>";
         }).join("");
       }
+      const pop = document.createElement("div");
+      pop.className = "pop";
+      pop.innerHTML = '<div class="pop-card map-setup" role="dialog" aria-label="Настройки">' +
+        '<div class="pop-head"><h2>' + esc(loc ? (loc.name || "Локация") : "Карта") + '</h2><button type="button" data-pop-close title="Закрыть" aria-label="Закрыть">×</button></div>' +
+        '<details class="drop" open><summary title="Имя, подсказка и видимость">Основное</summary>' +
+        '<label title="Имя на вкладке и в дереве">Название<input id="setup-name" type="text" value="' + esc(sheet.name || "") + '"></label>' +
+        (loc ? '<label title="Текст при наведении на точку локации">Подсказка<textarea id="setup-tip">' + esc(loc.tip || "") + "</textarea></label>" +
+          '<label class="check" title="Игроки не видят эту локацию"><input id="setup-hide" type="checkbox"' + (loc.hidden ? " checked" : "") + "> Скрыть от игроков</label>" : "") +
+        "</details>" +
+        '<details class="drop"><summary title="День, ночь и картинки фона">Вид</summary>' +
+        '<div class="row"><button type="button" id="setup-day" class="' + (sheet.mode !== "night" ? "is-on" : "") + '" title="Показать дневной фон">День</button><button type="button" id="setup-night" class="' + (sheet.mode === "night" ? "is-on" : "") + '" title="Показать ночной фон">Ночь</button></div>' +
+        '<label title="Картинка, когда у места день">Фон дня<select id="setup-day-img">' + options(sheet.day || "") + "</select></label>" +
+        '<label title="Картинка, когда у места ночь">Фон ночи<select id="setup-night-img">' + options(sheet.night || "") + "</select></label></details></div>";
+      document.body.appendChild(pop);
+      setupEl = pop;
+      function setMode(mode) {
+        sheet.mode = mode;
+        pop.querySelector("#setup-day").classList.toggle("is-on", mode !== "night");
+        pop.querySelector("#setup-night").classList.toggle("is-on", mode === "night");
+        paintTools();
+        paintBoard();
+        dirty();
+      }
+      pop.addEventListener("click", function (event) {
+        if (event.target === pop) closeSetup();
+      });
+      pop.querySelector("[data-pop-close]").addEventListener("click", closeSetup);
+      pop.querySelector("#setup-name").addEventListener("input", function (event) {
+        sheet.name = event.target.value;
+        if (loc && loc.placeId) {
+          const place = book().places.find(function (row) { return row.id === loc.placeId; });
+          if (place) place.name = sheet.name || "Локация";
+        }
+        pop.querySelector("h2").textContent = event.target.value || (loc ? "Локация" : "Карта");
+        paintBoard();
+        paintTree();
+        if (!loc) paintLists();
+        dirty();
+      });
+      const tip = pop.querySelector("#setup-tip");
+      if (tip) tip.addEventListener("input", function (event) {
+        loc.tip = event.target.value;
+        paintBoard();
+        dirty();
+      });
+      const hide = pop.querySelector("#setup-hide");
+      if (hide) hide.addEventListener("change", function () {
+        if (loc.screen == null) loc.screen = !loc.hidden;
+        loc.hidden = hide.checked;
+        paintBoard();
+        paintTree();
+        dirty();
+      });
+      pop.querySelector("#setup-day").addEventListener("click", function () { setMode("day"); });
+      pop.querySelector("#setup-night").addEventListener("click", function () { setMode("night"); });
+      pop.querySelector("#setup-day-img").addEventListener("change", function (event) {
+        sheet.day = event.target.value;
+        paintBoard();
+        dirty();
+      });
+      pop.querySelector("#setup-night-img").addEventListener("change", function (event) {
+        sheet.night = event.target.value;
+        paintBoard();
+        dirty();
+      });
+    }
+    function paintLists() {
+      const current = view();
       const views = host.querySelector("#map-view");
       views.innerHTML = page.views.map(function (item) {
         return '<option value="' + esc(item.id) + '">' + esc(item.name || "Вид") + "</option>";
       }).join("");
       views.value = current.id;
-      host.querySelector("#map-view-name").value = current.name || "";
-      host.querySelector("#map-day-img").innerHTML = options(current.day);
-      host.querySelector("#map-night-img").innerHTML = options(current.night);
       const fonts = ctx.fonts();
       host.querySelector("#map-font").innerHTML = fonts.map(function (item) {
         return '<option value="' + esc(item.font) + '">' + esc(item.name) + "</option>";
@@ -266,54 +875,14 @@
       paintTools();
       paintTree();
     }
-    function paintSelected() {
-      const key = selected ? selected.kind + ":" + selected.id : "";
-      if (key === shownForm) return;
-      shownForm = key;
-      const box = host.querySelector("#map-selected");
-      const item = findItem();
-      if (!item) {
-        box.innerHTML = "";
-        return;
-      }
-      const child = selected.kind === "loc" ? '<button type="button" id="sel-child">Подлокация</button>' : "";
-      box.innerHTML = (selected.kind === "label" ? "" : '<label>Подсказка<textarea id="sel-tip">' + esc(item.tip || "") + "</textarea></label>" +
-        '<label class="check"><input id="sel-hide" type="checkbox"' + (item.hidden ? " checked" : "") + "> Скрыть от игроков</label>") +
-        '<div class="row">' + child + '<button type="button" id="sel-del">Удалить</button></div>';
-      const tip = box.querySelector("#sel-tip");
-      if (tip) tip.addEventListener("input", function (event) {
-        item.tip = event.target.value;
-        paintBoard();
-        dirty();
-      });
-      const hide = box.querySelector("#sel-hide");
-      if (hide) hide.addEventListener("change", function () {
-        item.hidden = hide.checked;
-        paintBoard();
-        paintTree();
-        dirty();
-      });
-      const childBtn = box.querySelector("#sel-child");
-      if (childBtn) childBtn.addEventListener("click", function () {
-        pendingParent = item.id;
-        tool = "loc";
-        host.querySelector("#map-hint").textContent = "Следующий клик поставит подлокацию.";
-        paintTools();
-      });
-      box.querySelector("#sel-del").addEventListener("click", function () { removeItem(); });
-    }
+    function paintSelected() {}
     function removeItem() {
       const item = findItem();
       if (!item) return;
       const current = view();
       if (selected.kind === "loc") {
-        const drop = {};
-        function mark(id) {
-          drop[id] = true;
-          current.locations.forEach(function (loc) { if (loc.parentId === id) mark(loc.id); });
-        }
-        mark(item.id);
-        current.locations = current.locations.filter(function (loc) { return !drop[loc.id]; });
+        dropLocation(item.id);
+        return;
       } else if (selected.kind === "label") {
         current.labels = current.labels.filter(function (label) { return label.id !== item.id; });
       } else {
@@ -336,7 +905,12 @@
       copy.x = Math.min(1, (Number(item.x) || 0) + 0.03);
       copy.y = Math.min(1, (Number(item.y) || 0) + 0.03);
       const current = view();
-      if (selected.kind === "loc") current.locations.push(copy);
+      if (selected.kind === "loc") {
+        copy.trashed = false;
+        copy.placeId = "";
+        current.locations.push(copy);
+        ensurePlace(copy);
+      }
       else current.markers.push(copy);
       selected = { kind: selected.kind, id: copy.id };
       shownForm = "";
@@ -352,6 +926,761 @@
       campaign.codex.places = campaign.codex.places || [];
       campaign.codex.npcs = campaign.codex.npcs || [];
       return campaign.codex;
+    }
+    function ensurePlace(loc) {
+      if (!loc || loc.trashed) return false;
+      const places = book().places;
+      if (loc.placeId && places.some(function (row) { return row.id === loc.placeId; })) return false;
+      const id = crypto.randomUUID();
+      places.push({ id: id, name: loc.name || "Локация", people: [] });
+      loc.placeId = id;
+      return true;
+    }
+    function forgetPlace(loc) {
+      if (!loc || !loc.placeId) return;
+      const places = book().places;
+      const row = places.find(function (item) { return item.id === loc.placeId; });
+      if (row && row.people && row.people.length) return;
+      book().places = places.filter(function (item) { return item.id !== loc.placeId; });
+    }
+    function syncPlaces() {
+      let changed = false;
+      (view().locations || []).forEach(function (loc) {
+        if (ensurePlace(loc)) changed = true;
+      });
+      if (changed) ctx.save();
+    }
+    function dialogueMood(who, row) {
+      if (!who || !window.ShirmoNpc) return;
+      window.ShirmoNpc.apply(who);
+      if (who.moodHold) return;
+      const next = row && row.phase !== "" && row.phase != null ? (Number(row.phase) || 0) : 0;
+      who.mood = next;
+      window.ShirmoNpc.apply(who);
+    }
+    const shopFold = {};
+    function talkView(marker) {
+      const npc = linkedNpc(marker);
+      const who = npc || marker;
+      const lines = window.ShirmoNpc.replicas(who);
+      const index = lines.length ? Math.min(lines.length - 1, Math.max(0, Number(marker.talkLine) || 0)) : -1;
+      const chosen = index >= 0 ? lines[index] : null;
+      dialogueMood(who, chosen);
+      const fallback = !lines.length ? String((npc && npc.note) || (marker && marker.tip) || "").trim() : "";
+      const shot = levelImage(view());
+      const shop = !!marker.shopOpen;
+      const goods = shop ? saleGoods(npc || marker).map(function (item) {
+        return Object.assign({}, item, {
+          priceText: window.ShirmoCoins.text(item, ctx.campaign),
+          open: !!shopFold[item.id]
+        });
+      }) : null;
+      return {
+        name: marker.name || (npc && npc.name) || "НПС",
+        line: chosen ? (chosen.text || "...") : (fallback || "..."),
+        index: index,
+        reps: lines.map(function (row) {
+          return { label: window.ShirmoNpc.label(row), text: row.text || "", ink: row.ink || "", font: row.font || "", plate: row.plate || "" };
+        }),
+        phases: (who.moods || []).map(function (mood, index) {
+          return { emoji: mood.emoji || "", on: index === (Number(who.mood) || 0) };
+        }),
+        emoji: who.emoji || "",
+        hold: !!who.moodHold,
+        portrait: npc && npc.portrait ? npc.portrait : "",
+        figure: figureOf(npc || marker, shop),
+        campaign: ctx.campaign,
+        shop: shop,
+        goods: goods,
+        backdrop: (npc && npc.backdrop) || shot.image || ""
+      };
+    }
+    function openTalk(id) {
+      const marker = (view().markers || []).find(function (item) { return item.id === id && item.kind === "npc"; });
+      if (!marker) return;
+      view().talkId = id;
+      skipClick = Date.now() + 400;
+      closeMenu();
+      paintBoard();
+      ctx.save();
+    }
+    function leaveTalk() {
+      closeTalkPop();
+      if (ctx.hideGoods) ctx.hideGoods();
+      const marker = (view().markers || []).find(function (item) { return item.id === view().talkId; });
+      if (marker) marker.shopOpen = false;
+      view().talkId = "";
+      paintBoard();
+      ctx.save();
+    }
+    function bindTalk(marker) {
+      const stage = board.querySelector(".talk-stage");
+      const back = board.querySelector("[data-talk=back]");
+      const figure = board.querySelector(".talk-figure");
+      const record = linkedNpc(marker) || marker;
+      let suppress = false;
+      if (stage) stage.addEventListener("click", function (event) {
+        if (suppress) { suppress = false; return; }
+        if (event.target.closest(".talk-box, .talk-figure, .talk-shop, .talk-top")) return;
+        leaveTalk();
+      });
+      if (back) back.addEventListener("click", function (event) {
+        event.stopPropagation();
+        leaveTalk();
+      });
+      const talkBtn = board.querySelector("[data-talk=talk]");
+      const tradeBtn = board.querySelector("[data-talk=trade]");
+      if (talkBtn) talkBtn.addEventListener("click", function (event) {
+        event.stopPropagation();
+        if (!marker.shopOpen) return;
+        marker.shopOpen = false;
+        paintBoard();
+        ctx.save();
+      });
+      if (tradeBtn) tradeBtn.addEventListener("click", function (event) {
+        event.stopPropagation();
+        if (marker.shopOpen) return;
+        marker.shopOpen = true;
+        paintBoard();
+        ctx.save();
+      });
+      const moodOpen = board.querySelector("[data-talk=mood]");
+      const moodList = board.querySelector(".talk-mood-list");
+      if (moodOpen && moodList) moodOpen.addEventListener("click", function (event) {
+        event.stopPropagation();
+        moodList.hidden = !moodList.hidden;
+      });
+      board.querySelectorAll("[data-talk=line]").forEach(function (button) {
+        button.addEventListener("click", function () {
+          marker.talkLine = Number(button.getAttribute("data-i")) || 0;
+          paintBoard();
+          ctx.save();
+        });
+      });
+      const autoBtn = board.querySelector("[data-talk=mood-auto]");
+      if (autoBtn) autoBtn.addEventListener("click", function (event) {
+        event.stopPropagation();
+        const who = linkedNpc(marker) || marker;
+        who.moodHold = false;
+        paintBoard();
+        ctx.save();
+      });
+      board.querySelectorAll("[data-talk=phase]").forEach(function (button) {
+        button.addEventListener("click", function (event) {
+          event.stopPropagation();
+          const who = linkedNpc(marker) || marker;
+          who.moodHold = true;
+          who.mood = Number(button.getAttribute("data-i")) || 0;
+          window.ShirmoNpc.apply(who);
+          paintBoard();
+          ctx.save();
+        });
+      });
+      const wareBtn = board.querySelector("[data-talk=ware]");
+      if (wareBtn) wareBtn.addEventListener("click", function () { openWare(linkedNpc(marker) || marker); });
+      const linesBtn = board.querySelector("[data-talk=lines]");
+      if (linesBtn) linesBtn.addEventListener("click", function () { openLines(linkedNpc(marker) || marker); });
+      const showGoods = board.querySelector("[data-talk=show-goods]");
+      if (showGoods) showGoods.addEventListener("click", function (event) {
+        event.stopPropagation();
+        const rows = saleGoods(linkedNpc(marker) || marker).filter(function (item) { return !item.hidden && !item.off; }).map(function (item) {
+          return { name: item.name, price: window.ShirmoCoins.text(item, ctx.campaign), icon: item.icon || "" };
+        });
+        if (ctx.showGoods) ctx.showGoods(rows);
+      });
+      function stockOf(node) {
+        return findStock(linkedNpc(marker) || marker, node.getAttribute("data-id") || node.getAttribute("data-good"));
+      }
+      board.querySelectorAll("[data-shop]").forEach(function (input) {
+        input.addEventListener("pointerdown", function (event) { event.stopPropagation(); });
+        input.addEventListener("click", function (event) { event.stopPropagation(); });
+        input.addEventListener("input", function () {
+          const item = stockOf(input);
+          if (!item) return;
+          const key = input.getAttribute("data-shop");
+          if (key === "price" || key === "coin") window.ShirmoCoins.take(item, input);
+          else if (key === "qty") {
+            item.qty = input.value === "" ? "" : Math.max(0, Math.round(Number(input.value) || 0));
+            const row = input.closest("li");
+            if (row) row.classList.toggle("is-gone", stockHidden(item));
+          } else item[key] = input.value;
+          dirty();
+        });
+      });
+      board.querySelectorAll("[data-shop-hide]").forEach(function (input) {
+        input.addEventListener("pointerdown", function (event) { event.stopPropagation(); });
+        input.addEventListener("click", function (event) { event.stopPropagation(); });
+        input.addEventListener("change", function () {
+          const item = stockOf(input);
+          if (!item) return;
+          item.hideEmpty = input.checked;
+          const row = input.closest("li");
+          if (row) row.classList.toggle("is-gone", stockHidden(item));
+          dirty();
+        });
+      });
+      board.querySelectorAll("[data-shop-edit]").forEach(function (button) {
+        button.addEventListener("click", function (event) {
+          event.stopPropagation();
+          const item = stockOf(button);
+          if (item) editGood(item);
+        });
+      });
+      board.querySelectorAll("[data-shop-fold]").forEach(function (button) {
+        button.addEventListener("click", function (event) {
+          event.stopPropagation();
+          const id = button.getAttribute("data-id");
+          if (!id) return;
+          shopFold[id] = !shopFold[id];
+          paintBoard();
+        });
+      });
+      board.querySelectorAll("[data-shop-eye]").forEach(function (button) {
+        button.addEventListener("click", function (event) {
+          event.stopPropagation();
+          const item = stockOf(button);
+          if (!item) return;
+          item.off = !item.off;
+          paintBoard();
+          dirty();
+        });
+      });
+      const shop = board.querySelector(".talk-shop");
+      if (shop) shop.addEventListener("click", function (event) {
+        if (event.target.closest("input, button, select, label, a")) return;
+        const row = event.target.closest("li[data-good]");
+        if (!row) return;
+        const item = stockOf(row);
+        if (item) openGoodCard(item);
+      });
+      if (!figure) return;
+      function live(fig) {
+        const next = putFigure(record, !!marker.shopOpen, fig) || figureOf(record, !!marker.shopOpen);
+        figure.style.left = next.x + "%";
+        figure.style.bottom = next.y + "%";
+        figure.style.height = next.h + "%";
+        dirty();
+      }
+      function track(node) {
+        if (!node) return;
+        node.addEventListener("pointerdown", function (event) {
+          if (event.button !== 0) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const rect = stage.getBoundingClientRect();
+          const start = figureOf(record, !!marker.shopOpen);
+          const pan = { x: event.clientX, y: event.clientY, moved: false };
+          const oldPop = document.getElementById("talk-size-pop");
+          if (oldPop) oldPop.remove();
+          try { node.setPointerCapture(event.pointerId); } catch (error) { /* synthetic */ }
+          function move(ev) {
+            const dx = (ev.clientX - pan.x) / rect.width * 100;
+            const dy = (ev.clientY - pan.y) / rect.height * 100;
+            if (Math.abs(ev.clientX - pan.x) + Math.abs(ev.clientY - pan.y) > 3) pan.moved = true;
+            live({ x: start.x + dx, y: start.y - dy, h: start.h });
+          }
+          function end() {
+            node.removeEventListener("pointermove", move);
+            node.removeEventListener("pointerup", end);
+            node.removeEventListener("pointercancel", end);
+            if (pan.moved) suppress = true;
+            ctx.save();
+          }
+          node.addEventListener("pointermove", move);
+          node.addEventListener("pointerup", end);
+          node.addEventListener("pointercancel", end);
+        });
+      }
+      track(figure);
+      let sizeTimer = 0;
+      function sizeAway(x, y) {
+        const pop = document.getElementById("talk-size-pop");
+        if (!pop) return true;
+        const box = pop.getBoundingClientRect();
+        const cx = box.left + box.width / 2;
+        const cy = box.top + box.height / 2;
+        const dx = x - cx;
+        const dy = y - cy;
+        return dx * dx + dy * dy > 160 * 160;
+      }
+      function placeSize(x, y) {
+        let pop = document.getElementById("talk-size-pop");
+        if (!pop) {
+          pop = document.createElement("div");
+          pop.id = "talk-size-pop";
+          pop.className = "talk-size-pop";
+          pop.innerHTML = '<label title="Размер изображения на сцене">Размер<input type="range" min="8" max="220" aria-label="Размер изображения"></label>';
+          document.body.appendChild(pop);
+          pop.addEventListener("pointerdown", function (ev) { ev.stopPropagation(); });
+          pop.addEventListener("pointerenter", function () { clearTimeout(sizeTimer); });
+          pop.addEventListener("pointerleave", function () {
+            sizeTimer = setTimeout(function () { if (pop.parentNode) pop.remove(); }, 400);
+          });
+          pop.querySelector("input").addEventListener("input", function (ev) {
+            const cur = figureOf(record, !!marker.shopOpen);
+            live({ x: cur.x, y: cur.y, h: Number(ev.target.value) });
+          });
+        }
+        const input = pop.querySelector("input");
+        if (document.activeElement !== input) input.value = String(figureOf(record, !!marker.shopOpen).h);
+        pop.style.left = Math.max(8, Math.min(x + 16, window.innerWidth - 210)) + "px";
+        pop.style.top = Math.max(8, Math.min(y + 14, window.innerHeight - 52)) + "px";
+      }
+      figure.addEventListener("pointermove", function (event) {
+        if (event.buttons) return;
+        if (!sizeAway(event.clientX, event.clientY)) return;
+        clearTimeout(sizeTimer);
+        placeSize(event.clientX, event.clientY);
+      });
+      figure.addEventListener("pointerleave", function (event) {
+        const pop = document.getElementById("talk-size-pop");
+        if (pop && event.relatedTarget && pop.contains(event.relatedTarget)) return;
+        sizeTimer = setTimeout(function () {
+          const node = document.getElementById("talk-size-pop");
+          if (node) node.remove();
+        }, 500);
+      });
+      figure.addEventListener("contextmenu", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        const old = document.getElementById("talk-menu");
+        if (old) old.remove();
+        const sizePop = document.getElementById("talk-size-pop");
+        if (sizePop) sizePop.remove();
+        const menu = document.createElement("div");
+        menu.id = "talk-menu";
+        menu.className = "pin-menu talk-menu";
+        menu.innerHTML = '<button type="button" data-menu="lines" title="Редактор реплик">Реплики</button>' +
+          '<button type="button" data-menu="ware" title="Товары персонажа">Товары</button>' +
+          '<button type="button" data-menu="shop" title="Переключить разговор и торговлю">' + (marker.shopOpen ? "К разговору" : "Торговля") + "</button>";
+        menu.style.left = Math.max(8, Math.min(event.clientX, window.innerWidth - 220)) + "px";
+        menu.style.top = Math.max(8, Math.min(event.clientY, window.innerHeight - 160)) + "px";
+        document.body.appendChild(menu);
+        menu.addEventListener("pointerdown", function (ev) { ev.stopPropagation(); });
+        menu.addEventListener("click", function (ev) {
+          const act = ev.target.getAttribute("data-menu");
+          if (!act) return;
+          menu.remove();
+          if (act === "lines") openLines(linkedNpc(marker) || marker);
+          else if (act === "ware") openWare(linkedNpc(marker) || marker);
+          else if (act === "shop") {
+            marker.shopOpen = !marker.shopOpen;
+            paintBoard();
+            ctx.save();
+          }
+        });
+      });
+    }
+    function plainGood(value) {
+      return String(value || "").replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, " ").replace(/\s+\n/g, "\n").trim();
+    }
+    function catalogGood(icon) {
+      if (!icon || !window.allItems) return null;
+      const file = decodeURIComponent(String(icon).split("?")[0].split("/").pop() || "");
+      if (!file) return null;
+      return window.allItems.find(function (row) { return row.en && row.en.img === file; }) || null;
+    }
+    function editGood(item, onChange) {
+      if (!item) return;
+      const old = document.getElementById("good-edit");
+      if (old) old.remove();
+      const edit = document.createElement("div");
+      edit.id = "good-edit";
+      edit.className = "pop";
+      edit._item = item;
+      const ink = item.ink || "#f3ead8";
+      function face() {
+        return item.icon ? '<img alt="" src="' + esc(item.icon) + '">' : "";
+      }
+      function libraryOptions() {
+        return ((ctx.library().images) || []).map(function (image) {
+          const section = window.ShirmoLib ? window.ShirmoLib.title(image, book().npcs) : "";
+          const label = section && section !== "Общее" ? section + " — " + (image.name || "Картинка") : (image.name || "Картинка");
+          return '<option value="' + esc(image.url) + '">' + esc(label) + "</option>";
+        }).join("");
+      }
+      edit.innerHTML = '<div class="pop-card" role="dialog" aria-label="Иконка и цвет"><div class="pop-head"><h2>Иконка и цвет</h2><button type="button" data-pop-close title="Закрыть">×</button></div>' +
+        '<div class="ware-edit"><div class="ware-edit-face">' + face() + "</div>" +
+        '<label class="ware-ink">Цвет<input data-edit-ink type="color" value="' + esc(ink) + '" aria-label="Цвет строки"></label>' +
+        '<label class="file-btn" title="Своя иконка. Попадёт в библиотеку, в раздел «Иконки товаров»">' + window.ShirmoGlyph.upload + '<input type="file" accept="image/*" data-edit-file aria-label="Загрузить иконку"></label>' +
+        '<select data-edit-lib title="Иконка из библиотеки" aria-label="Иконка из библиотеки"><option value="">Библиотека</option>' + libraryOptions() + "</select>" +
+        '<div class="ware-find"><input data-edit-find type="text" placeholder="Поиск" aria-label="Поиск предмета для иконки" title="Иконка из общего списка предметов"><div class="ware-hits" hidden></div></div>' +
+        "</div></div>";
+      document.body.appendChild(edit);
+      function shut() { if (edit.parentNode) edit.remove(); }
+      edit.addEventListener("click", function (event) { if (event.target === edit) shut(); });
+      edit.querySelector("[data-pop-close]").addEventListener("click", shut);
+      function shown() {
+        const slot = edit.querySelector(".ware-edit-face");
+        if (slot && edit.isConnected) slot.innerHTML = face();
+        if (onChange) onChange();
+        else {
+          paintBoard();
+          dirty();
+        }
+      }
+      edit.querySelector("[data-edit-ink]").addEventListener("input", function (event) {
+        item.ink = event.target.value;
+        document.querySelectorAll('.shop-item[data-good="' + item.id + '"], .ware-item[data-id="' + item.id + '"]').forEach(function (row) {
+          row.style.color = item.ink;
+        });
+        dirty();
+      });
+      edit.querySelector("[data-edit-lib]").addEventListener("change", function (event) {
+        if (!event.target.value) return;
+        item.icon = event.target.value;
+        shown();
+      });
+      edit.querySelector("[data-edit-file]").addEventListener("change", function (event) {
+        const file = event.target.files && event.target.files[0];
+        if (!file || !ctx.upload) return;
+        ctx.upload(file).then(function (url) {
+          item.icon = url;
+          if (!ctx.campaign.library) ctx.campaign.library = { fonts: [], images: [], notes: [] };
+          if (window.ShirmoLib) window.ShirmoLib.keep(ctx.campaign.library, {
+            url: url,
+            name: item.name || file.name.replace(/\.[^.]+$/, ""),
+            section: "icons",
+            sectionName: "Иконки товаров"
+          });
+          shown();
+        });
+      });
+      const find = edit.querySelector("[data-edit-find]");
+      find.addEventListener("input", function () {
+        const box = find.parentNode.querySelector(".ware-hits");
+        const q = find.value.trim().toLowerCase();
+        if (q.length < 2) { box.hidden = true; box.innerHTML = ""; return; }
+        window.ShirmoItems.ready().then(function () {
+          if (!edit.isConnected) return;
+          const hits = window.ShirmoItems.find(q).slice(0, 8);
+          box.hidden = !hits.length;
+          box.innerHTML = hits.map(function (row, index) {
+            const icon = window.ShirmoItems.icon(row);
+            return '<button type="button" data-hit="' + index + '">' + (icon ? '<img alt="" src="' + esc(icon) + '">' : "") + esc(window.ShirmoItems.title(row)) + "</button>";
+          }).join("");
+          box.querySelectorAll("[data-hit]").forEach(function (button) {
+            button.addEventListener("click", function () {
+              const row = hits[Number(button.getAttribute("data-hit"))];
+              if (!row) return;
+              const icon = window.ShirmoItems.icon(row);
+              if (icon) item.icon = icon;
+              if (!String(item.name || "").trim()) item.name = window.ShirmoItems.title(row);
+              if (!String(item.price || "").trim() && !item.coin) window.ShirmoCoins.adopt(item, window.ShirmoItems.price(row), ctx.campaign);
+              find.value = "";
+              box.hidden = true;
+              box.innerHTML = "";
+              shown();
+            });
+          });
+        });
+      });
+    }
+    function openGoodCard(item) {
+      const note = String(item.note || "").trim();
+      if (!item.icon && !note) return;
+      const old = document.getElementById("good-card");
+      if (old) old.remove();
+      const pop = document.createElement("div");
+      pop.id = "good-card";
+      pop.className = "pop";
+      const image = item.icon ? '<img class="good-zoom" alt="" src="' + esc(item.icon) + '">' : "";
+      pop.innerHTML = '<div class="pop-card good-card" role="dialog" aria-label="Товар"><div class="pop-head"><h2>' + esc(item.name || "Предмет") + '</h2><button type="button" data-pop-close title="Закрыть">×</button></div>' +
+        image +
+        (window.ShirmoCoins.text(item, ctx.campaign) ? '<p class="good-price">' + esc(window.ShirmoCoins.text(item, ctx.campaign)) + "</p>" : "") +
+        '<p class="good-note">' + esc(note) + "</p></div>";
+      document.body.appendChild(pop);
+      function close() { if (pop.parentNode) pop.remove(); }
+      pop.addEventListener("click", function (event) { if (event.target === pop) close(); });
+      pop.querySelector("[data-pop-close]").addEventListener("click", close);
+      if (note || !window.ShirmoItems) return;
+      window.ShirmoItems.ready().then(function () {
+        if (!pop.parentNode) return;
+        const row = catalogGood(item.icon);
+        const text = row && row.ru ? plainGood(row.ru.text) : "";
+        const slot = pop.querySelector(".good-note");
+        if (slot && text) slot.textContent = text;
+      });
+    }
+    function closeTalkPop() {
+      const edit = document.getElementById("good-edit");
+      if (edit) edit.remove();
+      const old = document.getElementById("talk-pop");
+      const wasWare = !!(old && old.querySelector("[data-show-goods]"));
+      if (old) old.remove();
+      if (wasWare && ctx.hideGoods) ctx.hideGoods();
+    }
+    function openLines(npc) {
+      closeTalkPop();
+      if (!npc || !window.ShirmoNpc) return;
+      const pop = document.createElement("div");
+      pop.id = "talk-pop";
+      pop.className = "pop";
+      const fonts = ctx.fonts ? ctx.fonts() : [];
+      const images = (ctx.library().images) || [];
+      pop.innerHTML = '<div class="pop-card talk-pop" role="dialog" aria-label="Реплики"><div class="pop-head"><h2>Реплики</h2><button type="button" data-pop-close title="Закрыть">×</button></div>' +
+        window.ShirmoNpc.html(npc, images, null, { fonts: fonts, linesOnly: true }) + "</div>";
+      document.body.appendChild(pop);
+      pop.addEventListener("click", function (event) { if (event.target === pop) closeTalkPop(); });
+      pop.querySelector("[data-pop-close]").addEventListener("click", closeTalkPop);
+      const sheet = pop.querySelector("[data-npc-sheet]");
+      window.ShirmoNpc.bind(sheet, npc, {
+        images: function () { return (ctx.library().images) || []; },
+        fonts: function () { return ctx.fonts ? ctx.fonts() : []; },
+        upload: ctx.upload,
+        change: function () {
+          paintBoard();
+          dirty();
+        }
+      });
+    }
+    function openWare(npc) {
+      closeTalkPop();
+      if (!npc) return;
+      const became = npc.role !== "merchant";
+      if (npc.role !== "merchant") npc.role = "merchant";
+      if (!Array.isArray(npc.goods)) npc.goods = [];
+      if (!book().wares) book().wares = [];
+      const pop = document.createElement("div");
+      pop.id = "talk-pop";
+      pop.className = "pop";
+      pop._open = {};
+      document.body.appendChild(pop);
+      function sheetsOf() {
+        return (book().wares || []).filter(function (sheet) {
+          return sheet && (sheet.npcId === npc.id || sheet.id === npc.wareId);
+        });
+      }
+      function ensureSheet(id) {
+        if (id === "__new") {
+          const sheet = { id: crypto.randomUUID(), name: npc.name || "Лист", npcId: npc.id, items: [] };
+          book().wares.push(sheet);
+          if (!npc.wareId) npc.wareId = sheet.id;
+          return sheet;
+        }
+        const sheet = (book().wares || []).find(function (row) { return row && row.id === id; });
+        if (!sheet) return null;
+        sheet.npcId = npc.id;
+        if (!Array.isArray(sheet.items)) sheet.items = [];
+        if (!npc.wareId) npc.wareId = sheet.id;
+        return sheet;
+      }
+      function bag(home) {
+        if (!home) return npc.goods;
+        const sheet = ensureSheet(home);
+        return sheet ? sheet.items : npc.goods;
+      }
+      function entries() {
+        const rows = npc.goods.map(function (item, index) { return { item: item, home: "", index: index }; });
+        sheetsOf().forEach(function (sheet) {
+          (sheet.items || []).forEach(function (item, index) {
+            rows.push({ item: item, home: sheet.id, index: index });
+          });
+        });
+        return rows;
+      }
+      function blank() {
+        return { id: crypto.randomUUID(), name: "", price: "", note: "", icon: "", qty: "", hideEmpty: false, ink: "" };
+      }
+      function putNew(home) {
+        const item = blank();
+        if (!home) npc.goods.push(item);
+        else {
+          const sheet = ensureSheet(home);
+          (sheet ? sheet.items : npc.goods).push(item);
+        }
+      }
+      function sheetOptions(home) {
+        return '<option value=""' + (home ? "" : " selected") + ">Свои</option>" + sheetsOf().map(function (sheet) {
+          return '<option value="' + esc(sheet.id) + '"' + (sheet.id === home ? " selected" : "") + ">" + esc(sheet.name || "Лист") + "</option>";
+        }).join("") + '<option value="__new">Новый лист</option>';
+      }
+      function itemOf(node) {
+        return bag(node.getAttribute("data-home"))[Number(node.getAttribute("data-i"))];
+      }
+      function openGoodEdit(item) {
+        editGood(item, function () {
+          paint();
+          paintBoard();
+          dirty();
+        });
+      }
+      function paint() {
+        const edit = document.getElementById("good-edit");
+        if (edit && edit._item && !entries().some(function (row) { return row.item === edit._item; })) edit.remove();
+        const rows = entries().map(function (entry) {
+          const item = entry.item;
+          if (!item.id) item.id = crypto.randomUUID();
+          const mark = ' data-home="' + esc(entry.home) + '" data-i="' + entry.index + '"';
+          const icon = item.icon ? '<img class="cat-thumb ware-face" alt="" src="' + esc(item.icon) + '">' : '<span class="ware-face"></span>';
+          const open = !!pop._open[item.id];
+          const eye = item.off ? window.ShirmoGlyph.hide : window.ShirmoGlyph.eye;
+          const eyeTitle = item.off ? "Показать товар игрокам" : "Скрыть товар от игроков";
+          return '<article class="ware-item' + (item.off ? " is-off" : "") + '" data-id="' + esc(item.id) + '"' + (item.ink ? ' style="color:' + esc(item.ink) + '"' : "") + ">" +
+            '<div class="ware-head">' + icon +
+            '<div class="ware-title">' +
+            '<input data-good="name"' + mark + ' type="text" value="' + esc(item.name || "") + '" placeholder="Название" aria-label="Название товара">' +
+            '<input data-good="note"' + mark + ' type="text" value="' + esc(item.note || "") + '" placeholder="Заметка" aria-label="Заметка">' +
+            "</div>" +
+            '<div class="ware-acts">' +
+            '<button type="button" class="icon-btn" data-good-edit' + mark + ' title="Редактировать товар" aria-label="Редактировать товар">' + window.ShirmoGlyph.pencil + "</button>" +
+            '<button type="button" class="icon-btn ware-fold" data-good-fold' + mark + ' aria-expanded="' + (open ? "true" : "false") + '" title="Параметры товара" aria-label="Параметры товара">' + window.ShirmoGlyph.fold + "</button>" +
+            '<button type="button" class="icon-btn' + (item.off ? " is-off" : "") + '" data-good-eye' + mark + ' title="' + eyeTitle + '" aria-label="' + eyeTitle + '">' + eye + "</button>" +
+            "</div></div>" +
+            '<div class="ware-more"' + (open ? "" : " hidden") + ">" +
+            window.ShirmoCoins.fields(item, ctx.campaign, 'data-good="price"' + mark, 'data-good="coin"' + mark) +
+            '<input data-good="qty"' + mark + ' class="num" type="number" min="0" value="' + (item.qty == null || item.qty === "" ? "" : esc(String(item.qty))) + '" placeholder="∞" title="Количество. Пустое поле — без ограничения" aria-label="Количество">' +
+            '<select data-good-sheet' + mark + ' title="Лист товаров этого персонажа" aria-label="Лист товаров">' + sheetOptions(entry.home) + "</select>" +
+            '<label class="check icon-btn" title="Скрывать у игроков, когда количество станет нулём">' + window.ShirmoGlyph.hide + '<input data-good-hide' + mark + ' type="checkbox"' + (item.hideEmpty ? " checked" : "") + ' aria-label="Скрывать при нуле"></label>' +
+            '<button type="button" data-good-del' + mark + ' title="Убрать товар" aria-label="Убрать">×</button>' +
+            "</div></article>";
+        }).join("");
+        pop.innerHTML = '<div class="pop-card talk-pop" role="dialog" aria-label="Товары"><div class="pop-head"><h2>Товары</h2><span class="pop-acts"><button type="button" class="icon-btn" data-show-goods title="Показать игрокам" aria-label="Показать игрокам">' + window.ShirmoGlyph.cast + '</button><button type="button" data-pop-close title="Закрыть">×</button></span></div>' +
+          (became ? '<p class="note">Персонаж стал торговцем.</p>' : "") +
+          '<p class="note">Новый лист попадает во вкладку «Товары». Пустое количество — без ограничения.</p>' +
+          rows +
+          '<div class="codex-row"><button type="button" data-good-add title="Пустая строка товара">Добавить товар</button>' +
+          '<select data-add-sheet aria-label="Куда добавить товар" title="Лист, в который попадёт новый товар">' + sheetOptions("") + "</select></div></div>";
+        pop.querySelector("[data-pop-close]").addEventListener("click", closeTalkPop);
+        pop.querySelector("[data-show-goods]").addEventListener("click", function () {
+          const rows = entries().map(function (entry) { return entry.item; }).filter(function (item) {
+            return item && String(item.name || "").trim() && !item.off && !stockHidden(item);
+          }).map(function (item) {
+            return { name: item.name, price: window.ShirmoCoins.text(item, ctx.campaign), icon: item.icon || "" };
+          });
+          if (ctx.showGoods) ctx.showGoods(rows);
+        });
+        pop.querySelector("[data-good-add]").addEventListener("click", function () {
+          const pick = pop.querySelector("[data-add-sheet]");
+          putNew(pick ? pick.value : "");
+          paint();
+          paintBoard();
+          dirty();
+        });
+        pop.querySelectorAll("[data-good-del]").forEach(function (button) {
+          button.addEventListener("click", function () {
+            bag(button.getAttribute("data-home")).splice(Number(button.getAttribute("data-i")), 1);
+            paint();
+            paintBoard();
+            dirty();
+          });
+        });
+        pop.querySelectorAll("[data-good-edit]").forEach(function (button) {
+          button.addEventListener("click", function () {
+            const item = itemOf(button);
+            if (item) openGoodEdit(item);
+          });
+        });
+        pop.querySelectorAll("[data-good-fold]").forEach(function (button) {
+          button.addEventListener("click", function () {
+            const item = itemOf(button);
+            if (!item) return;
+            pop._open[item.id] = !pop._open[item.id];
+            paint();
+          });
+        });
+        pop.querySelectorAll("[data-good-eye]").forEach(function (button) {
+          button.addEventListener("click", function () {
+            const item = itemOf(button);
+            if (!item) return;
+            item.off = !item.off;
+            paint();
+            paintBoard();
+            dirty();
+          });
+        });
+        pop.querySelectorAll("[data-good]").forEach(function (input) {
+          input.addEventListener("input", function () {
+            const item = itemOf(input);
+            if (!item) return;
+            const key = input.getAttribute("data-good");
+            if (key === "price" || key === "coin") window.ShirmoCoins.take(item, input);
+            else item[key] = key === "qty" ? (input.value === "" ? "" : Math.max(0, Math.round(Number(input.value) || 0))) : input.value;
+            dirty();
+          });
+        });
+        pop.querySelectorAll("[data-good-hide]").forEach(function (input) {
+          input.addEventListener("change", function () {
+            const item = bag(input.getAttribute("data-home"))[Number(input.getAttribute("data-i"))];
+            if (!item) return;
+            item.hideEmpty = input.checked;
+            dirty();
+          });
+        });
+        pop.querySelectorAll("[data-good-sheet]").forEach(function (select) {
+          select.addEventListener("change", function () {
+            const list = bag(select.getAttribute("data-home"));
+            const item = list[Number(select.getAttribute("data-i"))];
+            if (!item) return;
+            const at = list.indexOf(item);
+            if (at >= 0) list.splice(at, 1);
+            const next = select.value;
+            if (!next) npc.goods.push(item);
+            else {
+              const sheet = ensureSheet(next);
+              (sheet ? sheet.items : npc.goods).push(item);
+            }
+            paint();
+            paintBoard();
+            dirty();
+          });
+        });
+      }
+      pop.addEventListener("click", function (event) { if (event.target === pop) closeTalkPop(); });
+      paint();
+      dirty();
+    }
+    function linkedNpc(item) {
+      const row = item || findItem();
+      if (!row || row.kind !== "npc" || !row.npcId) return null;
+      return book().npcs.find(function (npc) { return npc.id === row.npcId; }) || null;
+    }
+    function stockQty(item) {
+      if (!item || item.qty == null || item.qty === "") return null;
+      const n = Number(item.qty);
+      if (!Number.isFinite(n)) return null;
+      return Math.max(0, Math.round(n));
+    }
+    function stockHidden(item) {
+      return !!(item && item.hideEmpty && stockQty(item) === 0);
+    }
+    function stockList(npc) {
+      if (!npc) return [];
+      const own = Array.isArray(npc.goods) ? npc.goods : [];
+      const listed = (book().wares || []).filter(function (sheet) {
+        return sheet && (sheet.npcId === npc.id || sheet.id === npc.wareId);
+      }).reduce(function (all, sheet) {
+        return all.concat(Array.isArray(sheet.items) ? sheet.items : []);
+      }, []);
+      return own.concat(listed).filter(function (item) { return item && String(item.name || "").trim(); });
+    }
+    function findStock(npc, id) {
+      return stockList(npc).find(function (item) { return item.id === id; }) || null;
+    }
+    function saleGoods(npc) {
+      return stockList(npc).map(function (item) {
+        if (!item.id) item.id = crypto.randomUUID();
+        return {
+          id: item.id,
+          name: item.name,
+          price: item.price || "",
+          coin: item.coin || "",
+          icon: item.icon || "",
+          note: item.note || "",
+          ink: item.ink || "",
+          qty: stockQty(item),
+          hideEmpty: !!item.hideEmpty,
+          off: !!item.off,
+          hidden: stockHidden(item)
+        };
+      });
+    }
+    function faceOf(item) {
+      const npc = linkedNpc(item);
+      if (!npc) return null;
+      const mood = window.ShirmoNpc.apply(npc);
+      if (!mood.portrait) return null;
+      return Object.assign({ url: mood.portrait, emoji: mood.emoji || "" }, focusNums(npc));
     }
     function linkedList() {
       return selected && selected.kind === "npc" ? book().npcs : book().places;
@@ -375,6 +1704,10 @@
     function closeMenu() {
       const menu = document.getElementById("pin-menu");
       if (menu) menu.remove();
+      const talkMenu = document.getElementById("talk-menu");
+      if (talkMenu) talkMenu.remove();
+      const sizePop = document.getElementById("talk-size-pop");
+      if (sizePop) sizePop.remove();
     }
     function beginRename() {
       const item = findItem();
@@ -432,10 +1765,10 @@
       menu.className = "pin-menu pin-codex";
       menu.innerHTML = '<p class="note">' + (selected.kind === "loc" ? "Локации" : "НПС") + "</p>" +
         (list.map(function (row) {
-          return '<button type="button" data-id="' + esc(row.id) + '">' + esc(row.name || "Без имени") + "</button>";
+          return '<button type="button" data-id="' + esc(row.id) + '" title="Назначить эту запись точке">' + esc(row.name || "Без имени") + "</button>";
         }).join("") || '<p class="roll-empty">В справочнике пусто</p>') +
-        '<input id="codex-new" type="text" placeholder="Новая запись">' +
-        '<button type="button" data-act="add">Добавить и назначить</button>';
+        '<input id="codex-new" type="text" placeholder="Новая запись" title="Имя новой записи в справочнике">' +
+        '<button type="button" data-act="add" title="Создать запись и назначить её точке">Добавить и назначить</button>';
       menu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 240)) + "px";
       menu.style.top = Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - 280)) + "px";
       document.body.appendChild(menu);
@@ -469,33 +1802,222 @@
         menu.querySelector("[data-act=add]").click();
       });
     }
+    function styleHtml(item, kind) {
+      const currentFont = item.font || "Georgia, serif";
+      const fonts = ctx.fonts();
+      const known = fonts.some(function (font) { return font.font === currentFont; });
+      const fontOptions = (known ? "" : '<option value="' + esc(currentFont) + '">Текущий</option>') + fonts.map(function (font) {
+        return '<option value="' + esc(font.font) + '"' + (font.font === currentFont ? " selected" : "") + ">" + esc(font.name) + "</option>";
+      }).join("");
+      const pinDefault = Number(item.pinSize) || (faceOf(item) ? 56 : 14);
+      const pin = kind === "label" ? "" : '<label title="Размер точки на карте">Размер<input id="pin-size" type="range" min="12" max="140" value="' + pinDefault + '"></label>';
+      const note = kind === "mark" || kind === "npc" || kind === "loc"
+        ? '<label title="' + (kind === "loc" ? "Заметка к локации. Игроки видят её при наведении, если точка им показана" : "Текст при наведении на точку") + '">' + (kind === "loc" ? "Заметка" : "Подсказка") + '<textarea id="pin-tip">' + esc(item.tip || "") + "</textarea></label>" +
+          '<label class="check" title="Игроки эту точку не видят"><input id="pin-hide" type="checkbox"' + (item.hidden ? " checked" : "") + "> Скрыть от игроков</label>"
+        : "";
+      const npcFace = kind === "npc" ? linkedNpc(item) : null;
+      if (npcFace) window.ShirmoNpc.apply(npcFace);
+      const face = npcFace && npcFace.portrait ? Object.assign({ url: npcFace.portrait }, focusNums(npcFace)) : null;
+      const frame = npcFace
+        ? '<div class="face-pick" id="face-pick" title="Потяните круг, чтобы выбрать, какая часть портрета видна"' + (face ? "" : " hidden") + '><img alt="" src="' + esc(face ? face.url : "") + '" style="' + (face ? faceStyle(npcFace) : "") + '"></div>' +
+          '<p class="note">Потяните круг, чтобы выбрать часть портрета.</p>' +
+          '<label title="Крупнее показывает выбранную часть портрета в рамке">Крупность<input id="face-zoom" type="range" min="100" max="300" value="' + Math.round((face ? face.zoom : 1) * 100) + '"></label>' +
+          '<details class="drop"><summary title="Сдвиг портрета внутри круглой рамки">Смещение</summary>' +
+          '<label title="Вправо сдвигает портрет вправо">Смещение по ширине<input id="face-x" type="range" min="0" max="100" value="' + Math.round(100 - (face ? face.x : 50)) + '"></label>' +
+          '<label title="Вправо сдвигает портрет вниз">Смещение по высоте<input id="face-y" type="range" min="0" max="100" value="' + Math.round(100 - (face ? face.y : 50)) + '"></label></details>'
+        : "";
+      const sheet = npcFace ? window.ShirmoNpc.html(npcFace, (ctx.library().images) || []) : "";
+      function group(title, tip, body, open) {
+        return body ? '<details class="drop"' + (open ? " open" : "") + '><summary title="' + esc(tip) + '">' + title + "</summary>" + body + "</details>" : "";
+      }
+      const text = '<label title="Размер подписи у точки">Размер текста<input id="pin-text-size" type="range" min="10" max="72" value="' + (Number(item.size) || (kind === "label" ? 28 : 14)) + '"></label>' +
+        '<label title="Шрифт подписи">Шрифт<select id="pin-font">' + fontOptions + "</select></label>" +
+        '<div class="row"><button type="button" id="pin-bold" class="' + (item.bold ? "is-on" : "") + '" title="Жирный">Ж</button><button type="button" id="pin-italic" class="' + (item.italic ? "is-on" : "") + '" title="Курсив">К</button><button type="button" id="pin-under" class="' + (item.underline ? "is-on" : "") + '" title="Подчёркнутый">Ч</button></div>' +
+        '<label title="Цвет подписи">Цвет текста<input id="pin-ink" type="color" value="' + hexColor(item.ink, "#f3ead8") + '"></label>' +
+        '<label title="Цвет контура букв">Обводка<input id="pin-stroke" type="color" value="' + hexColor(item.stroke, "#1a140c") + '"></label>' +
+        '<label title="Толщина контура букв">Толщина обводки<input id="pin-stroke-w" type="range" min="0" max="8" value="' + (Number(item.strokeWidth) || 0) + '"></label>' +
+        '<label class="check" title="Плашка под подписью"><input id="pin-plate-on" type="checkbox"' + (item.plate ? " checked" : "") + "> Фон текста</label>" +
+        '<label title="Цвет плашки под подписью">Цвет фона<input id="pin-plate" type="color" value="' + hexColor(item.plate, "#14110e") + '"></label>';
+      return '<div class="pin-style">' +
+        group("Портрет", "Кадр, крупность и сдвиг портрета", frame) +
+        sheet +
+        group("Точка", "Размер точки, заметка и видимость для игроков", pin + note, kind === "loc") +
+        group("Подпись", "Шрифт, размер и оформление подписи", text) +
+        "</div>";
+    }
     function showMenu() {
       closeMenu();
       const item = findItem();
-      if (!item || !selected || selected.kind === "label") return;
+      if (!item || !selected) return;
       const pin = board.querySelector('[data-pin="' + selected.id + '"]');
       if (!pin) return;
       const rect = pin.getBoundingClientRect();
       const menu = document.createElement("div");
       menu.id = "pin-menu";
-      menu.className = "pin-menu";
-      const fromBook = selected.kind === "loc" || selected.kind === "npc"
-        ? '<button type="button" data-act="book">Из справочника</button>' : "";
-      menu.innerHTML = '<button type="button" data-act="del">Удалить</button>' +
-        '<button type="button" data-act="copy">Копировать</button>' +
-        '<button type="button" data-act="move">Переместить</button>' +
-        '<button type="button" data-act="rename">Переименовать</button>' + fromBook;
-      menu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 168)) + "px";
-      menu.style.top = Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - 132)) + "px";
+      menu.className = "pin-menu is-style";
+      const bookBtn = selected.kind === "loc" || selected.kind === "npc";
+      function actBtn(act, label) {
+        return '<button type="button" class="pin-act" data-act="' + act + '" title="' + label + '" aria-label="' + label + '">' + ACT[act] + "</button>";
+      }
+      const actions = '<div class="pin-acts">' + (selected.kind === "label"
+        ? actBtn("del", "Удалить надпись") + actBtn("rename", "Изменить текст")
+        : actBtn("del", "Удалить точку") + actBtn("copy", "Копировать точку") + actBtn("move", "Перетащить точку") + actBtn("rename", "Изменить имя") + (selected.kind === "loc" ? actBtn("setup", "Имя, день и ночь, фоны") : "") + (bookBtn ? actBtn("book", "Назначить запись из справочника") : "")) + "</div>";
+      menu.innerHTML = styleHtml(item, selected.kind) + actions;
+      menu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 256)) + "px";
+      menu.style.top = Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - Math.min(520, window.innerHeight * 0.7) - 8)) + "px";
       document.body.appendChild(menu);
       menu.addEventListener("pointerdown", function (event) { event.stopPropagation(); });
+      function applyStyle() {
+        const row = findItem();
+        if (!row || !document.body.contains(menu)) return;
+        const pinSize = menu.querySelector("#pin-size");
+        const textSize = menu.querySelector("#pin-text-size");
+        const font = menu.querySelector("#pin-font");
+        if (pinSize) row.pinSize = Number(pinSize.value) || 14;
+        if (textSize) row.size = Number(textSize.value) || 14;
+        if (font) {
+          const found = ctx.fonts().find(function (entry) { return entry.font === font.value; });
+          row.font = font.value;
+          row.fontUrl = found ? found.url : "";
+        }
+        row.bold = menu.querySelector("#pin-bold").classList.contains("is-on");
+        row.italic = menu.querySelector("#pin-italic").classList.contains("is-on");
+        row.underline = menu.querySelector("#pin-under").classList.contains("is-on");
+        row.ink = menu.querySelector("#pin-ink").value;
+        row.stroke = menu.querySelector("#pin-stroke").value;
+        row.strokeWidth = Number(menu.querySelector("#pin-stroke-w").value) || 0;
+        row.plate = menu.querySelector("#pin-plate-on").checked ? menu.querySelector("#pin-plate").value : "";
+        paintBoard();
+        dirty();
+      }
+      menu.querySelectorAll("#pin-size, #pin-text-size, #pin-stroke-w").forEach(function (node) {
+        node.addEventListener("input", applyStyle);
+      });
+      menu.querySelector("#pin-font").addEventListener("change", applyStyle);
+      menu.querySelector("#pin-ink").addEventListener("input", applyStyle);
+      menu.querySelector("#pin-stroke").addEventListener("input", applyStyle);
+      menu.querySelector("#pin-plate").addEventListener("input", applyStyle);
+      menu.querySelector("#pin-plate-on").addEventListener("change", applyStyle);
+      const pinTip = menu.querySelector("#pin-tip");
+      if (pinTip) pinTip.addEventListener("input", function (event) {
+        const row = findItem();
+        if (!row) return;
+        row.tip = event.target.value;
+        paintBoard();
+        dirty();
+      });
+      const pinHide = menu.querySelector("#pin-hide");
+      if (pinHide) pinHide.addEventListener("change", function () {
+        const row = findItem();
+        if (!row) return;
+        if (row.screen == null) row.screen = !row.hidden;
+        row.hidden = pinHide.checked;
+        paintBoard();
+        dirty();
+      });
+      const zoom = menu.querySelector("#face-zoom");
+      const pick = menu.querySelector("#face-pick");
+      function refreshFace(npc) {
+        window.ShirmoNpc.write(npc);
+        const pick = menu.querySelector("#face-pick");
+        const img = pick && pick.querySelector("img");
+        if (pick) pick.hidden = !npc.portrait;
+        if (img && npc.portrait) {
+          img.src = npc.portrait;
+          img.setAttribute("style", faceStyle(npc));
+        }
+        const face = focusNums(npc);
+        const shiftX = menu.querySelector("#face-x");
+        const shiftY = menu.querySelector("#face-y");
+        const zoomNode = menu.querySelector("#face-zoom");
+        if (shiftX && document.activeElement !== shiftX) shiftX.value = String(Math.round(100 - face.x));
+        if (shiftY && document.activeElement !== shiftY) shiftY.value = String(Math.round(100 - face.y));
+        if (zoomNode && document.activeElement !== zoomNode) zoomNode.value = String(Math.round(face.zoom * 100));
+        paintBoard();
+        dirty();
+      }
+      function bindShift(node, key) {
+        if (!node) return;
+        node.addEventListener("input", function () {
+          const npc = linkedNpc();
+          if (!npc) return;
+          npc[key] = 100 - Number(node.value);
+          refreshFace(npc);
+        });
+      }
+      if (zoom) zoom.addEventListener("input", function () {
+        const npc = linkedNpc();
+        if (!npc) return;
+        npc.portraitZoom = Number(zoom.value) / 100;
+        refreshFace(npc);
+      });
+      bindShift(menu.querySelector("#face-x"), "portraitX");
+      bindShift(menu.querySelector("#face-y"), "portraitY");
+      if (pick) {
+        let pan = null;
+        pick.addEventListener("pointerdown", function (event) {
+          if (event.button !== 0) return;
+          const npc = linkedNpc();
+          if (!npc) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const face = focusNums(npc);
+          pan = { x: event.clientX, y: event.clientY, ox: face.x, oy: face.y, zoom: face.zoom };
+          pick.setPointerCapture(event.pointerId);
+        });
+        pick.addEventListener("pointermove", function (event) {
+          if (!pan) return;
+          const npc = linkedNpc();
+          if (!npc) return;
+          const rect = pick.getBoundingClientRect();
+          const scale = pan.zoom || 1;
+          npc.portraitX = Math.min(100, Math.max(0, pan.ox - (event.clientX - pan.x) / rect.width * 100 / scale));
+          npc.portraitY = Math.min(100, Math.max(0, pan.oy - (event.clientY - pan.y) / rect.height * 100 / scale));
+          refreshFace(npc);
+        });
+        function endPan() { pan = null; }
+        pick.addEventListener("pointerup", endPan);
+        pick.addEventListener("pointercancel", endPan);
+      }
+      const sheet = menu.querySelector("[data-npc-sheet]");
+      if (sheet) {
+        window.ShirmoNpc.bind(sheet, linkedNpc(item), {
+          images: function () { return (ctx.library().images) || []; },
+          upload: ctx.upload,
+          keep: function (url, name) {
+            const npc = linkedNpc(item);
+            if (window.ShirmoLib) window.ShirmoLib.keep(ctx.library(), {
+              url: url,
+              name: name || (npc && npc.name) || "Портрет",
+              section: npc && npc.id ? "npc:" + npc.id : "",
+              sectionName: (npc && npc.name) || "НПС"
+            });
+          },
+          syncFace: refreshFace,
+          change: function () {
+            paintBoard();
+            dirty();
+          }
+        });
+      }
+      ["pin-bold", "pin-italic", "pin-under"].forEach(function (id) {
+        menu.querySelector("#" + id).addEventListener("click", function (event) {
+          event.currentTarget.classList.toggle("is-on");
+          applyStyle();
+        });
+      });
       menu.addEventListener("click", function (event) {
-        const act = event.target.getAttribute("data-act");
-        if (!act) return;
+        const button = event.target.closest("[data-act]");
+        if (!button || !menu.contains(button)) return;
+        const act = button.getAttribute("data-act");
         if (act === "del") removeItem();
         if (act === "copy") copyItem();
         if (act === "rename") beginRename();
         if (act === "book") assignCodex();
+        if (act === "setup") {
+          const row = findItem();
+          if (row) openSetup(row.id);
+        }
         if (act === "move") {
           closeMenu();
           armedMove = true;
@@ -506,7 +2028,7 @@
     function hintBack() {
       armedMove = false;
       const hint = host.querySelector("#map-hint");
-      if (hint) hint.textContent = "Скрытые точки видите только вы.";
+      if (hint) hint.textContent = "Левый клик открывает локацию или разговор, правый — правку. Скрытые точки видите только вы.";
     }
     function chooseFont() {
       const value = host.querySelector("#map-font").value;
@@ -519,15 +2041,20 @@
       if (kind === "loc") {
         current.locations.push({
           id: id,
-          parentId: pendingParent,
+          parentId: pendingParent || current.focusId || "",
           name: "Локация",
           x: at.x,
           y: at.y,
           tip: "",
-          hidden: false
+          hidden: true,
+          day: "",
+          night: "",
+          mode: "day",
+          trashed: false
         });
+        ensurePlace(current.locations[current.locations.length - 1]);
         pendingParent = "";
-        host.querySelector("#map-hint").textContent = "Скрытые точки видите только вы.";
+        host.querySelector("#map-hint").textContent = "Левый клик открывает локацию или разговор, правый — правку. Скрытые точки видите только вы.";
         selected = { kind: "loc", id: id };
       } else if (kind === "label") {
         const text = host.querySelector("#map-label").value.trim();
@@ -544,7 +2071,8 @@
           ink: "#f3ead8",
           bold: styleBold,
           italic: styleItalic,
-          underline: styleUnderline
+          underline: styleUnderline,
+          locId: current.focusId || ""
         });
         selected = { kind: "label", id: id };
       } else {
@@ -555,7 +2083,8 @@
           y: at.y,
           kind: kind === "npc" ? "npc" : "mark",
           tip: "",
-          hidden: false
+          hidden: false,
+          locId: current.focusId || ""
         });
         selected = { kind: kind === "npc" ? "npc" : "mark", id: id };
       }
@@ -570,6 +2099,7 @@
     paintLists();
     paintBoard();
     paintSelected();
+    syncPlaces();
 
     host.querySelector("#map-tools").addEventListener("click", function (event) {
       const button = event.target.closest("[data-tool]");
@@ -588,9 +2118,27 @@
       paintSelected();
       ctx.save();
     });
-    host.querySelector("#map-view-name").addEventListener("input", function (event) {
-      view().name = event.target.value;
-      dirty();
+    host.querySelector("#map-setup").addEventListener("click", function () { openSetup(view().focusId || ""); });
+    host.querySelector("#map-loc-add").addEventListener("click", function () { addLocation(view().focusId || ""); });
+    host.querySelector("#map-bin").addEventListener("click", function () {
+      binOpen = !binOpen;
+      paintBin();
+    });
+    host.querySelector("#map-bin-list").addEventListener("click", function (event) {
+      const button = event.target.closest("[data-bin]");
+      if (!button) return;
+      const id = button.getAttribute("data-id");
+      if (button.getAttribute("data-bin") === "back") {
+        const loc = findLoc(id);
+        if (loc) loc.trashed = false;
+        paintBoard();
+        paintTree();
+        ctx.save();
+      }
+      if (button.getAttribute("data-bin") === "gone") purge(id);
+      paintBoard();
+      paintTree();
+      ctx.save();
     });
     host.querySelector("#map-view-add").addEventListener("click", function () {
       const next = blankView(crypto.randomUUID());
@@ -616,24 +2164,14 @@
       ctx.save();
     });
     host.querySelector("#map-day").addEventListener("click", function () {
-      view().mode = "day";
+      levelSheet().mode = "day";
       paintTools();
       paintBoard();
       ctx.save();
     });
     host.querySelector("#map-night").addEventListener("click", function () {
-      view().mode = "night";
+      levelSheet().mode = "night";
       paintTools();
-      paintBoard();
-      ctx.save();
-    });
-    host.querySelector("#map-day-img").addEventListener("change", function (event) {
-      view().day = event.target.value;
-      paintBoard();
-      ctx.save();
-    });
-    host.querySelector("#map-night-img").addEventListener("change", function (event) {
-      view().night = event.target.value;
       paintBoard();
       ctx.save();
     });
@@ -656,15 +2194,18 @@
       restoreStrokes(future.pop());
     });
     host.querySelector("#map-tree").addEventListener("click", function (event) {
+      const act = event.target.closest("[data-act]");
+      if (act && host.querySelector("#map-tree").contains(act)) {
+        const id = act.getAttribute("data-id");
+        const what = act.getAttribute("data-act");
+        if (what === "add") addLocation(id);
+        if (what === "del") dropLocation(id);
+        if (what === "setup") openSetup(id);
+        return;
+      }
       const button = event.target.closest("[data-loc]");
       if (!button) return;
-      closeMenu();
-      selected = { kind: "loc", id: button.getAttribute("data-loc") };
-      shownForm = "";
-      tool = "choose";
-      paintTools();
-      paintTree();
-      paintSelected();
+      enter(button.getAttribute("data-loc"));
     });
 
     let wheel = null;
@@ -692,12 +2233,12 @@
       closeMenu();
       const el = document.createElement("div");
       el.id = "tool-wheel";
-      el.className = "tool-wheel";
+      el.className = "tool-wheel is-icons";
       el.style.left = x + "px";
       el.style.top = y + "px";
       el.innerHTML = '<span class="wheel-name"></span>' + TOOLS.map(function (item, index) {
         const deg = index * (360 / TOOLS.length);
-        return '<button type="button" style="--a:' + deg + 'deg" class="' + (tool === item[0] ? "is-on" : "") + '">' + item[1] + "</button>";
+        return '<button type="button" style="--a:' + deg + 'deg" title="' + esc(item[1]) + '" aria-label="' + esc(item[1]) + '" class="' + (tool === item[0] ? "is-on" : "") + '">' + item[2] + "</button>";
       }).join("");
       document.body.appendChild(el);
       wheel = { x: x, y: y, el: el, index: -1 };
@@ -714,19 +2255,72 @@
     }
     function pinKind(hit) {
       const kind = hit.getAttribute("data-kind");
-      return kind === "loc" || kind === "mark" || kind === "npc";
+      return kind === "loc" || kind === "mark" || kind === "npc" || kind === "label";
+    }
+    function flipFlag(item, which) {
+      if (item.screen == null) item.screen = !item.hidden;
+      if (which === "map") item.hidden = !item.hidden;
+      else item.screen = item.screen === false;
+      paintBoard();
+      paintTree();
+      dirty();
+    }
+    function onFlag(node) {
+      const which = node.getAttribute("data-flag");
+      const pin = node.closest("[data-pin]");
+      if (pin) {
+        const kind = pin.getAttribute("data-kind");
+        const id = pin.getAttribute("data-pin");
+        const current = view();
+        const list = kind === "loc" ? current.locations : current.markers;
+        const item = (list || []).find(function (row) { return row.id === id; });
+        if (item) flipFlag(item, which);
+        return;
+      }
+      const loc = findLoc(view().focusId || "");
+      if (loc) flipFlag(loc, which);
     }
     function onDown(event) {
+      const flag = event.target.closest && event.target.closest("[data-flag]");
+      if (flag && board.contains(flag)) {
+        if (event.button === 0) {
+          event.preventDefault();
+          event.stopPropagation();
+          onFlag(flag);
+        }
+        return;
+      }
       if (event.button === 1) {
         event.preventDefault();
         openWheel(event.clientX, event.clientY);
         return;
       }
+      if (event.button === 2) {
+        const hit = event.target.closest && event.target.closest("[data-pin]");
+        if (hit && board.contains(hit) && pinKind(hit)) {
+          event.preventDefault();
+          closeMenu();
+          selected = { kind: hit.getAttribute("data-kind"), id: hit.getAttribute("data-pin") };
+          showMenu();
+        }
+        return;
+      }
       if (wheel) closeWheel();
       if (event.button !== 0) return;
+      if (Date.now() < skipClick) {
+        event.preventDefault();
+        return;
+      }
+      if (view().talkId) return;
       const stage = board.querySelector(".stage");
       if (!stage || !board.contains(event.target)) return;
       const at = rel(event);
+      const go = event.target.closest("[data-go]");
+      if (go && board.contains(go)) {
+        event.preventDefault();
+        enter(go.getAttribute("data-go") || "");
+        return;
+      }
       const hit = event.target.closest("[data-pin]");
       if (armedMove && selected && selected.kind !== "label") {
         const item = findItem();
@@ -792,7 +2386,8 @@
         tool: tool,
         color: host.querySelector("#map-ink").value,
         width: Number(host.querySelector("#map-width").value) || 3,
-        points: [at, at]
+        points: [at, at],
+        locId: view().focusId || ""
       };
     }
     function onMove(event) {
@@ -873,7 +2468,12 @@
     }
     function rub(at) {
       const radius = Math.max(8, Number(host.querySelector("#map-width").value) || 8);
-      const left = (view().strokes || []).filter(function (stroke) { return !strokeHits(stroke, at, radius); });
+      const here = view().focusId || "";
+      const before = view().strokes || [];
+      const left = before.filter(function (stroke) {
+        if ((stroke.locId || "") !== here) return true;
+        return !strokeHits(stroke, at, radius);
+      });
       if (left.length === view().strokes.length) return;
       view().strokes = left;
       paintBoard();
@@ -886,6 +2486,7 @@
       else ctx.save();
     }
     function onUp(event) {
+      if (event && event.button === 2) return;
       if (event && event.button === 1) {
         finishErase();
         if (wheel) pickWheel(event.clientX, event.clientY);
@@ -894,8 +2495,12 @@
       finishErase();
       if (press) {
         const open = !press.moved;
+        const kind = selected && selected.kind;
+        const id = selected && selected.id;
         press = null;
-        if (open) showMenu();
+        if (open && kind === "loc") enter(id);
+        else if (open && kind === "npc") openTalk(id);
+        else if (open) showMenu();
       } else if (reopen) {
         reopen = false;
         showMenu();
@@ -916,6 +2521,8 @@
       paintBoard();
     }
     function onDocDown(event) {
+      const talkMenu = document.getElementById("talk-menu");
+      if (talkMenu && !talkMenu.contains(event.target)) talkMenu.remove();
       const menu = document.getElementById("pin-menu");
       if (!menu || menu.contains(event.target)) return;
       if (event.target.closest && event.target.closest("[data-pin]")) return;
@@ -924,10 +2531,17 @@
     board.addEventListener("dblclick", function (event) {
       const hit = event.target.closest("[data-pin]");
       if (!hit || !board.contains(hit)) return;
-      event.preventDefault();
-      selected = { kind: hit.getAttribute("data-kind"), id: hit.getAttribute("data-pin") };
+      const kind = hit.getAttribute("data-kind");
+      if (kind === "loc" || kind === "npc") {
+        event.preventDefault();
+        return;
+      }
+      selected = { kind: kind, id: hit.getAttribute("data-pin") };
       shownForm = "";
       beginRename();
+    });
+    board.addEventListener("contextmenu", function (event) {
+      if (event.target.closest && event.target.closest("[data-pin]")) event.preventDefault();
     });
     board.addEventListener("mousedown", function (event) {
       if (event.button === 1) event.preventDefault();
@@ -942,11 +2556,380 @@
       window.removeEventListener("pointerup", onUp);
       closeMenu();
       closeWheel();
+      closeSetup();
       const rename = document.getElementById("pin-rename");
       if (rename) rename.remove();
       clearTimeout(timer);
     };
   }
+
+  window.ShirmoGlyph = {
+    eye: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="2.2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>',
+    hide: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12s3.5-6 9-6 9 6 9 6-3.5 6-9 6-9-6-9-6z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="2.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M5 19L19 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+    pencil: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l4.2-1.1L19 8.1 15.9 5 5.1 15.8 4 20z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M13.8 7.2l3 3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>',
+    fold: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    cast: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="12" height="10" rx="1.4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7 20h8M11 14v6M16 7.5l5 3-5 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    upload: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V6M8.5 9.5L12 6l3.5 3.5M6 18h12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    speech: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14a2 2 0 012 2v7a2 2 0 01-2 2h-8l-4 3.5V16H5a2 2 0 01-2-2V7a2 2 0 012-2z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>',
+    bag: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10h16v9H4zM4 10l2-4h12l2 4M12 10v9M9.5 14.5h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>'
+  };
+
+  window.ShirmoItems = {
+    ready: function () {
+      if (window.allItems) return Promise.resolve();
+      if (window.ShirmoItems._load) return window.ShirmoItems._load;
+      window.ShirmoItems._load = new Promise(function (resolve, reject) {
+        const node = document.createElement("script");
+        node.src = "/catalog/items.js";
+        node.onload = function () { resolve(); };
+        node.onerror = function () { reject(new Error("Каталог предметов не загрузился")); };
+        document.head.appendChild(node);
+      });
+      return window.ShirmoItems._load;
+    },
+    title: function (row) {
+      return (row && row.ru && row.ru.name) || (row && row.en && row.en.name) || "Предмет";
+    },
+    icon: function (row) {
+      return row && row.en && row.en.img ? "/catalog/img/items/" + encodeURIComponent(row.en.img) : "";
+    },
+    price: function (row) {
+      const rarity = window.oRarity && row && row.en && window.oRarity[String(row.en.rarity)];
+      return (rarity && rarity.coast) || "";
+    },
+    find: function (q) {
+      const query = String(q || "").trim().toLowerCase();
+      if (query.length < 2 || !window.allItems) return [];
+      return window.allItems.filter(function (row) {
+        const ru = row.ru && row.ru.name || "";
+        const en = row.en && row.en.name || "";
+        return (ru + " " + en).toLowerCase().indexOf(query) >= 0;
+      });
+    }
+  };
+
+  window.ShirmoLib = {
+    keep: function (library, item) {
+      if (!library || !item || !item.url) return;
+      library.images = library.images || [];
+      if (library.images.some(function (row) { return row.url === item.url; })) return;
+      library.images.push({
+        id: crypto.randomUUID(),
+        name: item.name || "Картинка",
+        url: item.url,
+        section: item.section || "",
+        sectionName: item.sectionName || ""
+      });
+    },
+    title: function (image, npcs) {
+      if (!image) return "Общее";
+      if (image.section === "icons") return "Иконки товаров";
+      if (image.section && String(image.section).indexOf("npc:") === 0) {
+        const id = String(image.section).slice(4);
+        const npc = (npcs || []).find(function (row) { return row && row.id === id; });
+        return (npc && npc.name) || image.sectionName || "НПС";
+      }
+      return image.section || "Общее";
+    }
+  };
+
+  const MOOD_FACES = "🙂 😊 😀 😄 😁 😉 😌 😐 😑 😒 😏 😔 😢 😭 😤 😠 😡 🤬 😨 😰 😱 😳 🤔 😴 🥱 😎 🥰 😍 🤩 😈 💀 🤢 🤮 🤯 😶 🙄 😬 🤗 🥺 😷 🤒 😵 🤪 😜 🫡 🤡 👻".split(" ");
+
+  function moodFace(item) {
+    const face = focusNums(item);
+    return {
+      portrait: item && item.portrait ? item.portrait : "",
+      portraitX: face.x,
+      portraitY: face.y,
+      portraitZoom: face.zoom,
+      emoji: String(item && item.emoji || "").trim().slice(0, 16)
+    };
+  }
+
+  window.ShirmoNpc = {
+    apply: function (npc) {
+      if (!npc) return { portrait: "" };
+      if (!Array.isArray(npc.moods) || !npc.moods.length) npc.moods = [moodFace(npc)];
+      npc.moods = npc.moods.map(function (mood) { return moodFace(mood || {}); });
+      npc.mood = Math.min(npc.moods.length - 1, Math.max(0, Number(npc.mood) || 0));
+      const mood = npc.moods[npc.mood];
+      npc.portrait = mood.portrait;
+      npc.portraitX = mood.portraitX;
+      npc.portraitY = mood.portraitY;
+      npc.portraitZoom = mood.portraitZoom;
+      npc.emoji = mood.emoji || "";
+      return mood;
+    },
+    write: function (npc) {
+      if (!npc) return;
+      if (!Array.isArray(npc.moods) || !npc.moods.length) npc.moods = [moodFace(npc)];
+      npc.mood = Math.min(npc.moods.length - 1, Math.max(0, Number(npc.mood) || 0));
+      npc.moods[npc.mood] = moodFace(npc);
+    },
+    lines: function (record) {
+      if (!record) return [];
+      if (!Array.isArray(record.lines)) record.lines = [];
+      record.lines = record.lines.map(function (row) {
+        const source = row && typeof row === "object" ? row : { text: String(row || "") };
+        const phase = source.phase === 0 || source.phase ? source.phase : "";
+        return {
+          theme: String(source.theme || ""),
+          text: String(source.text || ""),
+          ink: String(source.ink || ""),
+          font: String(source.font || ""),
+          plate: String(source.plate || ""),
+          phase: phase === "" ? "" : String(Math.max(0, Number(phase) || 0))
+        };
+      });
+      return record.lines;
+    },
+    replicas: function (record) {
+      return window.ShirmoNpc.lines(record).filter(function (row) {
+        return String(row.theme || "").trim() || String(row.text || "").trim();
+      });
+    },
+    label: function (row) {
+      const theme = String(row && row.theme || "").trim();
+      const text = String(row && row.text || "").trim();
+      return theme || text || "...";
+    },
+    html: function (npc, images, index, extra) {
+      window.ShirmoNpc.apply(npc);
+      const opts = extra || {};
+      const fonts = opts.fonts && opts.fonts.length ? opts.fonts : [
+        { name: "Georgia", font: "Georgia, serif" },
+        { name: "Arial", font: "Arial, sans-serif" },
+        { name: "Times", font: "Times New Roman, serif" },
+        { name: "Verdana", font: "Verdana, sans-serif" },
+        { name: "Courier", font: "Courier New, monospace" }
+      ];
+      const lines = window.ShirmoNpc.lines(npc);
+      const rows = lines.map(function (row, rowIndex) {
+        const phaseOptions = '<option value="">По умолчанию</option>' + npc.moods.map(function (mood, moodIndex) {
+          const on = String(row.phase) === String(moodIndex) ? " selected" : "";
+          return '<option value="' + moodIndex + '"' + on + ">Фаза " + (moodIndex + 1) + (mood.emoji ? " " + esc(mood.emoji) : "") + "</option>";
+        }).join("");
+        const fontOptions = '<option value="">Шрифт</option>' + fonts.map(function (item) {
+          return '<option value="' + esc(item.font) + '"' + (item.font === row.font ? " selected" : "") + ">" + esc(item.name) + "</option>";
+        }).join("");
+        return '<div class="rep-row">' +
+          '<input data-rep-theme data-i="' + rowIndex + '" type="text" value="' + esc(row.theme) + '" placeholder="Тема" title="Подпись кнопки. Если пусто, на кнопке будет текст" aria-label="Тема">' +
+          '<input data-rep-text data-i="' + rowIndex + '" type="text" value="' + esc(row.text) + '" placeholder="Текст" title="Что говорит персонаж" aria-label="Текст">' +
+          '<button type="button" data-rep-del data-i="' + rowIndex + '" title="Убрать реплику" aria-label="Убрать реплику">×</button>' +
+          '<div class="rep-look">' +
+          '<input data-rep-ink data-i="' + rowIndex + '" type="color" value="' + esc(row.ink || "#f3ead8") + '" title="Цвет кнопки" aria-label="Цвет кнопки">' +
+          '<input data-rep-plate data-i="' + rowIndex + '" type="color" value="' + esc(row.plate || "#1a140c") + '" title="Фон кнопки" aria-label="Фон кнопки">' +
+          '<select data-rep-font data-i="' + rowIndex + '" title="Шрифт кнопки" aria-label="Шрифт кнопки">' + fontOptions + "</select>" +
+          '<select data-rep-phase data-i="' + rowIndex + '" title="В режиме «по реплике» включает эту фазу. Пусто — эмоция по умолчанию" aria-label="Фаза реплики">' + phaseOptions + "</select>" +
+          "</div></div>";
+      }).join("");
+      const replies = '<div class="rep-list">' + rows + '</div>' +
+        '<button type="button" data-rep-add title="Добавить реплику">Добавить реплику</button>';
+      if (opts.linesOnly) {
+        return '<div class="npc-sheet" data-npc-sheet data-lines-only>' + replies + "</div>";
+      }
+      const mood = npc.moods[npc.mood];
+      const max = Math.max(0, npc.moods.length - 1);
+      const options = '<option value="">Из библиотеки</option>' + (images || []).map(function (image) {
+        const section = window.ShirmoLib ? window.ShirmoLib.title(image) : "";
+        const label = section && section !== "Общее" ? section + " — " + (image.name || "Картинка") : (image.name || "Картинка");
+        return '<option value="' + esc(image.url) + '">' + esc(label) + "</option>";
+      }).join("");
+      const mark = index == null ? "" : ' data-i="' + index + '"';
+      return '<div class="npc-sheet" data-npc-sheet' + mark + '>' +
+        '<details class="drop"><summary title="Тема, текст, вид кнопки и фаза, на которую реплика переключает персонажа">Реплики</summary>' +
+        replies + "</details>" +
+        '<details class="drop"><summary title="Фазы настроения: у каждой свой портрет и эмодзи, ползунок переключает текущую">Настроение</summary>' +
+        '<label title="Переключить фазу настроения">Фаза<input data-mood type="range" min="0" max="' + max + '" value="' + npc.mood + '"' + (max < 1 ? " disabled" : "") + "></label>" +
+        '<p class="note" data-mood-label>' + (npc.mood + 1) + " из " + npc.moods.length + "</p>" +
+        '<div class="mood-emoji-field"><label title="Эмодзи этой фазы. Видно только мастеру">Эмодзи<input data-mood-emoji type="text" maxlength="16" value="' + esc(mood.emoji || "") + '" placeholder="🙂" aria-label="Эмодзи фазы"></label>' +
+        '<button type="button" data-mood-pick title="Выбрать эмодзи из списка">Выбрать</button></div>' +
+        '<div class="mood-faces" data-mood-faces hidden><button type="button" data-mood-face="" title="Убрать эмодзи"' + (mood.emoji ? "" : ' class="is-on"') + '>−</button>' +
+        MOOD_FACES.map(function (face) {
+          return '<button type="button" data-mood-face="' + face + '" title="' + face + '"' + (mood.emoji === face ? ' class="is-on"' : "") + ">" + face + "</button>";
+        }).join("") + "</div>" +
+        '<div class="mood-frame" data-mood-frame' + (mood.portrait ? "" : " hidden") + '><img class="mood-preview" alt="" data-mood-preview src="' + esc(mood.portrait) + '" style="' + faceStyle(mood) + '"><span class="mood-badge" data-mood-badge>' + esc(mood.emoji || "") + "</span></div>" +
+        '<div class="mood-tools">' +
+        '<label class="mood-file" title="Загрузить портрет этой фазы">Загрузить<input type="file" accept="image/*" data-mood-file></label>' +
+        '<select data-mood-lib title="Взять портрет этой фазы из библиотеки">' + options + "</select>" +
+        '<button type="button" data-mood-add title="Добавить фазу настроения">+</button>' +
+        '<button type="button" data-mood-del title="Убрать эту фазу"' + (npc.moods.length < 2 ? " disabled" : "") + ">×</button>" +
+        "</div></details></div>";
+    },
+    bind: function (root, npc, hooks) {
+      if (!root || !npc || root._npcBound) return;
+      root._npcBound = true;
+      const opts = hooks || {};
+      function images() { return opts.images ? opts.images() : []; }
+      function paintSheet() {
+        const opens = [].map.call(root.querySelectorAll(":scope > details.drop"), function (node) { return node.open; });
+        const fresh = document.createElement("div");
+        fresh.innerHTML = window.ShirmoNpc.html(npc, images(), root.getAttribute("data-i"), {
+          fonts: opts.fonts ? opts.fonts() : null,
+          linesOnly: root.hasAttribute("data-lines-only")
+        });
+        const next = fresh.firstElementChild;
+        root.innerHTML = next.innerHTML;
+        [].forEach.call(root.querySelectorAll(":scope > details.drop"), function (node, index) {
+          if (opens[index]) node.open = true;
+        });
+      }
+      function preview(mood) {
+        const node = root.querySelector("[data-mood-preview]");
+        const frame = root.querySelector("[data-mood-frame]");
+        const badge = root.querySelector("[data-mood-badge]");
+        const emoji = root.querySelector("[data-mood-emoji]");
+        const label = root.querySelector("[data-mood-label]");
+        if (label) label.textContent = (npc.mood + 1) + " из " + npc.moods.length;
+        if (badge) badge.textContent = mood.emoji || "";
+        if (emoji && document.activeElement !== emoji) emoji.value = mood.emoji || "";
+        if (frame) frame.hidden = !mood.portrait;
+        if (!node) return;
+        if (mood.portrait) {
+          node.src = mood.portrait;
+          node.setAttribute("style", faceStyle(mood));
+        }
+      }
+      function changed() { if (opts.change) opts.change(); }
+      function showFace() {
+        const mood = window.ShirmoNpc.apply(npc);
+        preview(mood);
+        if (opts.syncFace) opts.syncFace(npc);
+      }
+      root.addEventListener("input", function (event) {
+        const theme = event.target.closest("[data-rep-theme]");
+        const text = event.target.closest("[data-rep-text]");
+        const lineField = event.target.closest("[data-rep-theme], [data-rep-text], [data-rep-ink], [data-rep-plate], [data-rep-font], [data-rep-phase]");
+        if (lineField && root.contains(lineField)) {
+          const row = npc.lines[Number(lineField.getAttribute("data-i"))];
+          if (!row) return;
+          if (lineField.hasAttribute("data-rep-theme")) row.theme = lineField.value;
+          if (lineField.hasAttribute("data-rep-text")) row.text = lineField.value;
+          if (lineField.hasAttribute("data-rep-ink")) row.ink = lineField.value;
+          if (lineField.hasAttribute("data-rep-plate")) row.plate = lineField.value;
+          if (lineField.hasAttribute("data-rep-font")) row.font = lineField.value;
+          if (lineField.hasAttribute("data-rep-phase")) row.phase = lineField.value;
+          changed();
+          return;
+        }
+        if (event.target.hasAttribute("data-mood-emoji")) {
+          window.ShirmoNpc.apply(npc);
+          const value = String(event.target.value || "").trim().slice(0, 16);
+          npc.moods[npc.mood].emoji = value;
+          npc.emoji = value;
+          const badge = root.querySelector("[data-mood-badge]");
+          if (badge) badge.textContent = value;
+          if (opts.syncFace) opts.syncFace(npc);
+          changed();
+          return;
+        }
+        if (event.target.hasAttribute("data-mood")) {
+          npc.mood = Number(event.target.value) || 0;
+          npc.moodHold = true;
+          showFace();
+          changed();
+        }
+      });
+      root.addEventListener("change", function (event) {
+        const lineField = event.target.closest("[data-rep-font], [data-rep-phase], [data-rep-ink], [data-rep-plate]");
+        if (lineField && root.contains(lineField)) {
+          const row = npc.lines[Number(lineField.getAttribute("data-i"))];
+          if (!row) return;
+          if (lineField.hasAttribute("data-rep-ink")) row.ink = lineField.value;
+          if (lineField.hasAttribute("data-rep-plate")) row.plate = lineField.value;
+          if (lineField.hasAttribute("data-rep-font")) row.font = lineField.value;
+          if (lineField.hasAttribute("data-rep-phase")) row.phase = lineField.value;
+          changed();
+          return;
+        }
+        if (event.target.hasAttribute("data-mood-lib")) {
+          const url = event.target.value;
+          if (!url) return;
+          window.ShirmoNpc.apply(npc);
+          npc.portrait = url;
+          window.ShirmoNpc.write(npc);
+          paintSheet();
+          showFace();
+          changed();
+          return;
+        }
+        if (!event.target.hasAttribute("data-mood-file")) return;
+        const file = event.target.files && event.target.files[0];
+        event.target.value = "";
+        if (!file || !opts.upload) return;
+        opts.upload(file).then(function (url) {
+          window.ShirmoNpc.apply(npc);
+          npc.portrait = url;
+          window.ShirmoNpc.write(npc);
+          if (opts.keep) opts.keep(url, file.name.replace(/\.[^.]+$/, ""));
+          paintSheet();
+          showFace();
+          changed();
+        });
+      });
+      root.addEventListener("click", function (event) {
+        const pick = event.target.closest("[data-mood-pick]");
+        if (pick && root.contains(pick)) {
+          const box = root.querySelector("[data-mood-faces]");
+          if (box) box.hidden = !box.hidden;
+          return;
+        }
+        const face = event.target.closest("[data-mood-face]");
+        if (face && root.contains(face)) {
+          window.ShirmoNpc.apply(npc);
+          const value = face.getAttribute("data-mood-face") || "";
+          npc.moods[npc.mood].emoji = value;
+          npc.emoji = value;
+          const input = root.querySelector("[data-mood-emoji]");
+          const badge = root.querySelector("[data-mood-badge]");
+          if (input) input.value = value;
+          if (badge) badge.textContent = value;
+          root.querySelectorAll("[data-mood-face]").forEach(function (node) {
+            node.classList.toggle("is-on", (node.getAttribute("data-mood-face") || "") === value);
+          });
+          const box = root.querySelector("[data-mood-faces]");
+          if (box) box.hidden = true;
+          if (opts.syncFace) opts.syncFace(npc);
+          changed();
+          return;
+        }
+        const button = event.target.closest("[data-rep-add], [data-rep-del], [data-mood-add], [data-mood-del]");
+        if (!button || !root.contains(button)) return;
+        if (button.hasAttribute("data-rep-add")) {
+          window.ShirmoNpc.lines(npc).push({ theme: "", text: "", ink: "", font: "", plate: "", phase: "" });
+          paintSheet();
+          changed();
+          const last = root.querySelector(".rep-row:last-child [data-rep-theme]");
+          if (last) last.focus();
+          return;
+        }
+        if (button.hasAttribute("data-rep-del")) {
+          npc.lines.splice(Number(button.getAttribute("data-i")), 1);
+          paintSheet();
+          changed();
+          return;
+        }
+        if (button.hasAttribute("data-mood-add")) {
+          window.ShirmoNpc.apply(npc);
+          npc.moods.push({ portrait: "", portraitX: 50, portraitY: 50, portraitZoom: 1 });
+          npc.mood = npc.moods.length - 1;
+          window.ShirmoNpc.apply(npc);
+          paintSheet();
+          showFace();
+          changed();
+          return;
+        }
+        if (npc.moods.length < 2) return;
+        window.ShirmoNpc.apply(npc);
+        npc.moods.splice(npc.mood, 1);
+        if (npc.mood >= npc.moods.length) npc.mood = npc.moods.length - 1;
+        window.ShirmoNpc.apply(npc);
+        paintSheet();
+        showFace();
+        changed();
+      });
+    }
+  };
 
   window.ShirmoMap = { ensure: ensure, mount: mount, html: html, ping: ping };
 })();

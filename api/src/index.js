@@ -27,6 +27,42 @@ const savePins = db.prepare("UPDATE rooms SET roll_pins = ? WHERE id = ?");
 
 const DIE_SIDES = [4, 6, 8, 10, 12, 20, 100];
 
+function hexColor(value) {
+  return /^#[0-9a-fA-F]{6}$/.test(String(value || "")) ? String(value) : "";
+}
+
+function safePath(value) {
+  const text = String(value || "");
+  if (!text.startsWith("/") || text.length > 240 || text.indexOf("..") >= 0) return "";
+  return text;
+}
+
+function publicRoll(roll) {
+  const dice = Array.isArray(roll.dice) ? roll.dice.slice(0, 12).map(function (item) {
+    const sides = DIE_SIDES.indexOf(Number(item && item.sides)) >= 0 ? Number(item.sides) : 20;
+    const value = Math.min(sides, Math.max(1, Number(item && item.value) || 1));
+    const tint = item && (item.tint === "advantage" || item.tint === "disadvantage") ? item.tint : "";
+    const out = { sides: sides, value: value };
+    if (tint) out.tint = tint;
+    return out;
+  }) : [];
+  const speed = Number(roll.speed);
+  return {
+    name: String(roll.name || "").slice(0, 80),
+    label: String(roll.label || "").slice(0, 40),
+    total: Number(roll.total) || 0,
+    count: Number(roll.count) || 1,
+    sides: Number(roll.sides) || 20,
+    mode: roll.mode === "advantage" || roll.mode === "disadvantage" ? roll.mode : "normal",
+    log: String(roll.log || "").slice(0, 120),
+    dice: dice,
+    color: hexColor(roll.color),
+    texture: safePath(roll.texture),
+    speed: Number.isFinite(speed) ? Math.min(2.5, Math.max(0.4, speed)) : 1,
+    animate: roll.animate !== false
+  };
+}
+
 function pinFrom(body) {
   const mode = body.mode === "advantage" || body.mode === "disadvantage" ? body.mode : "normal";
   const sides = DIE_SIDES.indexOf(Number(body.sides)) >= 0 ? Number(body.sides) : 20;
@@ -40,7 +76,9 @@ function pinFrom(body) {
     sides: mode === "normal" ? sides : 20,
     mode: mode,
     source: source,
-    sourceName: String(body.sourceName || "").slice(0, 80)
+    sourceName: String(body.sourceName || "").slice(0, 80),
+    color: hexColor(body.color),
+    texture: safePath(body.texture)
   };
 }
 
@@ -256,17 +294,28 @@ const server = http.createServer(async function (req, res) {
         if (Number.isFinite(y)) event.y = Math.min(1, Math.max(0, y));
       }
       if (body.look === "rings" || body.look === "flash" || body.look === "lights") event.look = body.look;
+      if (event.type === "wares" && Array.isArray(body.goods)) {
+        event.goods = body.goods.slice(0, 40).map(function (item) {
+          return {
+            name: String(item && item.name || "").slice(0, 80),
+            price: String(item && item.price || "").slice(0, 40),
+            icon: safePath(item && item.icon)
+          };
+        }).filter(function (item) { return item.name; });
+      }
       if (event.type === "die") {
         const roll = body.roll && typeof body.roll === "object" ? body.roll : {};
+        const shown = publicRoll(roll);
+        event.roll = shown;
         const entry = {
           id: event.id,
           at: event.at,
           text: event.text,
-          name: String(roll.name || "").slice(0, 80),
-          total: Number(roll.total) || 0,
-          count: Number(roll.count) || 1,
-          sides: Number(roll.sides) || 20,
-          mode: roll.mode === "advantage" || roll.mode === "disadvantage" ? roll.mode : "normal"
+          name: shown.name,
+          total: shown.total,
+          count: shown.count,
+          sides: shown.sides,
+          mode: shown.mode
         };
         room.rolls.unshift(entry);
         room.rolls = room.rolls.slice(0, 40);

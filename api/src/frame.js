@@ -54,44 +54,228 @@ function clip(value, size) {
   return String(value || "").slice(0, size);
 }
 
-function projectMap(page) {
+function axis(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.min(100, Math.max(0, n)) : 50;
+}
+
+function zoomOf(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.min(3, Math.max(1, n)) : 1;
+}
+
+function activeFace(npc) {
+  const moods = npc && Array.isArray(npc.moods) ? npc.moods.filter(Boolean) : [];
+  const index = moods.length ? Math.min(moods.length - 1, Math.max(0, Number(npc.mood) || 0)) : -1;
+  const mood = index >= 0 ? moods[index] : null;
+  const portrait = (mood && mood.portrait) || (npc && npc.portrait) || "";
+  const source = mood && mood.portrait ? mood : (npc || {});
+  return {
+    portrait: portrait,
+    x: axis(source.portraitX),
+    y: axis(source.portraitY),
+    zoom: zoomOf(source.portraitZoom)
+  };
+}
+
+function stockQty(item) {
+  if (!item || item.qty == null || item.qty === "") return null;
+  const n = Number(item.qty);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, Math.round(n));
+}
+
+function stockHidden(item) {
+  return !!(item && item.hideEmpty && stockQty(item) === 0);
+}
+
+function npcSheets(npc, campaign) {
+  const sheets = campaign && campaign.codex && Array.isArray(campaign.codex.wares) ? campaign.codex.wares : [];
+  if (!npc) return [];
+  return sheets.filter(function (sheet) {
+    return sheet && (sheet.npcId === npc.id || sheet.id === npc.wareId);
+  });
+}
+
+function moneyText(item, campaign) {
+  const coins = campaign && campaign.codex && Array.isArray(campaign.codex.coins) ? campaign.codex.coins : [];
+  if (item && item.coin) {
+    const coin = coins.find(function (row) { return row && row.id === item.coin; });
+    const code = coin ? String(coin.code || coin.name || "") : "";
+    const amount = item.price == null || item.price === "" ? "" : String(item.price);
+    return clip([amount, code].filter(Boolean).join(" "), 40);
+  }
+  return clip(item && item.price, 40);
+}
+
+function saleRows(npc, campaign) {
+  if (!npc) return [];
+  const own = Array.isArray(npc.goods) ? npc.goods : [];
+  const listed = npcSheets(npc, campaign).reduce(function (all, sheet) {
+    return all.concat(Array.isArray(sheet.items) ? sheet.items : []);
+  }, []);
+  return own.concat(listed).filter(function (item) {
+    return item && String(item.name || "").trim() && !item.off && !stockHidden(item);
+  }).slice(0, 40).map(function (item) {
+    const qty = stockQty(item);
+    const row = {
+      name: clip(item.name, 80),
+      price: moneyText(item, campaign),
+      icon: item.icon ? clip(item.icon, 300) : ""
+    };
+    if (qty != null) row.qty = qty;
+    if (item.ink) row.ink = clip(item.ink, 20);
+    return row;
+  });
+}
+
+function standOf(record, shop) {
+  const own = record && (shop ? record.stall : record.stand);
+  const slot = own || (shop && record ? record.stand : null);
+  function axisOf(value, min, max, fallback) {
+    if (value == null || value === "") return fallback;
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(max, Math.max(min, n));
+  }
+  return {
+    x: axisOf(slot && slot.x, -80, 140, 3),
+    y: axisOf(slot && slot.y, -80, 140, 2),
+    h: axisOf(slot && slot.h, 8, 220, 86)
+  };
+}
+
+function replicas(record) {
+  const raw = record && Array.isArray(record.lines) ? record.lines : [];
+  return raw.map(function (row) {
+    if (row && typeof row === "object") return { theme: String(row.theme || "").trim(), text: String(row.text || "").trim() };
+    return { theme: "", text: String(row || "").trim() };
+  }).filter(function (row) { return row.theme || row.text; });
+}
+
+function textLook(item, fallbackSize) {
+  return {
+    size: Math.min(96, Math.max(10, Number(item.size) || fallbackSize)),
+    font: clip(item.font, 120) || "Georgia, serif",
+    fontUrl: clip(item.fontUrl, 300),
+    ink: clip(item.ink, 20) || "#f3ead8",
+    bold: !!item.bold,
+    italic: !!item.italic,
+    underline: !!item.underline,
+    stroke: clip(item.stroke, 20) || "#1a140c",
+    strokeWidth: Math.min(8, Math.max(0, Number(item.strokeWidth) || 0)),
+    plate: clip(item.plate, 20)
+  };
+}
+
+function projectMap(page, campaign) {
   const views = Array.isArray(page.views) ? page.views : [];
   const view = views.find(function (item) { return item.id === page.activeViewId; }) || views[0] || {};
-  const night = view.mode === "night";
-  const image = night && view.night ? view.night : (view.day || "");
-  const locations = (Array.isArray(view.locations) ? view.locations : []).filter(function (item) {
-    return item && !item.hidden;
+  const locationsAll = Array.isArray(view.locations) ? view.locations : [];
+  function locById(id) {
+    return locationsAll.find(function (item) { return item && item.id === id; });
+  }
+  function chainTrashed(id) {
+    let cursor = id;
+    let guard = 0;
+    while (cursor && guard < 24) {
+      const loc = locById(cursor);
+      if (!loc || loc.trashed) return true;
+      cursor = loc.parentId || "";
+      guard += 1;
+    }
+    return false;
+  }
+  function shownOnScreen(item) {
+    if (!item) return false;
+    if (item.screen === false) return false;
+    if (item.screen === true) return true;
+    return !item.hidden;
+  }
+  let here = view.focusId || "";
+  if (here && !locById(here)) here = "";
+  const gmHere = here;
+  let guard = 0;
+  while (here && guard < 24) {
+    const loc = locById(here);
+    if (loc && shownOnScreen(loc) && !chainTrashed(here)) break;
+    here = loc ? (loc.parentId || "") : "";
+    guard += 1;
+  }
+  const placeOff = (gmHere || "") !== (here || "");
+  const focused = here ? locById(here) : null;
+  const night = focused ? focused.mode === "night" : view.mode === "night";
+  const sheet = focused || view;
+  const image = night ? (sheet.night || sheet.day || "") : (sheet.day || "");
+  const npcs = campaign && campaign.codex && Array.isArray(campaign.codex.npcs) ? campaign.codex.npcs : [];
+  const locations = locationsAll.filter(function (item) {
+    return item && !item.hidden && !item.trashed && (item.parentId || "") === here;
   }).slice(0, 200).map(function (item) {
-    return { id: clip(item.id, 80), name: clip(item.name, 80), x: unit(item.x), y: unit(item.y), tip: clip(item.tip, 400) };
+    return Object.assign({
+      id: clip(item.id, 80),
+      name: clip(item.name, 80),
+      x: unit(item.x),
+      y: unit(item.y),
+      tip: clip(item.tip, 400),
+      pinSize: Math.min(160, Math.max(12, Number(item.pinSize) || 14))
+    }, textLook(item, 14));
   });
   const markers = (Array.isArray(view.markers) ? view.markers : []).filter(function (item) {
-    return item && !item.hidden;
+    return item && !item.hidden && (item.locId || "") === here;
   }).slice(0, 200).map(function (item) {
-    return {
+    const npc = item.kind === "npc" ? npcs.find(function (row) { return row && row.id === item.npcId; }) : null;
+    const face = activeFace(npc);
+    const portrait = face.portrait ? clip(face.portrait, 300) : "";
+    return Object.assign({
       id: clip(item.id, 80),
       name: clip(item.name, 80),
       x: unit(item.x),
       y: unit(item.y),
       kind: item.kind === "npc" ? "npc" : "mark",
-      tip: clip(item.tip, 400)
-    };
+      tip: clip(item.tip, 400),
+      pinSize: Math.min(160, Math.max(12, Number(item.pinSize) || (portrait ? 56 : 14))),
+      portrait: portrait,
+      portraitX: portrait ? face.x : 50,
+      portraitY: portrait ? face.y : 50,
+      portraitZoom: portrait ? face.zoom : 1
+    }, textLook(item, 14));
   });
-  const labels = (Array.isArray(view.labels) ? view.labels : []).slice(0, 100).map(function (item) {
-    return {
+  const labels = (Array.isArray(view.labels) ? view.labels : []).filter(function (item) {
+    return item && (item.locId || "") === here;
+  }).slice(0, 100).map(function (item) {
+    return Object.assign({
       id: clip(item.id, 80),
       text: clip(item.text, 200),
       x: unit(item.x),
-      y: unit(item.y),
-      font: clip(item.font, 120) || "Georgia, serif",
-      fontUrl: clip(item.fontUrl, 300),
-      size: Math.min(120, Math.max(12, Number(item.size) || 28)),
-      ink: clip(item.ink, 20) || "#f3ead8",
-      bold: !!item.bold,
-      italic: !!item.italic,
-      underline: !!item.underline
-    };
+      y: unit(item.y)
+    }, textLook(item, 28));
   });
-  const strokes = (Array.isArray(view.strokes) ? view.strokes : []).slice(-80).map(function (item) {
+  const talkMarker = view.talkId
+    ? (Array.isArray(view.markers) ? view.markers : []).find(function (item) { return item && item.id === view.talkId && item.kind === "npc"; })
+    : null;
+  let talk = null;
+  if (talkMarker && shownOnScreen(talkMarker) && !placeOff) {
+    const npc = talkMarker.npcId ? npcs.find(function (row) { return row && row.id === talkMarker.npcId; }) : null;
+    const lines = replicas(npc || talkMarker);
+    const index = lines.length ? Math.min(lines.length - 1, Math.max(0, Number(talkMarker.talkLine) || 0)) : -1;
+    const chosen = index >= 0 ? lines[index] : null;
+    const fallback = !lines.length ? String((npc && npc.note) || talkMarker.tip || "").trim() : "";
+    const face = activeFace(npc);
+    const shop = !!talkMarker.shopOpen;
+    const figure = standOf(npc || talkMarker, shop);
+    talk = {
+      name: clip(talkMarker.name || (npc && npc.name) || "НПС", 80),
+      line: clip(chosen ? (chosen.text || "...") : (fallback || "..."), 800),
+      portrait: face.portrait ? clip(face.portrait, 300) : "",
+      figure: { x: figure.x, y: figure.y, h: figure.h },
+      shop: shop,
+      goods: shop ? saleRows(npc, campaign) : null,
+      backdrop: clip((npc && npc.backdrop) || image, 300)
+    };
+  }
+  const strokes = (Array.isArray(view.strokes) ? view.strokes : []).filter(function (item) {
+    return item && (item.locId || "") === here;
+  }).slice(-80).map(function (item) {
     const tool = item && (item.tool === "line" || item.tool === "rect" || item.tool === "ellipse") ? item.tool : "brush";
     return {
       tool: tool,
@@ -108,11 +292,13 @@ function projectMap(page) {
     kind: "map",
     day: clip(image, 300),
     night: "",
-    mode: night && !view.night ? "night" : "day",
+    mode: image ? "day" : (night ? "night" : "day"),
+    tabs: [],
     locations: locations,
     markers: markers,
     labels: labels,
-    strokes: strokes
+    strokes: strokes,
+    talk: talk
   };
 }
 
@@ -137,7 +323,7 @@ export function projectFrame(campaign) {
   const page = pages.find(function (item) { return item.id === campaign.shownPageId; }) || pages[0] || null;
   return {
     stage: campaign.stage || { width: 1368, height: 786 },
-    page: page ? (page.kind === "map" ? projectMap(page) : projectNote(page)) : null,
+    page: page ? (page.kind === "map" ? projectMap(page, campaign) : projectNote(page)) : null,
     at: Date.now()
   };
 }
