@@ -613,6 +613,7 @@
       '<button type="button" id="mod-scene" class="is-on" title="Страница с текстом и фоном">Сцена</button>' +
       '<button type="button" id="mod-map" title="Карта и локации">Карта</button>' +
       '<button type="button" id="mod-codex" title="Персонажи, отряды и каталог">Справочник</button>' +
+      '<button type="button" id="mod-battle" title="Инициатива, хиты и враги на карте">Бой</button>' +
       '<span class="spacer"></span>' +
       '<button type="button" id="copy-master" title="Скопировать ссылку с ключом мастера">Ссылка мастера</button>' +
       '<button type="button" id="copy" title="Скопировать ссылку для зрителей">Ссылка игроков</button>' +
@@ -628,7 +629,7 @@
       '<label title="Текст заметки вместо своего текста">Заметка<select id="page-note"></select></label>' +
       '<p class="note">В режиме «Сразу» правки этой страницы уходят игрокам сами. «Показать» публикует кадр в любом режиме. Бросок виден игрокам карточкой с кубиком и остаётся в истории.</p>' +
       '<p class="error" id="err"></p></aside>' +
-      '<div class="stage-wrap" id="preview"></div></div><div class="work" id="work-map" hidden></div><div class="work" id="work-codex" hidden></div></section>';
+      '<div class="stage-wrap" id="preview"></div></div><div class="work" id="work-map" hidden></div><div class="work" id="work-codex" hidden></div><div class="work" id="work-battle" hidden></div></section>';
 
     const err = app.querySelector("#err");
     const preview = app.querySelector("#preview");
@@ -718,23 +719,98 @@
         app.querySelectorAll(".master .error").forEach(function (node) { node.textContent = error.message; });
       }
     }
+    function publishRoll(spec) {
+      const look = diceLook(state);
+      const roll = rollFormula(spec || {});
+      const bonus = Math.round(Number(spec && spec.bonus) || 0);
+      if (bonus) {
+        roll.total += bonus;
+        roll.log = roll.log + (bonus > 0 ? "+" : "") + bonus + "=" + roll.total;
+      }
+      if (spec && spec.label) roll.label = spec.label;
+      if (spec && spec.name) roll.name = spec.name;
+      roll.color = (spec && spec.color) || look.color;
+      roll.texture = (spec && spec.texture) || look.texture;
+      roll.speed = look.speed;
+      roll.animate = look.animate;
+      return api("/api/rooms/" + id + "/events", {
+        method: "POST",
+        headers: headers,
+        body: JSON.stringify({ type: "die", text: rollText(roll), roll: roll })
+      }).then(function (data) {
+        state.rolls = data.rolls || state.rolls;
+        err.textContent = "";
+        showDie((data.event && data.event.roll) || roll, function () {
+          api("/api/rooms/" + id + "/events", {
+            method: "POST",
+            headers: headers,
+            body: JSON.stringify({ type: "die-hide" })
+          }).catch(function () {});
+        });
+        return data;
+      });
+    }
+    function placeFoes(actors) {
+      const page = (state.campaign.pages || []).find(function (item) { return item.kind === "map"; });
+      if (!page || !page.views || !page.views.length) return;
+      const view = page.views.find(function (item) { return item.id === page.activeViewId; }) || page.views[0];
+      view.markers = view.markers || [];
+      (actors || []).forEach(function (actor, index) {
+        if (!actor || actor.side === "player") return;
+        if (actor.markerId && view.markers.some(function (row) { return row.id === actor.markerId; })) return;
+        const marker = {
+          id: crypto.randomUUID(),
+          kind: "foe",
+          name: actor.name || "Враг",
+          x: Math.min(0.92, 0.06 + (index % 8) * 0.11),
+          y: Math.max(0.08, 0.86 - Math.floor(index / 8) * 0.12),
+          locId: "",
+          hidden: true,
+          screen: false,
+          portrait: actor.portrait || "",
+          hp: actor.hp,
+          hpMax: actor.hpMax,
+          ac: actor.ac,
+          weapon: actor.weapon || "",
+          damage: actor.damage || "",
+          bonus: actor.bonus || 0,
+          actorId: actor.id,
+          pinSize: 52
+        };
+        actor.markerId = marker.id;
+        view.markers.push(marker);
+      });
+    }
     function showModule(kind) {
       readForm();
       const mapHost = app.querySelector("#work-map");
       const codexHost = app.querySelector("#work-codex");
+      const battleHost = app.querySelector("#work-battle");
       if (kind !== "codex" && codexHost._codexFlush) codexHost._codexFlush();
       app.querySelector("#work-scene").hidden = kind !== "scene";
       mapHost.hidden = kind !== "map";
       codexHost.hidden = kind !== "codex";
+      battleHost.hidden = kind !== "battle";
       app.querySelector("#mod-scene").classList.toggle("is-on", kind === "scene");
       app.querySelector("#mod-map").classList.toggle("is-on", kind === "map");
       app.querySelector("#mod-codex").classList.toggle("is-on", kind === "codex");
+      app.querySelector("#mod-battle").classList.toggle("is-on", kind === "battle");
       if (kind === "codex") {
         window.ShirmoCodex.mount(codexHost, {
           campaign: state.campaign,
           save: save,
           upload: function (file) { return uploadFile(id, key, file); },
           showGoods: function (goods) { return publishGoods(id, headers, goods); }
+        });
+        return;
+      }
+      if (kind === "battle" && window.ShirmoBattle) {
+        window.ShirmoBattle.mount(battleHost, {
+          campaign: state.campaign,
+          save: save,
+          library: shelf,
+          roll: publishRoll,
+          place: placeFoes
         });
         return;
       }
@@ -754,6 +830,8 @@
           upload: function (file) { return uploadFile(id, key, file); },
           showGoods: function (goods) { return publishGoods(id, headers, goods); },
           hideGoods: function () { return hidePlayerGoods(id, headers); },
+          roll: publishRoll,
+          openBattle: function (markerId) { showModule("battle"); const host = app.querySelector("#work-battle"); if (host && host._battleFocus) host._battleFocus(markerId); },
           ping: function (at, look) {
             return api("/api/rooms/" + id + "/events", {
               method: "POST",
@@ -791,6 +869,7 @@
     app.querySelector("#mod-scene").addEventListener("click", function () { showModule("scene"); });
     app.querySelector("#mod-map").addEventListener("click", function () { showModule("map"); });
     app.querySelector("#mod-codex").addEventListener("click", function () { showModule("codex"); });
+    app.querySelector("#mod-battle").addEventListener("click", function () { showModule("battle"); });
 
     function markMode() {
       app.querySelector("#mode-live").classList.toggle("is-on", state.publishMode === "live");

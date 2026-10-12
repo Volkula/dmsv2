@@ -1787,3 +1787,120 @@ button.ware-face-btn img { width: 100%; height: 100%; object-fit: cover; display
 .viewer { height: 100vh; overflow: hidden; background: #000; }
 
 .viewer .stage-wrap { height: 100%; }
+
+.talk-menu .talk-size { display: grid; gap: 4px; margin-top: 8px; font-size: 13px; }
+.talk-menu .talk-size input { width: 100%; }
+
+.pin-hp {
+  display: block;
+  margin-top: 2px;
+  font-style: normal;
+  font-size: 11px;
+  color: #f3ead8;
+  text-shadow: 0 1px 2px #1a140c;
+}
+
+.loc-shot {
+  width: 72px;
+  height: 72px;
+  object-fit: cover;
+  border-radius: 50%;
+  display: block;
+}
+
+.place-person input[type="text"] { width: 120px; min-width: 0; padding: 4px 8px; }
+.place-person.is-off { opacity: 0.45; }
+
+#work-battle { display: block; height: calc(100vh - 58px); overflow: hidden; }
+
+.battle {
+  --b-bg: #14110e;
+  --b-ink: #f3ead8;
+  --b-player: #7dcea0;
+  --b-foe: #e07a6a;
+  --b-brass: #e6c36a;
+  height: 100%;
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  color: var(--b-ink);
+  background: var(--b-bg) center/cover no-repeat;
+}
+
+.battle-side, .battle-card {
+  background: rgba(20, 17, 14, 0.92);
+  border-color: var(--line);
+}
+
+.battle-side {
+  overflow: auto;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-right: 1px solid var(--line);
+}
+
+.battle-side label, .battle-card label { font-size: 13px; gap: 4px; }
+.battle-side button, .battle-card button, .battle-side input, .battle-side select, .battle-card input, .battle-card select { padding: 6px 8px; }
+.battle-round { margin: 0; color: var(--b-brass); }
+.battle-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.battle-hits { display: flex; flex-direction: column; gap: 4px; }
+.battle-hits button { text-align: left; }
+.battle-log { font-size: 12px; color: var(--muted); }
+.battle-log p { margin: 0 0 4px; }
+
+.battle-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.battle-track {
+  display: flex;
+  gap: 6px;
+  overflow: auto;
+  padding: 8px;
+  align-items: stretch;
+}
+.battle-token {
+  width: 104px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  align-items: stretch;
+  text-align: left;
+  padding: 6px;
+  background: rgba(12, 10, 8, 0.88);
+  border: 1px solid var(--line);
+  color: var(--b-ink);
+}
+.battle-token.is-player { box-shadow: inset 3px 0 0 var(--b-player); }
+.battle-token.is-foe { box-shadow: inset 3px 0 0 var(--b-foe); }
+.battle-token.is-on { width: 132px; border-color: var(--b-brass); }
+.battle-token.is-tie { margin-left: -2px; border-left-style: dashed; }
+.battle-token.is-dead { filter: grayscale(1); opacity: 0.55; }
+.battle-token strong { font-size: 13px; font-weight: 500; line-height: 1.2; }
+.battle-face {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: #1a140c;
+}
+.battle-face img { width: 100%; height: 100%; object-fit: cover; }
+.battle-init { color: var(--b-brass); font-style: normal; font-size: 12px; }
+.battle-hp { font-style: normal; font-size: 11px; color: var(--muted); }
+.battle-bar { display: block; height: 6px; background: #2a241c; border-radius: 99px; overflow: hidden; }
+.battle-token.is-player .battle-bar span { background: var(--b-player); }
+.battle-token.is-foe .battle-bar span { background: var(--b-foe); }
+.battle-bar span { display: block; height: 100%; }
+.battle-marks { display: flex; flex-wrap: wrap; gap: 2px; }
+.battle-marks i { font-style: normal; font-size: 10px; border: 1px solid var(--line); border-radius: 99px; padding: 0 4px; }
+.battle-card { margin: 0 8px 8px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; display: flex; flex-direction: column; gap: 8px; }
+.battle-card-head, .battle-hp-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.battle-name { font-size: 16px; }
+.battle-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.battle-target { min-width: 140px; }
+@media (max-width: 900px) {
+  .battle { grid-template-columns: 1fr; }
+  .battle-grid { grid-template-columns: 1fr 1fr; }
+  .battle-side { max-height: 42vh; }
+}

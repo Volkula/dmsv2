@@ -279,14 +279,15 @@
   function pinHtml(item, kind, master) {
     if (!master && item.hidden) return "";
     const tip = item.tip ? '<span class="tip">' + esc(item.tip) + "</span>" : "";
-    const portrait = kind === "npc" ? item.portrait : "";
+    const portrait = kind === "npc" || kind === "loc" || kind === "foe" ? (item.portrait || "") : "";
     const size = Math.min(160, Math.max(12, Number(item.pinSize) || (portrait ? 56 : 14)));
     const badge = master && item.emoji ? '<em class="pin-emoji">' + esc(item.emoji) + "</em>" : "";
     const dot = portrait ? '<i><img alt="" src="' + esc(portrait) + '" style="' + faceStyle(item) + '">' + badge + "</i>" : "<i></i>";
-    const marks = master && (kind === "npc" || kind === "loc")
+    const marks = master && (kind === "npc" || kind === "loc" || kind === "foe")
       ? '<span class="pin-flags">' + flagMark("screen", shownScreen(item)) + flagMark("map", shownMap(item)) + "</span>"
       : "";
-    const caption = '<b style="' + captionCss(item, 14) + '">' + esc(item.name || (kind === "loc" ? "Локация" : "Без имени")) + "</b>";
+    const hp = kind === "foe" && item.hpMax ? '<em class="pin-hp">' + esc(String(item.hp == null ? item.hpMax : item.hp)) + "/" + esc(String(item.hpMax)) + "</em>" : "";
+    const caption = '<b style="' + captionCss(item, 14) + '">' + esc(item.name || (kind === "loc" ? "Локация" : "Без имени")) + "</b>" + hp;
     const named = kind === "loc" ? ' aria-label="' + esc(item.name || "Локация") + '"' : "";
     return '<button type="button" class="map-pin ' + kind + (portrait ? " has-face" : "") + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="' + kind + '"' + named + ' style="left:' + (item.x * 100) + "%;top:" + (item.y * 100) + "%;--pin:" + size + 'px">' + marks + dot + caption + tip + "</button>";
   }
@@ -375,7 +376,7 @@
     const bg = talk.backdrop ? "url('" + esc(talk.backdrop) + "')" : "none";
     const fig = talk.figure || figureOf(null, false);
     const figure = talk.portrait
-      ? '<div class="talk-figure' + (master ? " is-live" : "") + '" style="' + figureCss(fig) + '"' + (master ? ' title="Потяните изображение, чтобы переставить его. Ползунок размера появляется у курсора. Правый клик — реплики и товары"' : "") + '><img alt="" draggable="false" src="' + esc(talk.portrait) + '"></div>'
+      ? '<div class="talk-figure' + (master ? " is-live" : "") + '" style="' + figureCss(fig) + '"' + (master ? ' title="Потяните изображение, чтобы переставить его. Правый клик — размер, реплики и товары"' : "") + '><img alt="" draggable="false" src="' + esc(talk.portrait) + '"></div>'
       : "";
     const reps = master && talk.reps && talk.reps.length
       ? '<div class="talk-reps">' + talk.reps.map(function (rep, index) {
@@ -452,7 +453,10 @@
     const dim = source.mode === "night" && !source.night;
     const strokes = (source.strokes || []).map(strokeSvg).join("");
     const locations = (source.locations || []).map(function (item) { return pinHtml(item, "loc", master); }).join("");
-    const markers = (source.markers || []).map(function (item) { return pinHtml(item, item.kind === "npc" ? "npc" : "mark", master); }).join("");
+    const markers = (source.markers || []).map(function (item) {
+      const kind = item.kind === "npc" ? "npc" : (item.kind === "foe" ? "foe" : "mark");
+      return pinHtml(item, kind, master);
+    }).join("");
     const labels = (source.labels || []).map(labelHtml).join("");
     const face = faces(source);
     const bar = master && source.flags ? flagBar(source.flags) : "";
@@ -618,7 +622,17 @@
         mode: shot.dim ? "night" : "day",
         flags: inside ? { screen: shownScreen(inside), map: shownMap(inside) } : null,
         tabs: tabList(current),
-        locations: onLevel(current.locations, here, "parentId").filter(function (item) { return !item.trashed; }),
+        locations: onLevel(current.locations, here, "parentId").filter(function (item) { return !item.trashed; }).map(function (item) {
+          const place = item.placeId && (book().places || []).find(function (row) { return row.id === item.placeId; });
+          const portrait = item.portrait || (place && place.portrait) || "";
+          if (!portrait) return item;
+          return Object.assign({}, item, {
+            portrait: portrait,
+            portraitX: item.portraitX != null ? item.portraitX : place && place.portraitX,
+            portraitY: item.portraitY != null ? item.portraitY : place && place.portraitY,
+            portraitZoom: item.portraitZoom || (place && place.portraitZoom) || 1
+          });
+        }),
         markers: onLevel(current.markers, here, "locId").map(function (item) {
           const face = faceOf(item);
           if (!face) return item;
@@ -807,7 +821,12 @@
         '<details class="drop"><summary title="День, ночь и картинки фона">Вид</summary>' +
         '<div class="row"><button type="button" id="setup-day" class="' + (sheet.mode !== "night" ? "is-on" : "") + '" title="Показать дневной фон">День</button><button type="button" id="setup-night" class="' + (sheet.mode === "night" ? "is-on" : "") + '" title="Показать ночной фон">Ночь</button></div>' +
         '<label title="Картинка, когда у места день">Фон дня<select id="setup-day-img">' + options(sheet.day || "") + "</select></label>" +
-        '<label title="Картинка, когда у места ночь">Фон ночи<select id="setup-night-img">' + options(sheet.night || "") + "</select></label></details></div>";
+        '<label class="file-btn" title="Загрузить фон дня, как портрет у персонажа">Загрузить день<input type="file" id="setup-day-file" accept="image/*" aria-label="Загрузить фон дня"></label>' +
+        '<label title="Картинка, когда у места ночь">Фон ночи<select id="setup-night-img">' + options(sheet.night || "") + "</select></label>" +
+        '<label class="file-btn" title="Загрузить фон ночи">Загрузить ночь<input type="file" id="setup-night-file" accept="image/*" aria-label="Загрузить фон ночи"></label>' +
+        (loc ? '<label title="Картинка точки на карте, как портрет НПС">Портрет точки<select id="setup-face">' + options(loc.portrait || "") + "</select></label>" +
+          '<label class="file-btn" title="Загрузить портрет точки">Загрузить портрет<input type="file" id="setup-face-file" accept="image/*" aria-label="Загрузить портрет точки"></label>' : "") +
+        "</details></div>";
       document.body.appendChild(pop);
       setupEl = pop;
       function setMode(mode) {
@@ -859,6 +878,50 @@
         sheet.night = event.target.value;
         paintBoard();
         dirty();
+      });
+      function keepShot(file, apply) {
+        if (!file || !ctx.upload) return;
+        ctx.upload(file).then(function (url) {
+          if (!ctx.campaign.library) ctx.campaign.library = { fonts: [], images: [], notes: [] };
+          if (window.ShirmoLib) window.ShirmoLib.keep(ctx.campaign.library, {
+            url: url,
+            name: file.name.replace(/\.[^.]+$/, ""),
+            section: "places",
+            sectionName: "Локации"
+          });
+          apply(url);
+          paintBoard();
+          dirty();
+        });
+      }
+      pop.querySelector("#setup-day-file").addEventListener("change", function (event) {
+        const file = event.target.files && event.target.files[0];
+        keepShot(file, function (url) { sheet.day = url; });
+      });
+      pop.querySelector("#setup-night-file").addEventListener("change", function (event) {
+        const file = event.target.files && event.target.files[0];
+        keepShot(file, function (url) { sheet.night = url; });
+      });
+      const facePick = pop.querySelector("#setup-face");
+      if (facePick) facePick.addEventListener("change", function (event) {
+        loc.portrait = event.target.value;
+        if (loc.placeId) {
+          const place = (book().places || []).find(function (row) { return row.id === loc.placeId; });
+          if (place) place.portrait = loc.portrait;
+        }
+        paintBoard();
+        dirty();
+      });
+      const faceFile = pop.querySelector("#setup-face-file");
+      if (faceFile) faceFile.addEventListener("change", function (event) {
+        const file = event.target.files && event.target.files[0];
+        keepShot(file, function (url) {
+          loc.portrait = url;
+          if (loc.placeId) {
+            const place = (book().places || []).find(function (row) { return row.id === loc.placeId; });
+            if (place) place.portrait = url;
+          }
+        });
       });
     }
     function paintLists() {
@@ -1192,71 +1255,31 @@
         });
       }
       track(figure);
-      let sizeTimer = 0;
-      function sizeAway(x, y) {
-        const pop = document.getElementById("talk-size-pop");
-        if (!pop) return true;
-        const box = pop.getBoundingClientRect();
-        const cx = box.left + box.width / 2;
-        const cy = box.top + box.height / 2;
-        const dx = x - cx;
-        const dy = y - cy;
-        return dx * dx + dy * dy > 160 * 160;
-      }
-      function placeSize(x, y) {
-        let pop = document.getElementById("talk-size-pop");
-        if (!pop) {
-          pop = document.createElement("div");
-          pop.id = "talk-size-pop";
-          pop.className = "talk-size-pop";
-          pop.innerHTML = '<label title="Размер изображения на сцене">Размер<input type="range" min="8" max="220" aria-label="Размер изображения"></label>';
-          document.body.appendChild(pop);
-          pop.addEventListener("pointerdown", function (ev) { ev.stopPropagation(); });
-          pop.addEventListener("pointerenter", function () { clearTimeout(sizeTimer); });
-          pop.addEventListener("pointerleave", function () {
-            sizeTimer = setTimeout(function () { if (pop.parentNode) pop.remove(); }, 400);
-          });
-          pop.querySelector("input").addEventListener("input", function (ev) {
-            const cur = figureOf(record, !!marker.shopOpen);
-            live({ x: cur.x, y: cur.y, h: Number(ev.target.value) });
-          });
-        }
-        const input = pop.querySelector("input");
-        if (document.activeElement !== input) input.value = String(figureOf(record, !!marker.shopOpen).h);
-        pop.style.left = Math.max(8, Math.min(x + 16, window.innerWidth - 210)) + "px";
-        pop.style.top = Math.max(8, Math.min(y + 14, window.innerHeight - 52)) + "px";
-      }
-      figure.addEventListener("pointermove", function (event) {
-        if (event.buttons) return;
-        if (!sizeAway(event.clientX, event.clientY)) return;
-        clearTimeout(sizeTimer);
-        placeSize(event.clientX, event.clientY);
-      });
-      figure.addEventListener("pointerleave", function (event) {
-        const pop = document.getElementById("talk-size-pop");
-        if (pop && event.relatedTarget && pop.contains(event.relatedTarget)) return;
-        sizeTimer = setTimeout(function () {
-          const node = document.getElementById("talk-size-pop");
-          if (node) node.remove();
-        }, 500);
-      });
       figure.addEventListener("contextmenu", function (event) {
         event.preventDefault();
         event.stopPropagation();
         const old = document.getElementById("talk-menu");
         if (old) old.remove();
-        const sizePop = document.getElementById("talk-size-pop");
-        if (sizePop) sizePop.remove();
         const menu = document.createElement("div");
         menu.id = "talk-menu";
         menu.className = "pin-menu talk-menu";
+        const size = figureOf(record, !!marker.shopOpen).h;
         menu.innerHTML = '<button type="button" data-menu="lines" title="Редактор реплик">Реплики</button>' +
           '<button type="button" data-menu="ware" title="Товары персонажа">Товары</button>' +
-          '<button type="button" data-menu="shop" title="Переключить разговор и торговлю">' + (marker.shopOpen ? "К разговору" : "Торговля") + "</button>";
+          '<button type="button" data-menu="shop" title="Переключить разговор и торговлю">' + (marker.shopOpen ? "К разговору" : "Торговля") + "</button>" +
+          '<label class="talk-size" title="Размер портрета на сцене">Размер<input id="talk-size" type="range" min="8" max="220" value="' + size + '" aria-label="Размер портрета"></label>';
         menu.style.left = Math.max(8, Math.min(event.clientX, window.innerWidth - 220)) + "px";
-        menu.style.top = Math.max(8, Math.min(event.clientY, window.innerHeight - 160)) + "px";
+        menu.style.top = Math.max(8, Math.min(event.clientY, window.innerHeight - 240)) + "px";
         document.body.appendChild(menu);
         menu.addEventListener("pointerdown", function (ev) { ev.stopPropagation(); });
+        const sizeInput = menu.querySelector("#talk-size");
+        if (sizeInput) {
+          sizeInput.addEventListener("input", function (ev) {
+            const cur = figureOf(record, !!marker.shopOpen);
+            live({ x: cur.x, y: cur.y, h: Number(ev.target.value) });
+          });
+          sizeInput.addEventListener("change", function () { ctx.save(); });
+        }
         menu.addEventListener("click", function (ev) {
           const act = ev.target.getAttribute("data-menu");
           if (!act) return;
@@ -1827,6 +1850,23 @@
           '<label title="Вправо сдвигает портрет вниз">Смещение по высоте<input id="face-y" type="range" min="0" max="100" value="' + Math.round(100 - (face ? face.y : 50)) + '"></label></details>'
         : "";
       const sheet = npcFace ? window.ShirmoNpc.html(npcFace, (ctx.library().images) || []) : "";
+      const images = (ctx.library().images) || [];
+      const locShot = kind === "loc"
+        ? (item.portrait ? '<img class="loc-shot" alt="" src="' + esc(item.portrait) + '">' : '<p class="note">Портрета точки пока нет. Он показывается на карте, как у НПС.</p>') +
+          '<label class="file-btn" title="Загрузить портрет точки">Загрузить<input type="file" id="loc-face-file" accept="image/*" aria-label="Загрузить портрет точки"></label>' +
+          '<label title="Портрет из библиотеки">Из библиотеки<select id="loc-face-lib"><option value="">Нет</option>' + images.map(function (image) {
+            return '<option value="' + esc(image.url) + '"' + (image.url === item.portrait ? " selected" : "") + ">" + esc(image.name || "Картинка") + "</option>";
+          }).join("") + "</select></label>"
+        : "";
+      const foeBox = kind === "foe"
+        ? '<label title="Текущие хиты">Хиты<input id="foe-hp" type="number" min="0" value="' + esc(String(item.hp == null ? "" : item.hp)) + '"></label>' +
+          '<label title="Максимум хитов">Максимум<input id="foe-max" type="number" min="1" value="' + esc(String(item.hpMax || 1)) + '"></label>' +
+          '<label title="Класс доспеха">КД<input id="foe-ac" type="number" min="0" value="' + esc(String(item.ac || 10)) + '"></label>' +
+          '<label title="Оружие в подписи броска">Оружие<input id="foe-weapon" type="text" value="' + esc(item.weapon || "") + '"></label>' +
+          '<label title="Бонус к атаке">Атака<input id="foe-bonus" type="number" value="' + esc(String(item.bonus || 0)) + '"></label>' +
+          '<label title="Формула урона, например 1d6+1">Урон<input id="foe-damage" type="text" value="' + esc(item.damage || "1d6") + '"></label>' +
+          '<div class="row"><button type="button" data-act="foe-attack" title="Бросок атаки от имени врага. Игроки видят кубик">Атака</button><button type="button" data-act="foe-damage" title="Бросок урона от имени врага. Игроки видят кубик">Урон</button></div>'
+        : "";
       function group(title, tip, body, open) {
         return body ? '<details class="drop"' + (open ? " open" : "") + '><summary title="' + esc(tip) + '">' + title + "</summary>" + body + "</details>" : "";
       }
@@ -1839,8 +1879,9 @@
         '<label class="check" title="Плашка под подписью"><input id="pin-plate-on" type="checkbox"' + (item.plate ? " checked" : "") + "> Фон текста</label>" +
         '<label title="Цвет плашки под подписью">Цвет фона<input id="pin-plate" type="color" value="' + hexColor(item.plate, "#14110e") + '"></label>';
       return '<div class="pin-style">' +
-        group("Портрет", "Кадр, крупность и сдвиг портрета", frame) +
+        group("Портрет", "Кадр, крупность и сдвиг портрета", frame || locShot) +
         sheet +
+        group("Бой", "Хиты, броня и броски от имени врага", foeBox, true) +
         group("Точка", "Размер точки, заметка и видимость для игроков", pin + note, kind === "loc") +
         group("Подпись", "Шрифт, размер и оформление подписи", text) +
         "</div>";
@@ -2023,7 +2064,90 @@
           armedMove = true;
           host.querySelector("#map-hint").textContent = "Кликните новое место или перетащите точку.";
         }
+        if (act === "foe-attack" || act === "foe-damage") rollFoe(act === "foe-damage");
       });
+      function syncFoe(row) {
+        const battle = ctx.campaign && ctx.campaign.battle;
+        if (!row || !battle) return;
+        const actor = (battle.actors || []).find(function (one) { return one.id === row.actorId || one.markerId === row.id; });
+        if (!actor) return;
+        actor.name = row.name;
+        actor.hp = row.hp;
+        actor.hpMax = row.hpMax;
+        actor.ac = row.ac;
+        actor.weapon = row.weapon;
+        actor.bonus = row.bonus;
+        actor.damage = row.damage;
+        actor.portrait = row.portrait || actor.portrait;
+      }
+      function readFoe() {
+        const row = findItem();
+        if (!row) return null;
+        const hp = menu.querySelector("#foe-hp");
+        const max = menu.querySelector("#foe-max");
+        const ac = menu.querySelector("#foe-ac");
+        const weapon = menu.querySelector("#foe-weapon");
+        const bonus = menu.querySelector("#foe-bonus");
+        const damage = menu.querySelector("#foe-damage");
+        if (hp) row.hp = Math.max(0, Math.round(Number(hp.value) || 0));
+        if (max) row.hpMax = Math.max(1, Math.round(Number(max.value) || 1));
+        if (ac) row.ac = Math.max(0, Math.round(Number(ac.value) || 0));
+        if (weapon) row.weapon = weapon.value;
+        if (bonus) row.bonus = Math.round(Number(bonus.value) || 0);
+        if (damage) row.damage = damage.value.trim() || "1d6";
+        syncFoe(row);
+        paintBoard();
+        dirty();
+        return row;
+      }
+      ["#foe-hp", "#foe-max", "#foe-ac", "#foe-weapon", "#foe-bonus", "#foe-damage"].forEach(function (sel) {
+        const node = menu.querySelector(sel);
+        if (node) node.addEventListener("input", readFoe);
+      });
+      function setLocPortrait(url) {
+        const row = findItem();
+        if (!row) return;
+        row.portrait = url;
+        if (row.placeId) {
+          const place = (book().places || []).find(function (entry) { return entry.id === row.placeId; });
+          if (place) place.portrait = url;
+        }
+        paintBoard();
+        dirty();
+      }
+      const locLib = menu.querySelector("#loc-face-lib");
+      if (locLib) locLib.addEventListener("change", function (event) { setLocPortrait(event.target.value); });
+      const locFile = menu.querySelector("#loc-face-file");
+      if (locFile) locFile.addEventListener("change", function (event) {
+        const file = event.target.files && event.target.files[0];
+        if (!file || !ctx.upload) return;
+        ctx.upload(file).then(function (url) {
+          if (!ctx.campaign.library) ctx.campaign.library = { fonts: [], images: [], notes: [] };
+          if (window.ShirmoLib) window.ShirmoLib.keep(ctx.campaign.library, {
+            url: url,
+            name: file.name.replace(/\.[^.]+$/, ""),
+            section: "places",
+            sectionName: "Локации"
+          });
+          setLocPortrait(url);
+        });
+      });
+      function rollFoe(damage) {
+        const row = readFoe();
+        if (!row || !ctx.roll) return;
+        if (damage && window.ShirmoBattle) {
+          const spec = window.ShirmoBattle.formula(row.damage || "1d6");
+          ctx.roll({ name: row.name || "Враг", label: "Урон", count: spec.count, sides: spec.sides, bonus: spec.bonus });
+          return;
+        }
+        ctx.roll({
+          name: row.name || "Враг",
+          label: row.weapon || "Атака",
+          count: 1,
+          sides: 20,
+          bonus: Number(row.bonus) || 0
+        });
+      }
     }
     function hintBack() {
       armedMove = false;
@@ -2255,7 +2379,7 @@
     }
     function pinKind(hit) {
       const kind = hit.getAttribute("data-kind");
-      return kind === "loc" || kind === "mark" || kind === "npc" || kind === "label";
+      return kind === "loc" || kind === "mark" || kind === "npc" || kind === "label" || kind === "foe";
     }
     function flipFlag(item, which) {
       if (item.screen == null) item.screen = !item.hidden;
@@ -2500,6 +2624,7 @@
         press = null;
         if (open && kind === "loc") enter(id);
         else if (open && kind === "npc") openTalk(id);
+        else if (open && kind === "foe" && ctx.openBattle) ctx.openBattle(id);
         else if (open) showMenu();
       } else if (reopen) {
         reopen = false;
