@@ -56,3 +56,5 @@
 ## Фронт
 
 Статика в `web/`. Кэш скриптов через `?v=` в `index.html`. Правки JS/CSS на bind-mount не требуют rebuild образа API; правки `api/src` — нужен rebuild контейнера `api`.
+
+Выкладка на сервер: шаблон `docs/DEPLOY.md.example` (локальный `DEPLOY.md` и `Caddyfile` в git не коммитятся).

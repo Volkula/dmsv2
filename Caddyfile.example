@@ -19,7 +19,8 @@
 	import shirmo
 }
 
+# HTTPS: подставьте свой домен и пути к сертификатам, сохраните как Caddyfile.
 :443 {
-	tls /etc/letsencrypt/live/vpn.volkula.com/fullchain.pem /etc/letsencrypt/live/vpn.volkula.com/privkey.pem
+	tls /etc/letsencrypt/live/example.com/fullchain.pem /etc/letsencrypt/live/example.com/privkey.pem
 	import shirmo
 }

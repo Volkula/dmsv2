@@ -3,3 +3,8 @@ data/
 certs/
 *.sqlite
 .env
+
+# Локальные копии с хостом/путями — в репозитории только *.example
+README.md
+docs/DEPLOY.md
+Caddyfile

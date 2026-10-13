@@ -1,6 +1,8 @@
 # Ширма (dmsv2)
 
-GM-экран для Volkula: карта, справочник, бой, броски. Две ссылки без аккаунтов — мастер и игроки.
+GM-экран: карта, справочник, бой, броски. Две ссылки без аккаунтов — мастер и игроки.
+
+Скопируйте этот файл в `README.md` и при необходимости допишите свои URL.
 
 ## Быстрый старт
 
@@ -8,16 +10,17 @@ GM-экран для Volkula: карта, справочник, бой, брос
 docker-compose up -d --build
 ```
 
-Откройте [http://127.0.0.1:8088/](http://127.0.0.1:8088/). На сервере HTTPS: [https://vpn.volkula.com:8443/](https://vpn.volkula.com:8443/) (Let's Encrypt).
+Откройте [http://127.0.0.1:8088/](http://127.0.0.1:8088/).  
+На сервере HTTPS — см. `docs/DEPLOY.md.example` (порт и домен задаёте сами).
 
 | Сервис | Роль |
 |--------|------|
-| `caddy` | HTTP `:8088` и HTTPS `:8443` → статика `web/` и прокси `/api/*` |
+| `caddy` | HTTP и при необходимости HTTPS → статика `web/` и прокси `/api/*` |
 | `api` | Node + SQLite, порт внутри сети `8080` |
 
 Данные: volume `shirmo-data` → `/data` (SQLite и файлы).
 
-> На серверах со старым `docker-compose` 1.29 используйте именно `docker-compose`, не `docker compose`. Если recreate падает с `ContainerConfig`, сделайте `docker-compose down`, удалите контейнеры `dms2_*` и снова `up -d --build`.
+> На серверах со старым `docker-compose` 1.29 используйте именно `docker-compose`, не `docker compose`. Если recreate падает с `ContainerConfig`, сделайте `docker-compose down`, удалите контейнеры проекта и снова `up -d --build`.
 
 ## Ссылки
 
@@ -44,8 +47,8 @@ docker-compose up -d --build
 ## Документация
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — модель данных и API
-- [docs/DEPLOY.md](docs/DEPLOY.md) — выкладка на сервер
+- [docs/DEPLOY.md.example](docs/DEPLOY.md.example) — выкладка (скопируйте в `DEPLOY.md`)
 
 ## Репозиторий
 
-Ветка `screen`, remote `https://github.com/Volkula/dmsv2.git`.
+Ветка `screen`. Remote и URL продакшена в git не фиксируются — укажите свои в локальном `README.md`.
