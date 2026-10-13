@@ -18,7 +18,7 @@ docker-compose up -d --build
 | Порт | Протокол |
 |------|----------|
 | **8088** | HTTP |
-| **8443** | HTTPS (сертификат Caddy `tls internal`, браузер предупредит один раз) |
+| **8443** | HTTPS (self-signed в `certs/`, браузер предупредит один раз) |
 
 Порт 443 на хосте занят gost, поэтому HTTPS ширмы — на **8443**.
 
@@ -26,6 +26,8 @@ docker-compose up -d --build
 ssh root@vpn.volkula.com
 cd /opt/dms2
 git pull --ff-only origin screen
+# сертификат (один раз или после истечения)
+sh scripts/make-certs.sh vpn.volkula.com
 # PORT в docker-compose.yml должен быть 8080 (Caddy проксирует на api:8080)
 grep PORT docker-compose.yml
 docker-compose down

@@ -19,7 +19,7 @@
 	import shirmo
 }
 
-vpn.volkula.com:443, localhost:443 {
-	tls internal
+:443 {
+	tls /certs/cert.pem /certs/key.pem
 	import shirmo
 }
