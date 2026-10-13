@@ -12,9 +12,14 @@ services:
       - api
     ports:
       - "8088:80"
+      - "8443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./web:/srv/web:ro
+      - caddy-data:/data
+      - caddy-config:/config
 
 volumes:
   shirmo-data:
+  caddy-data:
+  caddy-config:

@@ -1,4 +1,4 @@
-:80 {
+(shirmo) {
 	handle /api/* {
 		reverse_proxy api:8080 {
 			flush_interval -1
@@ -9,4 +9,13 @@
 		try_files {path} /index.html
 		file_server
 	}
+}
+
+:80 {
+	import shirmo
+}
+
+:443 {
+	tls internal
+	import shirmo
 }

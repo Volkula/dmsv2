@@ -13,23 +13,28 @@ docker-compose up -d --build
 
 ## Сервер vpn.volkula.com
 
-Каталог: `/opt/dms2`. Ветка: `screen`. Порт снаружи: **8088** (HTTP).
+Каталог: `/opt/dms2`. Ветка: `screen`.
+
+| Порт | Протокол |
+|------|----------|
+| **8088** | HTTP |
+| **8443** | HTTPS (сертификат Caddy `tls internal`, браузер предупредит один раз) |
+
+Порт 443 на хосте занят gost, поэтому HTTPS ширмы — на **8443**.
 
 ```bash
 ssh root@vpn.volkula.com
 cd /opt/dms2
-git fetch origin
-git checkout screen
 git pull --ff-only origin screen
 # PORT в docker-compose.yml должен быть 8080 (Caddy проксирует на api:8080)
 grep PORT docker-compose.yml
 docker-compose down
 docker rm -f $(docker ps -aq --filter name=dms2) 2>/dev/null || true
 docker-compose up -d --build
-curl -s http://127.0.0.1:8088/api/health
+curl -sk https://127.0.0.1:8443/api/health
 ```
 
-Открыть: [http://vpn.volkula.com:8088/](http://vpn.volkula.com:8088/).
+Открыть: [https://vpn.volkula.com:8443/](https://vpn.volkula.com:8443/) или [http://vpn.volkula.com:8088/](http://vpn.volkula.com:8088/).
 
 ### Типичные поломки
 
