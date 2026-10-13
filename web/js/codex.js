@@ -574,9 +574,15 @@ window.ShirmoCodex = (function () {
     function syncNpcSeat(npcId, placeId) {
       const locId = locIdForPlace(placeId);
       eachMapMarker(function (marker) {
-        if (marker.npcId !== npcId) return;
+        if (marker.npcId !== npcId && marker.codexId !== npcId) return;
         marker.locId = locId || "";
       });
+    }
+    function moveSquadToPlace(squad, placeId) {
+      if (!squad) return;
+      const to = placeId || "";
+      squad.placeId = to;
+      (squad.memberIds || []).forEach(function (id) { moveNpcToPlace(id, to); });
     }
     function moveNpcToPlace(npcId, placeId) {
       if (!npcId) return;
@@ -1088,7 +1094,10 @@ window.ShirmoCodex = (function () {
       }
       if (event.target.hasAttribute("data-squad-place")) {
         const squadRow = book().squads[Number(event.target.getAttribute("data-squad-place"))];
-        if (squadRow) squadRow.placeId = event.target.value;
+        if (squadRow) {
+          moveSquadToPlace(squadRow, event.target.value);
+          paint();
+        }
         saveSoon();
         return;
       }
@@ -1837,12 +1846,14 @@ window.ShirmoCodex = (function () {
           });
           memberIds.push(id);
         }
-        book().squads.push({
+        const squad = {
           id: crypto.randomUUID(),
           name: base,
-          placeId: squadPlace,
+          placeId: "",
           memberIds: memberIds
-        });
+        };
+        book().squads.push(squad);
+        if (squadPlace) moveSquadToPlace(squad, squadPlace);
         paint();
         saveSoon();
       }

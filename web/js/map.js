@@ -1891,9 +1891,9 @@
         if (!row) return;
         if ((row.locId || "") === to) return;
         row.locId = to;
-        if (row.kind === "npc" && row.npcId) {
+        if ((row.kind === "npc" && row.npcId) || (row.kind === "foe" && row.codexId)) {
           const hostLoc = to ? findLoc(to) : null;
-          seatNpcAt(row.npcId, hostLoc && hostLoc.placeId);
+          seatNpcAt(row.npcId || row.codexId, hostLoc && hostLoc.placeId);
         }
         if (selected && selected.id === id) selected = null;
       }
