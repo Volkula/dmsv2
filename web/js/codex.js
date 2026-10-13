@@ -319,6 +319,17 @@ window.ShirmoCodex = (function () {
         }
       });
     }
+    const knownNpc = {};
+    book.npcs.forEach(function (row) { if (row && row.id) knownNpc[row.id] = true; });
+    const beforeSquads = book.squads.length;
+    book.squads = book.squads.filter(function (squad) {
+      if (!squad) return false;
+      const before = (squad.memberIds || []).length;
+      squad.memberIds = (squad.memberIds || []).filter(function (id) { return knownNpc[id]; });
+      if (squad.memberIds.length !== before) changed = true;
+      return squad.memberIds.length > 0;
+    });
+    if (book.squads.length !== beforeSquads) changed = true;
     return changed;
   }
 
@@ -386,6 +397,60 @@ window.ShirmoCodex = (function () {
           if (kind === "npcs" && row.npcId === id) row.npcId = "";
         });
       });
+    }
+    function dropEmptySquads() {
+      book().squads = (book().squads || []).filter(function (squad) {
+        return squad && (squad.memberIds || []).some(Boolean);
+      });
+    }
+    function purgePerson(id) {
+      if (!id) return;
+      unlink("npcs", id);
+      book().places.forEach(function (place) {
+        if (!place || !place.people) return;
+        place.people = place.people.filter(function (item) { return item !== id; });
+      });
+      book().squads.forEach(function (squad) {
+        if (!squad) return;
+        squad.memberIds = (squad.memberIds || []).filter(function (item) { return item !== id; });
+      });
+      dropEmptySquads();
+      eachView(function (view) {
+        view.markers = (view.markers || []).filter(function (marker) {
+          if (!marker) return false;
+          if (marker.kind === "foe" && (marker.codexId === id || marker.npcId === id)) return false;
+          if (marker.npcId === id) marker.npcId = "";
+          if (marker.codexId === id) marker.codexId = "";
+          return true;
+        });
+      });
+      const battle = ctx.campaign.battle;
+      if (battle) {
+        const actorIds = {};
+        (battle.actors || []).forEach(function (actor) {
+          if (actor && actor.codexId === id) actorIds[actor.id] = true;
+        });
+        battle.actors = (battle.actors || []).filter(function (actor) { return !(actor && actor.codexId === id); });
+        (battle.board || []).forEach(function (group) {
+          if (!group || !group.memberIds) return;
+          group.memberIds = group.memberIds.filter(function (mid) { return !actorIds[mid]; });
+        });
+        battle.board = (battle.board || []).filter(function (group) {
+          return group && (group.kind === "sep" || (group.memberIds && group.memberIds.length));
+        });
+      }
+      book().npcs = (book().npcs || []).filter(function (item) { return item.id !== id; });
+    }
+    function purgeSquad(index) {
+      const squad = book().squads[index];
+      if (!squad) return;
+      const battle = ctx.campaign.battle;
+      if (battle && Array.isArray(battle.board)) {
+        battle.board = battle.board.filter(function (group) {
+          return !(group && group.codexSquadId && group.codexSquadId === squad.id);
+        });
+      }
+      book().squads.splice(index, 1);
     }
     function blank() {
       const row = { id: crypto.randomUUID() };
@@ -748,9 +813,12 @@ window.ShirmoCodex = (function () {
         }).join("");
         const members = (squad.memberIds || []).map(function (id) {
           const npc = book().npcs.find(function (row) { return row.id === id; });
-          return npc ? "<li>" + esc(npc.name || "Враг") + "</li>" : "";
+          if (!npc) return "";
+          return '<li class="squad-member"><span>' + esc(npc.name || "Враг") + "</span>" +
+            '<button type="button" data-act="squad-kick" data-i="' + index + '" data-npc="' + esc(id) + '" title="Убрать из отряда" aria-label="Убрать из отряда">×</button></li>';
         }).filter(Boolean).join("");
-        return '<article class="place-card"><div class="codex-row"><input data-field="name" data-i="' + index + '" type="text" value="' + esc(squad.name || "") + '" title="Название отряда" aria-label="Название отряда"><button type="button" data-act="del" data-i="' + index + '" title="Удалить отряд" aria-label="Удалить">×</button></div>' +
+        return '<article class="place-card"><div class="codex-row"><input data-field="name" data-i="' + index + '" type="text" value="' + esc(squad.name || "") + '" title="Название отряда" aria-label="Название отряда">' +
+          '<button type="button" data-act="del" data-i="' + index + '" title="Удалить отряд" aria-label="Удалить отряд">Удалить</button></div>' +
           '<label title="Локация, к которой привязан отряд">Место<select data-squad-place="' + index + '" aria-label="Место отряда">' + options + "</select></label>" +
           (members ? '<ol class="squad-members">' + members + "</ol>" : '<p class="note">В отряде никого нет.</p>') + "</article>";
       }).join("");
@@ -1788,6 +1856,16 @@ window.ShirmoCodex = (function () {
         saveSoon();
         return;
       }
+      if (act === "squad-kick") {
+        const squad = book().squads[Number(button.getAttribute("data-i"))];
+        const npcId = button.getAttribute("data-npc");
+        if (!squad || !npcId) return;
+        squad.memberIds = (squad.memberIds || []).filter(function (item) { return item !== npcId; });
+        dropEmptySquads();
+        paint();
+        saveSoon();
+        return;
+      }
       if (act === "del") {
         const index = Number(button.getAttribute("data-i"));
         const row = list()[index];
@@ -1801,13 +1879,9 @@ window.ShirmoCodex = (function () {
           });
           book().places.splice(index, 1);
         } else if (isPerson(tab)) {
-          unlink("npcs", row.id);
-          book().squads.forEach(function (squad) {
-            squad.memberIds = (squad.memberIds || []).filter(function (id) { return id !== row.id; });
-          });
-          book().npcs = book().npcs.filter(function (item) { return item.id !== row.id; });
+          purgePerson(row.id);
         } else if (tab === "squads") {
-          book().squads.splice(index, 1);
+          purgeSquad(index);
         } else if (tab === "wares") {
           book().npcs.forEach(function (npc) { if (npc.wareId === row.id) npc.wareId = ""; });
           book().wares.splice(index, 1);

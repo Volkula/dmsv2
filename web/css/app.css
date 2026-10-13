@@ -2345,6 +2345,18 @@ button.ware-face-btn img { width: 100%; height: 100%; object-fit: cover; display
 .turn-face-wrap .mark-stack.is-many .mark-ico svg { width: 28px; height: 28px; }
 .squad-members { margin: 6px 0 0; padding-left: 18px; }
 .squad-members li { margin: 2px 0; }
+.squad-member {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0;
+}
+.squad-member button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  flex: 0 0 auto;
+}
 @media (max-width: 1100px) {
   .battle-desk { grid-template-columns: 1fr; }
   .battle-queue, .battle-log-pane { max-height: 46vh; }
