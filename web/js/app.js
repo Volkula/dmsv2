@@ -285,7 +285,8 @@
         '<span class="note">' + esc(whenText(bin ? room.deletedAt : room.updatedAt)) + "</span>" +
         '<div class="row">' +
         (bin
-          ? '<button type="button" data-restore="' + esc(room.id) + '">Вернуть</button>'
+          ? '<button type="button" data-restore="' + esc(room.id) + '">Вернуть</button>' +
+            '<button type="button" data-purge="' + esc(room.id) + '">Удалить из корзины</button>'
           : '<button type="button" data-enter="' + esc(room.id) + '">Мастер</button>' +
             '<a href="/v/' + esc(room.id) + '">Игроки</a>' +
             '<button type="button" data-dump="' + esc(room.id) + '">Выгрузка</button>' +
@@ -303,10 +304,12 @@
       const dump = event.target.closest("[data-dump]");
       const drop = event.target.closest("[data-drop]");
       const back = event.target.closest("[data-restore]");
-      const button = enter || dump || drop || back;
+      const purge = event.target.closest("[data-purge]");
+      const button = enter || dump || drop || back || purge;
       if (!button || !shelf.contains(button)) return;
       const id = button.getAttribute("data-enter") || button.getAttribute("data-dump") ||
-        button.getAttribute("data-drop") || button.getAttribute("data-restore");
+        button.getAttribute("data-drop") || button.getAttribute("data-restore") ||
+        button.getAttribute("data-purge");
       let key = (known[id] && known[id].key) || sessionStorage.getItem(keyName(id)) || "";
       if (!key) key = askPass("Пароль мастера");
       if (!key) return;
@@ -330,6 +333,9 @@
           URL.revokeObjectURL(link.href);
         } else if (drop) {
           await api("/api/rooms/" + id, { method: "DELETE", headers: { authorization: "Bearer " + key } });
+        } else if (purge) {
+          await api("/api/rooms/" + id + "/purge", { method: "DELETE", headers: { authorization: "Bearer " + key } });
+          localStorage.setItem(SHELF, JSON.stringify(readShelf().filter(function (item) { return item.id !== id; })));
         } else {
           await api("/api/rooms/" + id + "/restore", { method: "POST", headers: { authorization: "Bearer " + key } });
         }

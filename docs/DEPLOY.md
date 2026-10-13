@@ -18,7 +18,7 @@ docker-compose up -d --build
 | Порт | Протокол |
 |------|----------|
 | **8088** | HTTP |
-| **8443** | HTTPS (self-signed в `certs/`, браузер предупредит один раз) |
+| **8443** | HTTPS — Let's Encrypt `/etc/letsencrypt/live/vpn.volkula.com/` |
 
 Порт 443 на хосте занят gost, поэтому HTTPS ширмы — на **8443**.
 
@@ -26,14 +26,12 @@ docker-compose up -d --build
 ssh root@vpn.volkula.com
 cd /opt/dms2
 git pull --ff-only origin screen
-# сертификат (один раз или после истечения)
-sh scripts/make-certs.sh vpn.volkula.com
 # PORT в docker-compose.yml должен быть 8080 (Caddy проксирует на api:8080)
 grep PORT docker-compose.yml
 docker-compose down
 docker rm -f $(docker ps -aq --filter name=dms2) 2>/dev/null || true
 docker-compose up -d --build
-curl -sk https://127.0.0.1:8443/api/health
+curl -s https://127.0.0.1:8443/api/health
 ```
 
 Открыть: [https://vpn.volkula.com:8443/](https://vpn.volkula.com:8443/) или [http://vpn.volkula.com:8088/](http://vpn.volkula.com:8088/).

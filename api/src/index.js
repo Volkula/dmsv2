@@ -26,6 +26,7 @@ const saveRoom = db.prepare(`
 const saveKey = db.prepare("UPDATE rooms SET master_key = ? WHERE id = ?");
 const trashRoom = db.prepare("UPDATE rooms SET deleted_at = ? WHERE id = ?");
 const restoreRoom = db.prepare("UPDATE rooms SET deleted_at = 0 WHERE id = ?");
+const purgeRoom = db.prepare("DELETE FROM rooms WHERE id = ?");
 const saveRolls = db.prepare("UPDATE rooms SET roll_log = ? WHERE id = ?");
 const savePins = db.prepare("UPDATE rooms SET roll_pins = ? WHERE id = ?");
 
@@ -292,6 +293,17 @@ const server = http.createServer(async function (req, res) {
         return;
       }
       restoreRoom.run(id);
+      send(res, 200, { ok: true });
+      return;
+    }
+
+    if (req.method === "DELETE" && tail === "purge") {
+      if (!isMaster(req, room)) {
+        send(res, 401, { error: "unauthorized" });
+        return;
+      }
+      purgeRoom.run(id);
+      fs.rmSync(path.join(filesDir, id), { recursive: true, force: true });
       send(res, 200, { ok: true });
       return;
     }

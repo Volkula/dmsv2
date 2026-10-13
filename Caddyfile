@@ -20,6 +20,6 @@
 }
 
 :443 {
-	tls /certs/cert.pem /certs/key.pem
+	tls /etc/letsencrypt/live/vpn.volkula.com/fullchain.pem /etc/letsencrypt/live/vpn.volkula.com/privkey.pem
 	import shirmo
 }
