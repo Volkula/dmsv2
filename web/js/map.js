@@ -1891,9 +1891,17 @@
         if (!row) return;
         if ((row.locId || "") === to) return;
         row.locId = to;
-        if ((row.kind === "npc" && row.npcId) || (row.kind === "foe" && row.codexId)) {
+        if ((row.kind === "npc" && row.npcId) || (row.kind === "foe" && (row.codexId || row.actorId))) {
           const hostLoc = to ? findLoc(to) : null;
-          seatNpcAt(row.npcId || row.codexId, hostLoc && hostLoc.placeId);
+          let personId = row.npcId || row.codexId || "";
+          if (!personId && row.actorId && ctx.campaign.battle) {
+            const actor = (ctx.campaign.battle.actors || []).find(function (one) { return one && one.id === row.actorId; });
+            personId = actor && actor.codexId || "";
+          }
+          if (personId) {
+            seatNpcAt(personId, hostLoc && hostLoc.placeId);
+            dedupePersonMarkers(personId, row.id);
+          }
         }
         if (selected && selected.id === id) selected = null;
       }
@@ -1902,6 +1910,30 @@
       paintBoard();
       paintTree();
       ctx.save();
+    }
+    function dedupePersonMarkers(personId, keepId) {
+      if (!personId) return;
+      const current = view();
+      const hits = (current.markers || []).filter(function (marker) {
+        if (!marker) return false;
+        if (marker.npcId === personId || marker.codexId === personId) return true;
+        if (marker.actorId && ctx.campaign.battle) {
+          const actor = (ctx.campaign.battle.actors || []).find(function (one) { return one && one.id === marker.actorId; });
+          if (actor && actor.codexId === personId) return true;
+        }
+        return false;
+      });
+      if (hits.length < 2) return;
+      const keep = hits.find(function (marker) { return marker.id === keepId; }) || hits[0];
+      const drop = {};
+      hits.forEach(function (marker) {
+        if (marker.id !== keep.id) drop[marker.id] = true;
+      });
+      current.markers = current.markers.filter(function (marker) { return !drop[marker.id]; });
+      const actors = ctx.campaign.battle && ctx.campaign.battle.actors || [];
+      actors.forEach(function (actor) {
+        if (actor && drop[actor.markerId]) actor.markerId = keep.id;
+      });
     }
     function pickHome(kind, id, anchor) {
       closeMenu();

@@ -301,37 +301,23 @@ window.ShirmoCodex = (function () {
         });
         if (!members.length) return;
         let squad = group.codexSquadId && book.squads.find(function (row) { return row.id === group.codexSquadId; });
-        if (!squad) squad = book.squads.find(function (row) { return row.name === group.name; });
         if (!squad) {
-          squad = { id: crypto.randomUUID(), name: group.name || "Отряд", placeId: "", memberIds: [] };
+          squad = { id: crypto.randomUUID(), name: group.name || "Отряд", placeId: "", memberIds: members.slice() };
           book.squads.push(squad);
           changed = true;
-        }
-        group.codexSquadId = squad.id;
-        squad.memberIds = squad.memberIds || [];
-        members.forEach(function (id) {
-          if (squad.memberIds.indexOf(id) < 0) {
-            squad.memberIds.push(id);
+        } else {
+          const prev = (squad.memberIds || []).slice().sort().join(",");
+          const next = members.slice().sort().join(",");
+          if (prev !== next) {
+            squad.memberIds = members.slice();
             changed = true;
           }
-        });
-      });
-    } else if (foeIds.length) {
-      const covered = {};
-      book.squads.forEach(function (squad) {
-        (squad.memberIds || []).forEach(function (id) { covered[id] = true; });
-      });
-      const fresh = foeIds.filter(function (id) { return !covered[id]; });
-      if (fresh.length) {
-        let squad = book.squads.find(function (row) { return row.name === "Засада"; });
-        if (!squad) {
-          squad = { id: crypto.randomUUID(), name: "Засада", placeId: "", memberIds: [] };
-          book.squads.push(squad);
         }
-        squad.memberIds = squad.memberIds || [];
-        fresh.forEach(function (id) { squad.memberIds.push(id); });
-        changed = true;
-      }
+        if (group.codexSquadId !== squad.id) {
+          group.codexSquadId = squad.id;
+          changed = true;
+        }
+      });
     }
     return changed;
   }
@@ -542,12 +528,10 @@ window.ShirmoCodex = (function () {
         });
       });
     }
-    function eachMapMarker(visit) {
+    function eachMapView(visit) {
       (ctx.campaign.pages || []).forEach(function (page) {
         (page.views || []).forEach(function (view) {
-          (view.markers || []).forEach(function (marker) {
-            if (marker) visit(marker, view);
-          });
+          if (view) visit(view, page);
         });
       });
     }
@@ -571,32 +555,71 @@ window.ShirmoCodex = (function () {
         loc.parentId = parentLoc || "";
       });
     }
-    function syncNpcSeat(npcId, placeId) {
+    function markerPersonIds(marker) {
+      const ids = {};
+      if (!marker) return ids;
+      if (marker.npcId) ids[marker.npcId] = true;
+      if (marker.codexId) ids[marker.codexId] = true;
+      if (marker.actorId && ctx.campaign.battle && Array.isArray(ctx.campaign.battle.actors)) {
+        const actor = ctx.campaign.battle.actors.find(function (row) { return row && row.id === marker.actorId; });
+        if (actor && actor.codexId) ids[actor.codexId] = true;
+      }
+      return ids;
+    }
+    function syncNpcSeat(personId, placeId) {
+      if (!personId) return;
       const locId = locIdForPlace(placeId);
-      eachMapMarker(function (marker) {
-        if (marker.npcId !== npcId && marker.codexId !== npcId) return;
-        marker.locId = locId || "";
+      eachMapView(function (view) {
+        const hits = (view.markers || []).filter(function (marker) {
+          return !!markerPersonIds(marker)[personId];
+        });
+        if (!hits.length) return;
+        hits.sort(function (a, b) {
+          const rank = function (marker) {
+            return marker.kind === "npc" ? 0 : (marker.kind === "foe" ? 1 : 2);
+          };
+          return rank(a) - rank(b);
+        });
+        const keep = hits[0];
+        keep.locId = locId || "";
+        if (keep.kind === "npc" && !keep.npcId) keep.npcId = personId;
+        if (keep.kind === "foe" && !keep.codexId) keep.codexId = personId;
+        if (hits.length === 1) return;
+        const drop = {};
+        hits.slice(1).forEach(function (marker) { drop[marker.id] = true; });
+        view.markers = view.markers.filter(function (marker) { return !drop[marker.id]; });
+        const actors = ctx.campaign.battle && ctx.campaign.battle.actors || [];
+        actors.forEach(function (actor) {
+          if (actor && drop[actor.markerId]) actor.markerId = keep.id;
+        });
       });
+    }
+    function seatPerson(personId, placeId) {
+      if (!personId) return;
+      book().places.forEach(function (place) {
+        if (!place || !place.people) return;
+        place.people = place.people.filter(function (id) { return id !== personId; });
+      });
+      if (!placeId) return;
+      const place = book().places.find(function (row) { return row.id === placeId; });
+      if (!place) return;
+      place.people = place.people || [];
+      if (place.people.indexOf(personId) < 0) place.people.push(personId);
     }
     function moveSquadToPlace(squad, placeId) {
       if (!squad) return;
       const to = placeId || "";
+      const members = (squad.memberIds || []).filter(Boolean);
       squad.placeId = to;
-      (squad.memberIds || []).forEach(function (id) { moveNpcToPlace(id, to); });
+      squad.memberIds = members;
+      members.forEach(function (id) {
+        seatPerson(id, to);
+        syncNpcSeat(id, to);
+      });
     }
     function moveNpcToPlace(npcId, placeId) {
       if (!npcId) return;
-      book().places.forEach(function (place) {
-        if (!place || !place.people) return;
-        place.people = place.people.filter(function (id) { return id !== npcId; });
-      });
-      if (placeId) {
-        const place = book().places.find(function (row) { return row.id === placeId; });
-        if (place) {
-          place.people = place.people || [];
-          if (place.people.indexOf(npcId) < 0) place.people.push(npcId);
-        }
-      }
+      seatPerson(npcId, placeId || "");
       syncNpcSeat(npcId, placeId || "");
     }
     function movePlaceTo(placeId, parentId) {

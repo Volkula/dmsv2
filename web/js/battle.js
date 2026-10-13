@@ -574,8 +574,12 @@
       }
       if (actor.side === "player") return null;
       let squad = codexSquadId && shelf.squads.find(function (row) { return row.id === codexSquadId; });
-      if (!squad && squadName) squad = shelf.squads.find(function (row) { return row.name === squadName; });
+      if (!squad && squadName) {
+        const named = (shelf.squads || []).filter(function (row) { return row && row.name === squadName; });
+        if (named.length === 1) squad = named[0];
+      }
       if (!squad) {
+        if (!squadName && !codexSquadId) return null;
         squad = { id: crypto.randomUUID(), name: squadName || actor.name || "Отряд", placeId: "", memberIds: [] };
         shelf.squads.push(squad);
       }
