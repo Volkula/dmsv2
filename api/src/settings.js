@@ -16,10 +16,15 @@ export function openSettings(dataDir) {
   }
 
   function write(next) {
-    const value = Object.assign({}, DEFAULTS, next || {});
-    value.publicCreate = value.publicCreate !== false;
+    const prev = read();
+    const value = Object.assign({}, DEFAULTS, prev, next || {});
+    if (Object.prototype.hasOwnProperty.call(next || {}, "publicCreate")) {
+      value.publicCreate = next.publicCreate === true || next.publicCreate === "on" || next.publicCreate === 1 || next.publicCreate === "1";
+    } else {
+      value.publicCreate = value.publicCreate !== false;
+    }
     fs.mkdirSync(dataDir, { recursive: true });
-    fs.writeFileSync(file, JSON.stringify(value, null, 2));
+    fs.writeFileSync(file, JSON.stringify(value, null, 2) + "\n");
     return value;
   }
 

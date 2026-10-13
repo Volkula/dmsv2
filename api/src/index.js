@@ -422,17 +422,12 @@ const server = http.createServer(async function (req, res) {
     }
 
     if (req.method === "POST" && url.pathname === "/api/rooms/import") {
-      const conf = settings.read();
-      if (conf.publicCreate === false && !isAdmin(req)) {
-        send(res, 403, { error: "публичное создание комнат выключено" });
+      if (!isAdmin(req)) {
+        send(res, 403, { error: "загрузка выгрузки только для админа" });
         return;
       }
       const body = await readJson(req, Math.min(ROOM_FILES_MAX + 5_000_000, 200_000_000));
-      const key = passOk(body.password);
-      if (!key) {
-        send(res, 400, { error: "нужен пароль мастера, от 4 символов" });
-        return;
-      }
+      const key = passOk(body.password) || newSecret().slice(0, 16);
       if (!body.campaign || !campaignOk(body.campaign)) {
         send(res, 400, { error: "bad campaign" });
         return;
