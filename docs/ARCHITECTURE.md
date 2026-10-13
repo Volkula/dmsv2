@@ -58,3 +58,5 @@
 Статика в `web/`. Кэш скриптов через `?v=` в `index.html`. Правки JS/CSS на bind-mount не требуют rebuild образа API; правки `api/src` — нужен rebuild контейнера `api`.
 
 Выкладка на сервер: шаблон `docs/DEPLOY.md.example` (локальный `DEPLOY.md` и `Caddyfile` в git не коммитятся).
+
+Глобальный админ: `ADMIN_PASSWORD` в окружении, UI `/admin`. Публичное создание комнат — флаг в `settings.json`. Файлы комнаты — не больше `ROOM_FILES_MAX` (1 ГиБ по умолчанию). Бэкапы — каталог `BACKUP_DIR` / `./backups`, скрипты в `scripts/`.

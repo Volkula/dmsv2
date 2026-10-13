@@ -4,8 +4,12 @@ services:
     environment:
       DATA_DIR: /data
       PORT: "8080"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-changeme}"
+      BACKUP_DIR: /backups
+      ROOM_FILES_MAX: "${ROOM_FILES_MAX:-1073741824}"
     volumes:
       - shirmo-data:/data
+      - ./backups:/backups
   caddy:
     image: caddy:2-alpine
     depends_on:

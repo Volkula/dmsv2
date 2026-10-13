@@ -23,3 +23,20 @@ export function bearer(req) {
   const header = req.headers.authorization || "";
   return header.startsWith("Bearer ") ? header.slice(7).trim() : "";
 }
+
+export function plainMatches(left, right) {
+  const a = Buffer.from(String(left || ""));
+  const b = Buffer.from(String(right || ""));
+  if (!a.length || !b.length) return false;
+  if (a.length !== b.length) {
+    timingSafeEqual(a, a);
+    return false;
+  }
+  return timingSafeEqual(a, b);
+}
+
+export function isAdmin(req) {
+  const want = process.env.ADMIN_PASSWORD || "";
+  if (!want) return false;
+  return plainMatches(bearer(req), want);
+}

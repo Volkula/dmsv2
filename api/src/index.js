@@ -3,14 +3,18 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { openDb, rowToRoom } from "./db.js";
-import { bearer, hashSecret, newSecret, secretMatches } from "./auth.js";
+import { bearer, hashSecret, isAdmin, newSecret, secretMatches } from "./auth.js";
 import { publish, subscribe } from "./hub.js";
 import { blankCampaign, campaignOk, projectFrame } from "./frame.js";
+import { openSettings } from "./settings.js";
+import { packFiles, ROOM_FILES_MAX, roomFilesSize, unpackFiles, wipeRoomFiles } from "./files.js";
 
 const dataDir = process.env.DATA_DIR || path.join(process.cwd(), "data");
 const port = Number(process.env.PORT || 8080);
 const db = openDb(dataDir);
 const filesDir = path.join(dataDir, "files");
+const settings = openSettings(dataDir);
+const backupRoot = process.env.BACKUP_DIR || "/backups";
 
 const selectRoom = db.prepare("SELECT * FROM rooms WHERE id = ?");
 const listRooms = db.prepare("SELECT id, title, master_key, updated_at, deleted_at FROM rooms ORDER BY updated_at DESC");
@@ -24,6 +28,7 @@ const saveRoom = db.prepare(`
   WHERE id = ?
 `);
 const saveKey = db.prepare("UPDATE rooms SET master_key = ? WHERE id = ?");
+const saveAuth = db.prepare("UPDATE rooms SET master_salt = ?, master_hash = ?, master_key = ?, updated_at = ? WHERE id = ?");
 const trashRoom = db.prepare("UPDATE rooms SET deleted_at = ? WHERE id = ?");
 const restoreRoom = db.prepare("UPDATE rooms SET deleted_at = 0 WHERE id = ?");
 const purgeRoom = db.prepare("DELETE FROM rooms WHERE id = ?");
@@ -31,6 +36,7 @@ const saveRolls = db.prepare("UPDATE rooms SET roll_log = ? WHERE id = ?");
 const savePins = db.prepare("UPDATE rooms SET roll_pins = ? WHERE id = ?");
 
 const DIE_SIDES = [4, 6, 8, 10, 12, 20, 100];
+const FILE_UPLOAD_MAX = Math.min(ROOM_FILES_MAX, 50_000_000);
 
 function hexColor(value) {
   return /^#[0-9a-fA-F]{6}$/.test(String(value || "")) ? String(value) : "";
@@ -130,35 +136,6 @@ function passOk(value) {
   return text.length >= 4 && text.length <= 120 ? text : "";
 }
 
-function packFiles(roomId) {
-  const dir = path.join(filesDir, roomId);
-  if (!fs.existsSync(dir)) return [];
-  return fs.readdirSync(dir).filter(function (name) {
-    return !name.endsWith(".type");
-  }).map(function (name) {
-    let type = "application/octet-stream";
-    try { type = fs.readFileSync(path.join(dir, name + ".type"), "utf8").trim() || type; } catch (err) { /* нет типа */ }
-    return {
-      id: name,
-      type: type.slice(0, 80),
-      data: fs.readFileSync(path.join(dir, name)).toString("base64")
-    };
-  });
-}
-
-function unpackFiles(roomId, files) {
-  const dir = path.join(filesDir, roomId);
-  fs.mkdirSync(dir, { recursive: true });
-  (Array.isArray(files) ? files : []).slice(0, 200).forEach(function (file) {
-    const fileId = String(file && file.id || "").replace(/[^\w-]/g, "");
-    if (!fileId || !file.data) return;
-    const buf = Buffer.from(String(file.data), "base64");
-    if (buf.length > 8_000_000) return;
-    fs.writeFileSync(path.join(dir, fileId), buf);
-    fs.writeFileSync(path.join(dir, fileId + ".type"), String(file.type || "application/octet-stream").slice(0, 80));
-  });
-}
-
 function retarget(value, fromId, toId) {
   if (!fromId || fromId === toId) return value;
   return JSON.parse(JSON.stringify(value).split("/api/rooms/" + fromId + "/").join("/api/rooms/" + toId + "/"));
@@ -195,6 +172,58 @@ function pushFrame(room) {
   publish(room.id, { type: "frame", frame: room.frame });
 }
 
+function setRoomPassword(roomId, password) {
+  const hashed = hashSecret(password);
+  saveAuth.run(hashed.salt, hashed.hash, password, Date.now(), roomId);
+}
+
+function createRoom(title, key) {
+  const id = randomUUID();
+  const hashed = hashSecret(key);
+  const pageId = randomUUID();
+  const campaign = blankCampaign(pageId);
+  const frame = projectFrame(campaign);
+  const now = Date.now();
+  insertRoom.run(id, title, hashed.salt, hashed.hash, key, "live", JSON.stringify(campaign), JSON.stringify(frame), now);
+  return { id: id, title: title, masterKey: key };
+}
+
+function roomBackup(id) {
+  const room = roomById(id);
+  if (!room) return null;
+  const row = selectRoom.get(id);
+  return {
+    roomId: id,
+    title: room.title,
+    campaign: room.campaign,
+    rolls: room.rolls,
+    pins: room.pins,
+    files: packFiles(filesDir, id),
+    deletedAt: row && row.deleted_at || 0
+  };
+}
+
+function stamp() {
+  const d = new Date();
+  const p = function (n) { return String(n).padStart(2, "0"); };
+  return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + "-" + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+}
+
+function writeFullBackup(dir) {
+  fs.mkdirSync(dir, { recursive: true });
+  const index = [];
+  listRooms.all().forEach(function (row) {
+    const pack = roomBackup(row.id);
+    const name = row.id + ".shirmo.json";
+    fs.writeFileSync(path.join(dir, name), JSON.stringify(pack));
+    index.push({ id: row.id, title: row.title, file: name, deletedAt: row.deleted_at || 0 });
+  });
+  fs.copyFileSync(path.join(dataDir, "shirmo.sqlite"), path.join(dir, "shirmo.sqlite"));
+  try { fs.copyFileSync(settings.file, path.join(dir, "settings.json")); } catch (err) { /* нет */ }
+  fs.writeFileSync(path.join(dir, "index.json"), JSON.stringify({ at: Date.now(), rooms: index }, null, 2));
+  return { dir: dir, rooms: index.length };
+}
+
 const server = http.createServer(async function (req, res) {
   try {
     const url = new URL(req.url, "http://localhost");
@@ -202,6 +231,158 @@ const server = http.createServer(async function (req, res) {
 
     if (req.method === "GET" && url.pathname === "/api/health") {
       send(res, 200, { ok: true });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/meta") {
+      const conf = settings.read();
+      send(res, 200, {
+        publicCreate: conf.publicCreate !== false,
+        roomFilesMax: ROOM_FILES_MAX,
+        admin: Boolean(process.env.ADMIN_PASSWORD)
+      });
+      return;
+    }
+
+    if (parts[0] === "api" && parts[1] === "admin") {
+      if (req.method === "POST" && parts[2] === "login") {
+        const body = await readJson(req);
+        if (!process.env.ADMIN_PASSWORD) {
+          send(res, 503, { error: "ADMIN_PASSWORD не задан" });
+          return;
+        }
+        if (!isAdmin({ headers: { authorization: "Bearer " + String(body.password || "") } })) {
+          send(res, 401, { error: "неверный пароль админа" });
+          return;
+        }
+        send(res, 200, { ok: true, token: String(body.password || "") });
+        return;
+      }
+
+      if (!isAdmin(req)) {
+        send(res, 401, { error: "unauthorized" });
+        return;
+      }
+
+      if (req.method === "GET" && !parts[2]) {
+        const conf = settings.read();
+        const rooms = listRooms.all().map(function (row) {
+          return {
+            id: row.id,
+            title: row.title,
+            updatedAt: row.updated_at,
+            deletedAt: row.deleted_at || 0,
+            filesBytes: roomFilesSize(filesDir, row.id)
+          };
+        });
+        send(res, 200, {
+          publicCreate: conf.publicCreate !== false,
+          roomFilesMax: ROOM_FILES_MAX,
+          rooms: rooms
+        });
+        return;
+      }
+
+      if (req.method === "PUT" && parts[2] === "config") {
+        const body = await readJson(req);
+        const on = body.publicCreate === true || body.publicCreate === "on" || body.publicCreate === 1 || body.publicCreate === "1";
+        const off = body.publicCreate === false || body.publicCreate === "off" || body.publicCreate === 0 || body.publicCreate === "0";
+        if (!on && !off) {
+          send(res, 400, { error: "publicCreate: true|false" });
+          return;
+        }
+        send(res, 200, settings.write({ publicCreate: on }));
+        return;
+      }
+
+      if (req.method === "POST" && parts[2] === "rooms" && !parts[3]) {
+        const body = await readJson(req);
+        const title = String(body.title || "Комната").slice(0, 80);
+        const key = passOk(body.password) || newSecret().slice(0, 16);
+        const room = createRoom(title, key);
+        send(res, 201, room);
+        return;
+      }
+
+      if (req.method === "POST" && parts[2] === "rooms" && parts[3] && parts[4] === "password") {
+        const id = parts[3];
+        if (!selectRoom.get(id)) {
+          send(res, 404, { error: "not found" });
+          return;
+        }
+        const body = await readJson(req);
+        const key = passOk(body.password) || newSecret().slice(0, 16);
+        setRoomPassword(id, key);
+        send(res, 200, { id: id, masterKey: key });
+        return;
+      }
+
+      if (req.method === "POST" && parts[2] === "passwords" && parts[3] === "reset-all") {
+        const out = listRooms.all().map(function (row) {
+          const key = newSecret().slice(0, 16);
+          setRoomPassword(row.id, key);
+          return { id: row.id, title: row.title, masterKey: key };
+        });
+        send(res, 200, { rooms: out });
+        return;
+      }
+
+      if (req.method === "DELETE" && parts[2] === "trash") {
+        const rows = listRooms.all().filter(function (row) { return row.deleted_at > 0; });
+        rows.forEach(function (row) {
+          purgeRoom.run(row.id);
+          wipeRoomFiles(filesDir, row.id);
+        });
+        send(res, 200, { ok: true, purged: rows.length });
+        return;
+      }
+
+      if (req.method === "POST" && parts[2] === "backup") {
+        const dir = path.join(backupRoot, "full-" + stamp());
+        const result = writeFullBackup(dir);
+        send(res, 200, result);
+        return;
+      }
+
+      if (req.method === "GET" && parts[2] === "rooms" && parts[3] && parts[4] === "backup") {
+        const pack = roomBackup(parts[3]);
+        if (!pack) {
+          send(res, 404, { error: "not found" });
+          return;
+        }
+        send(res, 200, pack);
+        return;
+      }
+
+      if (req.method === "POST" && parts[2] === "rooms" && parts[3] === "restore") {
+        const body = await readJson(req, Math.min(ROOM_FILES_MAX + 5_000_000, 200_000_000));
+        const key = passOk(body.password) || newSecret().slice(0, 16);
+        if (!body.campaign || !campaignOk(body.campaign)) {
+          send(res, 400, { error: "bad campaign" });
+          return;
+        }
+        const id = randomUUID();
+        const hashed = hashSecret(key);
+        const title = String(body.title || "Восстановление").slice(0, 80);
+        const fromId = String(body.roomId || body.id || "").replace(/[^\w-]/g, "");
+        const campaign = retarget(body.campaign, fromId, id);
+        const frame = projectFrame(campaign);
+        const now = Date.now();
+        insertRoom.run(id, title, hashed.salt, hashed.hash, key, "live", JSON.stringify(campaign), JSON.stringify(frame), now);
+        try {
+          unpackFiles(filesDir, id, body.files, ROOM_FILES_MAX);
+        } catch (err) {
+          purgeRoom.run(id);
+          wipeRoomFiles(filesDir, id);
+          throw err;
+        }
+        if (Array.isArray(body.rolls)) saveRolls.run(JSON.stringify(body.rolls.slice(0, 40)), id);
+        if (Array.isArray(body.pins)) savePins.run(JSON.stringify(body.pins.slice(0, 40)), id);
+        send(res, 201, { id: id, title: title, masterKey: key });
+        return;
+      }
+
+      send(res, 404, { error: "not found" });
       return;
     }
 
@@ -214,11 +395,21 @@ const server = http.createServer(async function (req, res) {
         else rooms.push(item);
       });
       trash.sort(function (a, b) { return b.deletedAt - a.deletedAt; });
-      send(res, 200, { rooms: rooms, trash: trash });
+      const conf = settings.read();
+      send(res, 200, {
+        rooms: rooms,
+        trash: trash,
+        publicCreate: conf.publicCreate !== false
+      });
       return;
     }
 
     if (req.method === "POST" && url.pathname === "/api/rooms") {
+      const conf = settings.read();
+      if (conf.publicCreate === false && !isAdmin(req)) {
+        send(res, 403, { error: "публичное создание комнат выключено" });
+        return;
+      }
       const body = await readJson(req);
       const title = String(body.title || "Комната").slice(0, 80);
       const key = passOk(body.password);
@@ -226,19 +417,17 @@ const server = http.createServer(async function (req, res) {
         send(res, 400, { error: "нужен пароль мастера, от 4 символов" });
         return;
       }
-      const id = randomUUID();
-      const hashed = hashSecret(key);
-      const pageId = randomUUID();
-      const campaign = blankCampaign(pageId);
-      const frame = projectFrame(campaign);
-      const now = Date.now();
-      insertRoom.run(id, title, hashed.salt, hashed.hash, key, "live", JSON.stringify(campaign), JSON.stringify(frame), now);
-      send(res, 201, { id: id, title: title, masterKey: key });
+      send(res, 201, createRoom(title, key));
       return;
     }
 
     if (req.method === "POST" && url.pathname === "/api/rooms/import") {
-      const body = await readJson(req, 40_000_000);
+      const conf = settings.read();
+      if (conf.publicCreate === false && !isAdmin(req)) {
+        send(res, 403, { error: "публичное создание комнат выключено" });
+        return;
+      }
+      const body = await readJson(req, Math.min(ROOM_FILES_MAX + 5_000_000, 200_000_000));
       const key = passOk(body.password);
       if (!key) {
         send(res, 400, { error: "нужен пароль мастера, от 4 символов" });
@@ -256,7 +445,13 @@ const server = http.createServer(async function (req, res) {
       const frame = projectFrame(campaign);
       const now = Date.now();
       insertRoom.run(id, title, hashed.salt, hashed.hash, key, "live", JSON.stringify(campaign), JSON.stringify(frame), now);
-      unpackFiles(id, body.files);
+      try {
+        unpackFiles(filesDir, id, body.files, ROOM_FILES_MAX);
+      } catch (err) {
+        purgeRoom.run(id);
+        wipeRoomFiles(filesDir, id);
+        throw err;
+      }
       if (Array.isArray(body.rolls)) saveRolls.run(JSON.stringify(body.rolls.slice(0, 40)), id);
       if (Array.isArray(body.pins)) savePins.run(JSON.stringify(body.pins.slice(0, 40)), id);
       send(res, 201, { id: id, title: title, masterKey: key });
@@ -278,7 +473,7 @@ const server = http.createServer(async function (req, res) {
     const tail = parts.slice(3).join("/");
 
     if (req.method === "DELETE" && !tail) {
-      if (!isMaster(req, room)) {
+      if (!isMaster(req, room) && !isAdmin(req)) {
         send(res, 401, { error: "unauthorized" });
         return;
       }
@@ -288,7 +483,7 @@ const server = http.createServer(async function (req, res) {
     }
 
     if (req.method === "POST" && tail === "restore") {
-      if (!isMaster(req, room)) {
+      if (!isMaster(req, room) && !isAdmin(req)) {
         send(res, 401, { error: "unauthorized" });
         return;
       }
@@ -298,12 +493,12 @@ const server = http.createServer(async function (req, res) {
     }
 
     if (req.method === "DELETE" && tail === "purge") {
-      if (!isMaster(req, room)) {
+      if (!isMaster(req, room) && !isAdmin(req)) {
         send(res, 401, { error: "unauthorized" });
         return;
       }
       purgeRoom.run(id);
-      fs.rmSync(path.join(filesDir, id), { recursive: true, force: true });
+      wipeRoomFiles(filesDir, id);
       send(res, 200, { ok: true });
       return;
     }
@@ -367,20 +562,31 @@ const server = http.createServer(async function (req, res) {
         publishMode: room.publishMode,
         campaign: room.campaign,
         rolls: room.rolls,
-        pins: room.pins
+        pins: room.pins,
+        filesBytes: roomFilesSize(filesDir, id),
+        roomFilesMax: ROOM_FILES_MAX
       });
       return;
     }
 
     if (req.method === "GET" && tail === "backup") {
-      send(res, 200, {
-        roomId: id,
-        title: room.title,
-        campaign: room.campaign,
-        rolls: room.rolls,
-        pins: room.pins,
-        files: packFiles(id)
-      });
+      send(res, 200, roomBackup(id));
+      return;
+    }
+
+    if (req.method === "POST" && tail === "password") {
+      const body = await readJson(req);
+      const next = passOk(body.password);
+      if (!next) {
+        send(res, 400, { error: "нужен новый пароль, от 4 символов" });
+        return;
+      }
+      if (body.oldPassword != null && String(body.oldPassword) !== "" && !secretMatches(String(body.oldPassword), room.masterSalt, room.masterHash)) {
+        send(res, 401, { error: "старый пароль неверный" });
+        return;
+      }
+      setRoomPassword(id, next);
+      send(res, 200, { ok: true, masterKey: next });
       return;
     }
 
@@ -481,12 +687,17 @@ const server = http.createServer(async function (req, res) {
     }
 
     if (req.method === "POST" && tail === "files") {
+      const used = roomFilesSize(filesDir, id);
       const chunks = [];
       let size = 0;
       for await (const chunk of req) {
         size += chunk.length;
-        if (size > 8_000_000) {
-          send(res, 413, { error: "too big" });
+        if (size > FILE_UPLOAD_MAX) {
+          send(res, 413, { error: "файл слишком большой" });
+          return;
+        }
+        if (used + size > ROOM_FILES_MAX) {
+          send(res, 413, { error: "лимит файлов комнаты: 1 ГБ" });
           return;
         }
         chunks.push(chunk);
@@ -508,4 +719,5 @@ const server = http.createServer(async function (req, res) {
 
 server.listen(port, "0.0.0.0", function () {
   console.log("shirmo api on " + port);
+  if (!process.env.ADMIN_PASSWORD) console.warn("ADMIN_PASSWORD не задан — /admin недоступен");
 });

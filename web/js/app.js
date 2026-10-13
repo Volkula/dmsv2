@@ -3,6 +3,8 @@
   const path = location.pathname.replace(/\/+$/, "") || "/";
   const masterMatch = path.match(/^\/m\/([^/]+)$/);
   const viewerMatch = path.match(/^\/v\/([^/]+)$/);
+  const isAdminPage = path === "/admin";
+  const ADMIN_KEY = "shirmo-admin";
 
   function esc(value) {
     return String(value == null ? "" : value)
@@ -198,25 +200,44 @@
   }
 
   function home() {
-    app.innerHTML = '<section class="gate"><div class="gate-stack"><form class="card" id="create">' +
-      "<h1>Ширма</h1>" +
-      '<p class="note">Пароль мастера нужен для входа и удаления. Его можно сохранить в браузере.</p>' +
-      '<label title="Имя новой комнаты">Название<input name="title" value="Новая комната" required></label>' +
-      '<label title="Пароль мастера">Пароль<input name="password" type="password" minlength="4" required autocomplete="new-password"></label>' +
-      '<div class="row"><button class="primary" type="submit">Создать комнату</button></div>' +
-      '<p class="error" id="err"></p></form>' +
-      '<form class="card" id="import">' +
-      "<h2>Загрузить выгрузку</h2>" +
-      '<p class="note">Файл .shirmo.json. Задайте пароль для новой комнаты.</p>' +
-      '<label>Пароль<input name="password" type="password" minlength="4" required autocomplete="new-password"></label>' +
-      '<div class="row"><label class="file-btn" title="Выбрать файл выгрузки">' +
-      '<input id="pack-file" type="file" accept="application/json,.json" required>' +
-      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v10M8 8l4-4 4 4M5 18h14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
-      "Файл</label><button class=\"primary\" type=\"submit\">Загрузить</button></div>" +
-      '<span class="file-name" id="pack-name"></span>' +
-      '<p class="error" id="import-err"></p></form>' +
-      '<section class="card" id="shelf"><h2>Комнаты</h2><p class="note">Загрузка…</p></section></div></section>';
-    app.querySelector("#create").addEventListener("submit", async function (event) {
+    app.innerHTML = '<section class="gate"><div class="gate-stack" id="home-stack">' +
+      '<p class="note">Загрузка…</p></div></section>';
+    paintHome();
+  }
+
+  async function paintHome() {
+    let publicCreate = true;
+    try {
+      const meta = await api("/api/meta");
+      publicCreate = meta.publicCreate !== false;
+    } catch (err) { /* старый api */ }
+    const stack = app.querySelector("#home-stack");
+    if (!stack) return;
+    const createCard = publicCreate
+      ? '<form class="card" id="create">' +
+        "<h1>Ширма</h1>" +
+        '<p class="note">Пароль мастера нужен для входа и удаления. Его можно сохранить в браузере.</p>' +
+        '<label title="Имя новой комнаты">Название<input name="title" value="Новая комната" required></label>' +
+        '<label title="Пароль мастера">Пароль<input name="password" type="password" minlength="4" required autocomplete="new-password"></label>' +
+        '<div class="row"><button class="primary" type="submit">Создать комнату</button></div>' +
+        '<p class="error" id="err"></p></form>'
+      : '<div class="card"><h1>Ширма</h1><p class="note">Публичное создание комнат выключено. Комнаты создаёт администратор.</p></div>';
+    const importCard = publicCreate
+      ? '<form class="card" id="import">' +
+        "<h2>Загрузить выгрузку</h2>" +
+        '<p class="note">Файл .shirmo.json. Задайте пароль для новой комнаты.</p>' +
+        '<label>Пароль<input name="password" type="password" minlength="4" required autocomplete="new-password"></label>' +
+        '<div class="row"><label class="file-btn" title="Выбрать файл выгрузки">' +
+        '<input id="pack-file" type="file" accept="application/json,.json" required>' +
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v10M8 8l4-4 4 4M5 18h14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+        "Файл</label><button class=\"primary\" type=\"submit\">Загрузить</button></div>" +
+        '<span class="file-name" id="pack-name"></span>' +
+        '<p class="error" id="import-err"></p></form>'
+      : "";
+    stack.innerHTML = createCard + importCard +
+      '<section class="card" id="shelf"><h2>Комнаты</h2><p class="note">Загрузка…</p></section>';
+    const create = app.querySelector("#create");
+    if (create) create.addEventListener("submit", async function (event) {
       event.preventDefault();
       const form = new FormData(event.target);
       try {
@@ -234,34 +255,208 @@
     });
     const packInput = app.querySelector("#pack-file");
     const packName = app.querySelector("#pack-name");
-    packInput.addEventListener("change", function () {
-      packName.textContent = (this.files && this.files[0] && this.files[0].name) || "";
-    });
-    app.querySelector("#import").addEventListener("submit", async function (event) {
-      event.preventDefault();
-      const password = new FormData(event.target).get("password");
-      const file = packInput.files && packInput.files[0];
-      const errBox = app.querySelector("#import-err");
-      errBox.textContent = "";
-      if (!file) {
-        errBox.textContent = "Выберите файл выгрузки";
-        return;
-      }
+    const importForm = app.querySelector("#import");
+    if (packInput && packName) {
+      packInput.addEventListener("change", function () {
+        packName.textContent = (this.files && this.files[0] && this.files[0].name) || "";
+      });
+    }
+    if (importForm && packInput) {
+      importForm.addEventListener("submit", async function (event) {
+        event.preventDefault();
+        const password = new FormData(event.target).get("password");
+        const file = packInput.files && packInput.files[0];
+        const errBox = app.querySelector("#import-err");
+        errBox.textContent = "";
+        if (!file) {
+          errBox.textContent = "Выберите файл выгрузки";
+          return;
+        }
+        try {
+          const pack = JSON.parse(await file.text());
+          const room = await api("/api/rooms/import", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(Object.assign({}, pack, { password: password }))
+          });
+          rememberRoom({ id: room.id, title: room.title, key: room.masterKey });
+          sessionStorage.setItem(keyName(room.id), room.masterKey);
+          location.href = "/m/" + room.id;
+        } catch (err) {
+          errBox.textContent = err.message;
+        }
+      });
+    }
+    fillShelf();
+  }
+
+  function adminHeaders() {
+    const token = sessionStorage.getItem(ADMIN_KEY) || "";
+    return { authorization: "Bearer " + token, "content-type": "application/json" };
+  }
+
+  async function admin() {
+    const token = sessionStorage.getItem(ADMIN_KEY) || "";
+    if (!token) {
+      app.innerHTML = '<section class="gate"><form class="card" id="admin-login"><h1>Админ</h1>' +
+        '<p class="note">Глобальный пароль из окружения сервера.</p>' +
+        '<label>Пароль<input name="password" type="password" minlength="1" required autocomplete="current-password"></label>' +
+        '<div class="row"><button class="primary" type="submit">Войти</button><a href="/">На главную</a></div>' +
+        '<p class="error" id="err"></p></form></section>';
+      app.querySelector("#admin-login").addEventListener("submit", async function (event) {
+        event.preventDefault();
+        const password = String(new FormData(event.target).get("password") || "");
+        try {
+          await api("/api/admin/login", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ password: password })
+          });
+          sessionStorage.setItem(ADMIN_KEY, password);
+          admin();
+        } catch (err) {
+          app.querySelector("#err").textContent = err.message;
+        }
+      });
+      return;
+    }
+    let data;
+    try {
+      data = await api("/api/admin", { headers: adminHeaders() });
+    } catch (err) {
+      sessionStorage.removeItem(ADMIN_KEY);
+      app.innerHTML = '<section class="gate"><div class="card"><h1>Админ</h1><p class="error">' + esc(err.message) +
+        '</p><a href="/admin">Снова</a></div></section>';
+      return;
+    }
+    function bytes(n) {
+      const v = Number(n) || 0;
+      if (v < 1024) return v + " B";
+      if (v < 1048576) return (v / 1024).toFixed(1) + " KB";
+      if (v < 1073741824) return (v / 1048576).toFixed(1) + " MB";
+      return (v / 1073741824).toFixed(2) + " GB";
+    }
+    const rooms = (data.rooms || []).map(function (room) {
+      const bin = room.deletedAt ? ' <span class="note">корзина</span>' : "";
+      return '<article class="room-row"><b>' + esc(room.title || "Комната") + "</b>" + bin +
+        '<span class="note">' + esc(room.id) + " · " + bytes(room.filesBytes) + " / " + bytes(data.roomFilesMax) + "</span>" +
+        '<div class="row">' +
+        '<a href="/m/' + esc(room.id) + '">Мастер</a>' +
+        '<button type="button" data-reset="' + esc(room.id) + '">Сбросить пароль</button>' +
+        (room.deletedAt
+          ? '<button type="button" data-restore="' + esc(room.id) + '">Вернуть</button><button type="button" data-purge="' + esc(room.id) + '">Удалить навсегда</button>'
+          : '<button type="button" data-drop="' + esc(room.id) + '">В корзину</button>') +
+        "</div></article>";
+    }).join("") || '<p class="note">Комнат нет.</p>';
+    app.innerHTML = '<section class="gate"><div class="gate-stack">' +
+      '<div class="card"><h1>Админ</h1>' +
+      '<label class="check" title="Разрешить создание комнат с главной"><input id="public-create" type="checkbox"' +
+      (data.publicCreate !== false ? " checked" : "") + "> Публичное создание комнат</label>" +
+      '<div class="row"><button type="button" id="save-config">Сохранить</button>' +
+      '<button type="button" id="clear-trash">Очистить корзину</button>' +
+      '<button type="button" id="backup-all">Полный бэкап на диск</button>' +
+      '<button type="button" id="reset-all">Сбросить все пароли</button>' +
+      '<a href="/">На главную</a></div>' +
+      '<p class="error" id="err"></p><p class="note" id="ok"></p></div>' +
+      '<form class="card" id="admin-create"><h2>Создать комнату</h2>' +
+      '<label>Название<input name="title" value="Комната" required></label>' +
+      '<label>Пароль<input name="password" type="password" minlength="4" autocomplete="new-password" placeholder="пусто = случайный"></label>' +
+      '<div class="row"><button class="primary" type="submit">Создать</button></div></form>' +
+      '<section class="card"><h2>Комнаты</h2>' + rooms + "</section></div></section>";
+    const err = app.querySelector("#err");
+    const ok = app.querySelector("#ok");
+    app.querySelector("#save-config").addEventListener("click", async function () {
       try {
-        const pack = JSON.parse(await file.text());
-        const room = await api("/api/rooms/import", {
+        await api("/api/admin/config", {
+          method: "PUT",
+          headers: adminHeaders(),
+          body: JSON.stringify({ publicCreate: app.querySelector("#public-create").checked })
+        });
+        ok.textContent = "Сохранено.";
+        err.textContent = "";
+      } catch (fail) {
+        err.textContent = fail.message;
+      }
+    });
+    app.querySelector("#clear-trash").addEventListener("click", async function () {
+      if (!window.confirm("Удалить все комнаты из корзины навсегда?")) return;
+      try {
+        const res = await api("/api/admin/trash", { method: "DELETE", headers: adminHeaders() });
+        ok.textContent = "Удалено из корзины: " + (res.purged || 0);
+        admin();
+      } catch (fail) {
+        err.textContent = fail.message;
+      }
+    });
+    app.querySelector("#backup-all").addEventListener("click", async function () {
+      try {
+        const res = await api("/api/admin/backup", { method: "POST", headers: adminHeaders(), body: "{}" });
+        ok.textContent = "Бэкап: " + res.dir + " (" + res.rooms + " комн.)";
+      } catch (fail) {
+        err.textContent = fail.message;
+      }
+    });
+    app.querySelector("#reset-all").addEventListener("click", async function () {
+      if (!window.confirm("Сбросить пароли всех комнат? Новые пароли покажутся один раз.")) return;
+      try {
+        const res = await api("/api/admin/passwords/reset-all", { method: "POST", headers: adminHeaders(), body: "{}" });
+        ok.textContent = (res.rooms || []).map(function (row) {
+          return row.id + " · " + (row.title || "") + " · " + row.masterKey;
+        }).join(" | ");
+      } catch (fail) {
+        err.textContent = fail.message;
+      }
+    });
+    app.querySelector("#admin-create").addEventListener("submit", async function (event) {
+      event.preventDefault();
+      const form = new FormData(event.target);
+      try {
+        const room = await api("/api/admin/rooms", {
           method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(Object.assign({}, pack, { password: password }))
+          headers: adminHeaders(),
+          body: JSON.stringify({ title: form.get("title"), password: form.get("password") || undefined })
         });
         rememberRoom({ id: room.id, title: room.title, key: room.masterKey });
-        sessionStorage.setItem(keyName(room.id), room.masterKey);
-        location.href = "/m/" + room.id;
-      } catch (err) {
-        errBox.textContent = err.message;
+        ok.textContent = "Создано. Пароль: " + room.masterKey;
+        window.alert("Комната " + room.id + "\nПароль: " + room.masterKey);
+        admin();
+      } catch (fail) {
+        err.textContent = fail.message;
       }
     });
-    fillShelf();
+    app.querySelector(".gate-stack").addEventListener("click", async function (event) {
+      const reset = event.target.closest("[data-reset]");
+      const drop = event.target.closest("[data-drop]");
+      const back = event.target.closest("[data-restore]");
+      const purge = event.target.closest("[data-purge]");
+      const button = reset || drop || back || purge;
+      if (!button) return;
+      const id = button.getAttribute("data-reset") || button.getAttribute("data-drop") ||
+        button.getAttribute("data-restore") || button.getAttribute("data-purge");
+      try {
+        if (reset) {
+          const res = await api("/api/admin/rooms/" + id + "/password", {
+            method: "POST",
+            headers: adminHeaders(),
+            body: "{}"
+          });
+          window.alert("Новый пароль:\n" + res.masterKey);
+          rememberRoom({ id: id, key: res.masterKey });
+        } else if (drop) {
+          await api("/api/rooms/" + id, { method: "DELETE", headers: adminHeaders() });
+          admin();
+        } else if (back) {
+          await api("/api/rooms/" + id + "/restore", { method: "POST", headers: adminHeaders(), body: "{}" });
+          admin();
+        } else if (purge) {
+          if (!window.confirm("Удалить навсегда?")) return;
+          await api("/api/rooms/" + id + "/purge", { method: "DELETE", headers: adminHeaders() });
+          admin();
+        }
+      } catch (fail) {
+        err.textContent = fail.message;
+      }
+    });
   }
 
   async function fillShelf() {
@@ -749,7 +944,7 @@
   }
 
   async function master(id) {
-    const key = takeKey(id);
+    let key = takeKey(id);
     if (!key) {
       app.innerHTML = '<section class="gate"><form class="card" id="unlock"><h1>Пароль мастера</h1>' +
         '<p class="note">Введите пароль этой комнаты.</p>' +
@@ -797,6 +992,7 @@
       '<button type="button" id="mod-battle" title="Инициатива, хиты и враги на карте">Бой</button>' +
       '<span class="spacer"></span>' +
       '<button type="button" id="backup" title="Скачать кампанию и файлы">Выгрузка</button>' +
+      '<button type="button" id="pass" title="Сменить пароль мастера этой комнаты">Пароль</button>' +
       '<button type="button" id="copy-master" title="Скопировать ссылку с паролем мастера">Ссылка мастера</button>' +
       '<button type="button" id="copy" title="Скопировать ссылку для зрителей">Ссылка игроков</button>' +
       '<a href="' + esc(viewerUrl) + '" target="_blank" rel="noopener" title="Открыть экран игроков в новой вкладке">Открыть экран</a>' +
@@ -1108,6 +1304,24 @@
         err.textContent = fail.message;
       }
     });
+    app.querySelector("#pass").addEventListener("click", async function () {
+      const next = window.prompt("Новый пароль мастера (от 4 символов)");
+      if (!next) return;
+      try {
+        const res = await api("/api/rooms/" + id + "/password", {
+          method: "POST",
+          headers: headers,
+          body: JSON.stringify({ password: next, oldPassword: key })
+        });
+        key = res.masterKey;
+        sessionStorage.setItem(keyName(id), key);
+        rememberRoom({ id: id, key: key, title: state.title });
+        headers.authorization = "Bearer " + key;
+        window.alert("Пароль обновлён.");
+      } catch (fail) {
+        err.textContent = fail.message;
+      }
+    });
     app.querySelector("#copy-master").addEventListener("click", function () {
       navigator.clipboard.writeText(location.origin + "/m/" + id + "?k=" + encodeURIComponent(key));
     });
@@ -1379,5 +1593,6 @@
 
   if (masterMatch) master(decodeURIComponent(masterMatch[1]));
   else if (viewerMatch) viewer(decodeURIComponent(viewerMatch[1]));
+  else if (isAdminPage) admin();
   else home();
 })();
