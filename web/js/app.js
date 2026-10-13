@@ -970,6 +970,7 @@
       const codexHost = app.querySelector("#work-codex");
       const battleHost = app.querySelector("#work-battle");
       if (kind !== "codex" && codexHost._codexFlush) codexHost._codexFlush();
+      if (kind !== "battle" && state.campaign.battle) state.campaign.battle.screen = false;
       app.querySelector("#work-scene").hidden = kind !== "scene";
       mapHost.hidden = kind !== "map";
       codexHost.hidden = kind !== "codex";
@@ -985,6 +986,7 @@
           upload: function (file) { return uploadFile(id, key, file); },
           showGoods: function (goods) { return publishGoods(id, headers, goods); }
         });
+        save();
         return;
       }
       if (kind === "battle" && window.ShirmoBattle) {
@@ -1074,6 +1076,7 @@
     });
     app.querySelector("#show").addEventListener("click", async function () {
       clearTimeout(timer);
+      if (app.querySelector("#work-battle").hidden && state.campaign.battle) state.campaign.battle.screen = false;
       state.campaign.shownPageId = state.campaign.activePageId;
       await save();
       try {
