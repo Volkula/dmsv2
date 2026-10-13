@@ -95,13 +95,14 @@ function send(res, status, body, headers) {
   res.end(payload);
 }
 
-function readJson(req) {
+function readJson(req, maxBytes) {
+  const limit = maxBytes || 2_000_000;
   return new Promise(function (resolve, reject) {
     const chunks = [];
     let size = 0;
     req.on("data", function (chunk) {
       size += chunk.length;
-      if (size > 2_000_000) {
+      if (size > limit) {
         reject(Object.assign(new Error("too big"), { status: 413 }));
         req.destroy();
         return;
@@ -120,6 +121,40 @@ function readJson(req) {
       }
     });
     req.on("error", reject);
+  });
+}
+
+function passOk(value) {
+  const text = String(value || "");
+  return text.length >= 4 && text.length <= 120 ? text : "";
+}
+
+function packFiles(roomId) {
+  const dir = path.join(filesDir, roomId);
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir).filter(function (name) {
+    return !name.endsWith(".type");
+  }).map(function (name) {
+    let type = "application/octet-stream";
+    try { type = fs.readFileSync(path.join(dir, name + ".type"), "utf8").trim() || type; } catch (err) { /* нет типа */ }
+    return {
+      id: name,
+      type: type.slice(0, 80),
+      data: fs.readFileSync(path.join(dir, name)).toString("base64")
+    };
+  });
+}
+
+function unpackFiles(roomId, files) {
+  const dir = path.join(filesDir, roomId);
+  fs.mkdirSync(dir, { recursive: true });
+  (Array.isArray(files) ? files : []).slice(0, 200).forEach(function (file) {
+    const fileId = String(file && file.id || "").replace(/[^\w-]/g, "");
+    if (!fileId || !file.data) return;
+    const buf = Buffer.from(String(file.data), "base64");
+    if (buf.length > 8_000_000) return;
+    fs.writeFileSync(path.join(dir, fileId), buf);
+    fs.writeFileSync(path.join(dir, fileId + ".type"), String(file.type || "application/octet-stream").slice(0, 80));
   });
 }
 
@@ -168,7 +203,7 @@ const server = http.createServer(async function (req, res) {
       const rooms = [];
       const trash = [];
       listRooms.all().forEach(function (row) {
-        const item = { id: row.id, title: row.title, masterKey: row.master_key || "", updatedAt: row.updated_at, deletedAt: row.deleted_at || 0 };
+        const item = { id: row.id, title: row.title, updatedAt: row.updated_at, deletedAt: row.deleted_at || 0 };
         if (item.deletedAt) trash.push(item);
         else rooms.push(item);
       });
@@ -180,14 +215,43 @@ const server = http.createServer(async function (req, res) {
     if (req.method === "POST" && url.pathname === "/api/rooms") {
       const body = await readJson(req);
       const title = String(body.title || "Комната").slice(0, 80);
+      const key = passOk(body.password);
+      if (!key) {
+        send(res, 400, { error: "нужен пароль мастера, от 4 символов" });
+        return;
+      }
       const id = randomUUID();
-      const key = newSecret();
       const hashed = hashSecret(key);
       const pageId = randomUUID();
       const campaign = blankCampaign(pageId);
       const frame = projectFrame(campaign);
       const now = Date.now();
       insertRoom.run(id, title, hashed.salt, hashed.hash, key, "live", JSON.stringify(campaign), JSON.stringify(frame), now);
+      send(res, 201, { id: id, title: title, masterKey: key });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/rooms/import") {
+      const body = await readJson(req, 40_000_000);
+      const key = passOk(body.password);
+      if (!key) {
+        send(res, 400, { error: "нужен пароль мастера, от 4 символов" });
+        return;
+      }
+      if (!body.campaign || !campaignOk(body.campaign)) {
+        send(res, 400, { error: "bad campaign" });
+        return;
+      }
+      const id = randomUUID();
+      const hashed = hashSecret(key);
+      const title = String(body.title || "Импорт").slice(0, 80);
+      const campaign = body.campaign;
+      const frame = projectFrame(campaign);
+      const now = Date.now();
+      insertRoom.run(id, title, hashed.salt, hashed.hash, key, "live", JSON.stringify(campaign), JSON.stringify(frame), now);
+      unpackFiles(id, body.files);
+      if (Array.isArray(body.rolls)) saveRolls.run(JSON.stringify(body.rolls.slice(0, 40)), id);
+      if (Array.isArray(body.pins)) savePins.run(JSON.stringify(body.pins.slice(0, 40)), id);
       send(res, 201, { id: id, title: title, masterKey: key });
       return;
     }
@@ -207,12 +271,20 @@ const server = http.createServer(async function (req, res) {
     const tail = parts.slice(3).join("/");
 
     if (req.method === "DELETE" && !tail) {
+      if (!isMaster(req, room)) {
+        send(res, 401, { error: "unauthorized" });
+        return;
+      }
       trashRoom.run(Date.now(), id);
       send(res, 200, { ok: true });
       return;
     }
 
     if (req.method === "POST" && tail === "restore") {
+      if (!isMaster(req, room)) {
+        send(res, 401, { error: "unauthorized" });
+        return;
+      }
       restoreRoom.run(id);
       send(res, 200, { ok: true });
       return;
@@ -278,6 +350,17 @@ const server = http.createServer(async function (req, res) {
         campaign: room.campaign,
         rolls: room.rolls,
         pins: room.pins
+      });
+      return;
+    }
+
+    if (req.method === "GET" && tail === "backup") {
+      send(res, 200, {
+        title: room.title,
+        campaign: room.campaign,
+        rolls: room.rolls,
+        pins: room.pins,
+        files: packFiles(id)
       });
       return;
     }

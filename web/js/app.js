@@ -192,22 +192,49 @@
     window.addEventListener("blur", hide);
   })();
 
+  function askPass(label) {
+    const value = window.prompt(label || "Пароль мастера");
+    return value == null ? "" : String(value);
+  }
+
   function home() {
     app.innerHTML = '<section class="gate"><div class="gate-stack"><form class="card" id="create">' +
       "<h1>Ширма</h1>" +
-      '<p class="note">Комнаты лежат на этом сервере. Ключ мастера записывается в базу, поэтому комнату можно снова открыть с главной.</p>' +
+      '<p class="note">Пароль мастера нужен для входа и удаления. Его можно сохранить в браузере.</p>' +
       '<label title="Имя новой комнаты">Название<input name="title" value="Новая комната" required></label>' +
-      '<div class="row"><button class="primary" type="submit" title="Открыть комнату и перейти к ширме">Создать комнату</button></div>' +
+      '<label title="Пароль мастера">Пароль<input name="password" type="password" minlength="4" required autocomplete="new-password"></label>' +
+      '<div class="row"><button class="primary" type="submit">Создать комнату</button></div>' +
+      '<label class="check">Загрузить выгрузку<input id="pack-file" type="file" accept="application/json,.json"></label>' +
       '<p class="error" id="err"></p></form>' +
       '<section class="card" id="shelf"><h2>Комнаты</h2><p class="note">Загрузка…</p></section></div></section>';
     app.querySelector("#create").addEventListener("submit", async function (event) {
       event.preventDefault();
-      const title = new FormData(event.target).get("title");
+      const form = new FormData(event.target);
       try {
         const room = await api("/api/rooms", {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ title: title })
+          body: JSON.stringify({ title: form.get("title"), password: form.get("password") })
+        });
+        rememberRoom({ id: room.id, title: room.title, key: room.masterKey });
+        sessionStorage.setItem(keyName(room.id), room.masterKey);
+        location.href = "/m/" + room.id;
+      } catch (err) {
+        app.querySelector("#err").textContent = err.message;
+      }
+    });
+    app.querySelector("#pack-file").addEventListener("change", async function () {
+      const file = this.files && this.files[0];
+      this.value = "";
+      if (!file) return;
+      const password = askPass("Пароль для новой комнаты из выгрузки");
+      if (!password) return;
+      try {
+        const pack = JSON.parse(await file.text());
+        const room = await api("/api/rooms/import", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(Object.assign({}, pack, { password: password }))
         });
         rememberRoom({ id: room.id, title: room.title, key: room.masterKey });
         sessionStorage.setItem(keyName(room.id), room.masterKey);
@@ -225,48 +252,73 @@
     const known = {};
     readShelf().forEach(function (item) { known[item.id] = item; });
     let rooms = [];
+    let trash = [];
     try {
       const data = await api("/api/rooms");
       rooms = data.rooms || [];
-      var trash = data.trash || [];
+      trash = data.trash || [];
     } catch (err) {
       shelf.innerHTML = "<h2>Комнаты</h2>" + '<p class="error">' + esc(err.message) + "</p>";
       return;
     }
     const rowHtml = function (room, bin) {
-      if (room.masterKey) rememberRoom({ id: room.id, title: room.title, key: room.masterKey });
-      const saved = room.masterKey || known[room.id];
-      const master = saved
-        ? '<a href="/m/' + esc(room.id) + '">Мастер</a>'
-        : '<span class="note">Ключ мастера не записан</span>';
-      const act = bin
-        ? '<button type="button" data-restore="' + esc(room.id) + '">Вернуть</button>'
-        : '<button type="button" data-drop="' + esc(room.id) + '">Удалить</button>';
+      const saved = known[room.id];
       return '<article class="room-row"><b>' + esc(room.title || "Комната") + "</b>" +
         '<span class="note">' + esc(whenText(bin ? room.deletedAt : room.updatedAt)) + "</span>" +
-        '<div class="row">' + master + '<a href="/v/' + esc(room.id) + '">Игроки</a>' + act + "</div></article>";
+        '<div class="row">' +
+        (bin
+          ? '<button type="button" data-restore="' + esc(room.id) + '">Вернуть</button>'
+          : '<button type="button" data-enter="' + esc(room.id) + '">Мастер</button>' +
+            '<a href="/v/' + esc(room.id) + '">Игроки</a>' +
+            '<button type="button" data-dump="' + esc(room.id) + '">Выгрузка</button>' +
+            '<button type="button" data-drop="' + esc(room.id) + '">Удалить</button>') +
+        (saved ? '<span class="note">пароль в браузере</span>' : "") +
+        "</div></article>";
     };
-    const rows = rooms.map(function (room) { return rowHtml(room, false); }).join("");
-    const binRows = trash.map(function (room) { return rowHtml(room, true); }).join("");
     shelf.innerHTML = "<h2>Комнаты</h2>" +
-      '<p class="note">Удаление уносит комнату в корзину. Оттуда её можно вернуть.</p>' +
-      (rows || '<p class="note">Пока нет комнат.</p>') +
+      '<p class="note">Вход и удаление — по паролю мастера. Выгрузка — вся кампания и файлы.</p>' +
+      (rooms.map(function (room) { return rowHtml(room, false); }).join("") || '<p class="note">Пока нет комнат.</p>') +
       "<h2>Корзина</h2>" +
-      (binRows || '<p class="note">Корзина пуста.</p>');
+      (trash.map(function (room) { return rowHtml(room, true); }).join("") || '<p class="note">Корзина пуста.</p>');
     shelf.onclick = async function (event) {
+      const enter = event.target.closest("[data-enter]");
+      const dump = event.target.closest("[data-dump]");
       const drop = event.target.closest("[data-drop]");
       const back = event.target.closest("[data-restore]");
-      const button = drop || back;
+      const button = enter || dump || drop || back;
       if (!button || !shelf.contains(button)) return;
-      const id = button.getAttribute(drop ? "data-drop" : "data-restore");
+      const id = button.getAttribute("data-enter") || button.getAttribute("data-dump") ||
+        button.getAttribute("data-drop") || button.getAttribute("data-restore");
+      let key = (known[id] && known[id].key) || sessionStorage.getItem(keyName(id)) || "";
+      if (!key) key = askPass("Пароль мастера");
+      if (!key) return;
       button.disabled = true;
       try {
-        if (drop) await api("/api/rooms/" + id, { method: "DELETE" });
-        else await api("/api/rooms/" + id + "/restore", { method: "POST" });
+        if (enter) {
+          await api("/api/rooms/" + id + "/campaign", { headers: { authorization: "Bearer " + key } });
+          rememberRoom({ id: id, key: key });
+          sessionStorage.setItem(keyName(id), key);
+          location.href = "/m/" + id;
+          return;
+        }
+        if (dump) {
+          const pack = await api("/api/rooms/" + id + "/backup", { headers: { authorization: "Bearer " + key } });
+          rememberRoom({ id: id, key: key, title: pack.title });
+          const blob = new Blob([JSON.stringify(pack)], { type: "application/json" });
+          const link = document.createElement("a");
+          link.href = URL.createObjectURL(blob);
+          link.download = (pack.title || "room") + ".shirmo.json";
+          link.click();
+          URL.revokeObjectURL(link.href);
+        } else if (drop) {
+          await api("/api/rooms/" + id, { method: "DELETE", headers: { authorization: "Bearer " + key } });
+        } else {
+          await api("/api/rooms/" + id + "/restore", { method: "POST", headers: { authorization: "Bearer " + key } });
+        }
         fillShelf();
       } catch (err) {
         button.disabled = false;
-        button.insertAdjacentHTML("afterend", '<span class="error">' + esc(err.message) + "</span>");
+        window.alert(err.message);
       }
     };
   }
@@ -675,9 +727,18 @@
   async function master(id) {
     const key = takeKey(id);
     if (!key) {
-      app.innerHTML = '<section class="gate"><div class="card"><h1>Нет ключа</h1>' +
-        '<p class="note">Этот браузер не помнит ключ мастера. Откройте комнату с главной, если ключ уже сохранялся, или со ссылки, где он был в адресе.</p>' +
-        '<p><a href="/">К списку комнат</a></p></div></section>';
+      app.innerHTML = '<section class="gate"><form class="card" id="unlock"><h1>Пароль мастера</h1>' +
+        '<p class="note">Введите пароль этой комнаты.</p>' +
+        '<label>Пароль<input name="password" type="password" minlength="4" required autocomplete="current-password"></label>' +
+        '<div class="row"><button class="primary" type="submit">Войти</button><a href="/">К списку</a></div>' +
+        '<p class="error" id="err"></p></form></section>';
+      app.querySelector("#unlock").addEventListener("submit", function (event) {
+        event.preventDefault();
+        const password = new FormData(event.target).get("password");
+        sessionStorage.setItem(keyName(id), String(password || ""));
+        rememberRoom({ id: id, key: String(password || "") });
+        master(id);
+      });
       return;
     }
     const headers = { authorization: "Bearer " + key, "content-type": "application/json" };
@@ -711,7 +772,8 @@
       '<button type="button" id="mod-codex" title="Персонажи, отряды и каталог">Справочник</button>' +
       '<button type="button" id="mod-battle" title="Инициатива, хиты и враги на карте">Бой</button>' +
       '<span class="spacer"></span>' +
-      '<button type="button" id="copy-master" title="Скопировать ссылку с ключом мастера">Ссылка мастера</button>' +
+      '<button type="button" id="backup" title="Скачать кампанию и файлы">Выгрузка</button>' +
+      '<button type="button" id="copy-master" title="Скопировать ссылку с паролем мастера">Ссылка мастера</button>' +
       '<button type="button" id="copy" title="Скопировать ссылку для зрителей">Ссылка игроков</button>' +
       '<a href="' + esc(viewerUrl) + '" target="_blank" rel="noopener" title="Открыть экран игроков в новой вкладке">Открыть экран</a>' +
       "</div><div class=\"work\" id=\"work-scene\"><aside class=\"side\">" +
@@ -1005,6 +1067,19 @@
     });
     app.querySelector("#roll-look").addEventListener("click", function () {
       openRollLook(state, err, save, app.querySelector("#roll-look"));
+    });
+    app.querySelector("#backup").addEventListener("click", async function () {
+      try {
+        const pack = await api("/api/rooms/" + id + "/backup", { headers: { authorization: headers.authorization } });
+        const blob = new Blob([JSON.stringify(pack)], { type: "application/json" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = (pack.title || "room") + ".shirmo.json";
+        link.click();
+        URL.revokeObjectURL(link.href);
+      } catch (fail) {
+        err.textContent = fail.message;
+      }
     });
     app.querySelector("#copy-master").addEventListener("click", function () {
       navigator.clipboard.writeText(location.origin + "/m/" + id + "?k=" + encodeURIComponent(key));
