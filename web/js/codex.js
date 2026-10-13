@@ -219,56 +219,35 @@ window.ShirmoCodex = (function () {
       });
     });
     const actors = campaign.battle && Array.isArray(campaign.battle.actors) ? campaign.battle.actors : [];
-    const foeIds = [];
+    const knownNpc = {};
+    book.npcs.forEach(function (row) { if (row && row.id) knownNpc[row.id] = true; });
     actors.forEach(function (actor) {
-      if (!actor || !String(actor.name || "").trim()) return;
-      const role = actor.side === "player" ? "npc" : "enemy";
-      let person = actor.codexId && book.npcs.find(function (row) { return row.id === actor.codexId; });
-      if (!person) {
-        person = {
-          id: crypto.randomUUID(),
-          role: role,
-          name: actor.name,
-          note: actor.note || (role === "npc" ? "Герой" : ""),
-          weapon: actor.weapon || "",
-          damage: actor.damage || "",
-          hp: actor.hpMax || actor.hp || 0,
-          hpMax: actor.hpMax || actor.hp || 0,
-          portrait: picture(actor.portrait)
-        };
-        book.npcs.push(person);
-        actor.codexId = person.id;
+      if (!actor || !actor.codexId) return;
+      if (!knownNpc[actor.codexId]) {
+        actor.codexId = "";
+        changed = true;
+        return;
+      }
+      const person = book.npcs.find(function (row) { return row.id === actor.codexId; });
+      if (person && picture(actor.portrait) && !person.portrait) {
+        person.portrait = picture(actor.portrait);
         changed = true;
       }
-      if (role === "enemy") foeIds.push(person.id);
     });
     (campaign.pages || []).forEach(function (page) {
       (page.views || []).forEach(function (view) {
         (view.markers || []).forEach(function (marker) {
           if (!marker || marker.kind !== "foe") return;
           const actor = actors.find(function (row) { return row && (row.markerId === marker.id || row.id === marker.actorId); });
-          if (actor && actor.codexId && marker.codexId !== actor.codexId) {
+          if (actor && actor.codexId && knownNpc[actor.codexId] && marker.codexId !== actor.codexId) {
             marker.codexId = actor.codexId;
             changed = true;
             return;
           }
-          if (marker.codexId && book.npcs.some(function (row) { return row.id === marker.codexId; })) return;
-          if (actor) return;
-          const person = {
-            id: crypto.randomUUID(),
-            role: "enemy",
-            name: marker.name || "Враг",
-            note: "",
-            weapon: marker.weapon || "",
-            damage: marker.damage || "",
-            hp: marker.hpMax || marker.hp || 0,
-            hpMax: marker.hpMax || marker.hp || 0,
-            portrait: picture(marker.portrait)
-          };
-          book.npcs.push(person);
-          marker.codexId = person.id;
-          foeIds.push(person.id);
-          changed = true;
+          if (marker.codexId && !knownNpc[marker.codexId]) {
+            marker.codexId = "";
+            changed = true;
+          }
         });
       });
     });
@@ -290,43 +269,24 @@ window.ShirmoCodex = (function () {
       return false;
     });
     if (book.places.length !== before) changed = true;
+    const knownSquads = {};
+    book.squads.forEach(function (squad) { if (squad && squad.id) knownSquads[squad.id] = true; });
     const board = campaign.battle && campaign.battle.board;
-    if (Array.isArray(board) && board.some(function (group) { return group && group.kind !== "sep"; })) {
+    if (Array.isArray(board)) {
       board.forEach(function (group) {
-        if (!group || group.kind === "sep") return;
-        const members = [];
-        (group.memberIds || []).forEach(function (id) {
-          const actor = actors.find(function (row) { return row && row.id === id; });
-          if (actor && actor.side !== "player" && actor.codexId) members.push(actor.codexId);
-        });
-        if (!members.length) return;
-        let squad = group.codexSquadId && book.squads.find(function (row) { return row.id === group.codexSquadId; });
-        if (!squad) {
-          squad = { id: crypto.randomUUID(), name: group.name || "Отряд", placeId: "", memberIds: members.slice() };
-          book.squads.push(squad);
-          changed = true;
-        } else {
-          const prev = (squad.memberIds || []).slice().sort().join(",");
-          const next = members.slice().sort().join(",");
-          if (prev !== next) {
-            squad.memberIds = members.slice();
-            changed = true;
-          }
-        }
-        if (group.codexSquadId !== squad.id) {
-          group.codexSquadId = squad.id;
+        if (!group || !group.codexSquadId) return;
+        if (!knownSquads[group.codexSquadId]) {
+          group.codexSquadId = "";
           changed = true;
         }
       });
     }
-    const knownNpc = {};
-    book.npcs.forEach(function (row) { if (row && row.id) knownNpc[row.id] = true; });
     const beforeSquads = book.squads.length;
     book.squads = book.squads.filter(function (squad) {
       if (!squad) return false;
-      const before = (squad.memberIds || []).length;
+      const beforeMembers = (squad.memberIds || []).length;
       squad.memberIds = (squad.memberIds || []).filter(function (id) { return knownNpc[id]; });
-      if (squad.memberIds.length !== before) changed = true;
+      if (squad.memberIds.length !== beforeMembers) changed = true;
       return squad.memberIds.length > 0;
     });
     if (book.squads.length !== beforeSquads) changed = true;
@@ -373,6 +333,10 @@ window.ShirmoCodex = (function () {
       dirty = true;
       clearTimeout(timer);
       timer = setTimeout(flush, 250);
+    }
+    function saveNow() {
+      dirty = true;
+      flush();
     }
     function eachView(fn) {
       (ctx.campaign.pages || []).forEach(function (page) {
@@ -444,13 +408,25 @@ window.ShirmoCodex = (function () {
     function purgeSquad(index) {
       const squad = book().squads[index];
       if (!squad) return;
+      const memberIds = (squad.memberIds || []).slice();
       const battle = ctx.campaign.battle;
       if (battle && Array.isArray(battle.board)) {
+        const memberSet = {};
+        memberIds.forEach(function (id) { memberSet[id] = true; });
+        const actorByCodex = {};
+        (battle.actors || []).forEach(function (actor) {
+          if (actor && actor.codexId && memberSet[actor.codexId]) actorByCodex[actor.id] = true;
+        });
         battle.board = battle.board.filter(function (group) {
-          return !(group && group.codexSquadId && group.codexSquadId === squad.id);
+          if (!group || group.kind === "sep") return true;
+          if (group.codexSquadId && group.codexSquadId === squad.id) return false;
+          const members = group.memberIds || [];
+          if (!members.length) return true;
+          return !members.every(function (mid) { return actorByCodex[mid]; });
         });
       }
       book().squads.splice(index, 1);
+      memberIds.forEach(function (id) { purgePerson(id); });
     }
     function blank() {
       const row = { id: crypto.randomUUID() };
@@ -1863,7 +1839,7 @@ window.ShirmoCodex = (function () {
         squad.memberIds = (squad.memberIds || []).filter(function (item) { return item !== npcId; });
         dropEmptySquads();
         paint();
-        saveSoon();
+        saveNow();
         return;
       }
       if (act === "del") {
@@ -1889,7 +1865,7 @@ window.ShirmoCodex = (function () {
           list().splice(index, 1);
         }
         paint();
-        saveSoon();
+        saveNow();
         return;
       }
       if (act === "npc") {
