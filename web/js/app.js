@@ -204,8 +204,17 @@
       '<label title="Имя новой комнаты">Название<input name="title" value="Новая комната" required></label>' +
       '<label title="Пароль мастера">Пароль<input name="password" type="password" minlength="4" required autocomplete="new-password"></label>' +
       '<div class="row"><button class="primary" type="submit">Создать комнату</button></div>' +
-      '<label class="check">Загрузить выгрузку<input id="pack-file" type="file" accept="application/json,.json"></label>' +
       '<p class="error" id="err"></p></form>' +
+      '<form class="card" id="import">' +
+      "<h2>Загрузить выгрузку</h2>" +
+      '<p class="note">Файл .shirmo.json. Задайте пароль для новой комнаты.</p>' +
+      '<label>Пароль<input name="password" type="password" minlength="4" required autocomplete="new-password"></label>' +
+      '<div class="row"><label class="file-btn" title="Выбрать файл выгрузки">' +
+      '<input id="pack-file" type="file" accept="application/json,.json" required>' +
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v10M8 8l4-4 4 4M5 18h14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+      "Файл</label><button class=\"primary\" type=\"submit\">Загрузить</button></div>" +
+      '<span class="file-name" id="pack-name"></span>' +
+      '<p class="error" id="import-err"></p></form>' +
       '<section class="card" id="shelf"><h2>Комнаты</h2><p class="note">Загрузка…</p></section></div></section>';
     app.querySelector("#create").addEventListener("submit", async function (event) {
       event.preventDefault();
@@ -223,12 +232,21 @@
         app.querySelector("#err").textContent = err.message;
       }
     });
-    app.querySelector("#pack-file").addEventListener("change", async function () {
-      const file = this.files && this.files[0];
-      this.value = "";
-      if (!file) return;
-      const password = askPass("Пароль для новой комнаты из выгрузки");
-      if (!password) return;
+    const packInput = app.querySelector("#pack-file");
+    const packName = app.querySelector("#pack-name");
+    packInput.addEventListener("change", function () {
+      packName.textContent = (this.files && this.files[0] && this.files[0].name) || "";
+    });
+    app.querySelector("#import").addEventListener("submit", async function (event) {
+      event.preventDefault();
+      const password = new FormData(event.target).get("password");
+      const file = packInput.files && packInput.files[0];
+      const errBox = app.querySelector("#import-err");
+      errBox.textContent = "";
+      if (!file) {
+        errBox.textContent = "Выберите файл выгрузки";
+        return;
+      }
       try {
         const pack = JSON.parse(await file.text());
         const room = await api("/api/rooms/import", {
@@ -240,7 +258,7 @@
         sessionStorage.setItem(keyName(room.id), room.masterKey);
         location.href = "/m/" + room.id;
       } catch (err) {
-        app.querySelector("#err").textContent = err.message;
+        errBox.textContent = err.message;
       }
     });
     fillShelf();

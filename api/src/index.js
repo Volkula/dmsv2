@@ -158,6 +158,11 @@ function unpackFiles(roomId, files) {
   });
 }
 
+function retarget(value, fromId, toId) {
+  if (!fromId || fromId === toId) return value;
+  return JSON.parse(JSON.stringify(value).split("/api/rooms/" + fromId + "/").join("/api/rooms/" + toId + "/"));
+}
+
 function roomById(id) {
   return rowToRoom(selectRoom.get(id));
 }
@@ -245,7 +250,8 @@ const server = http.createServer(async function (req, res) {
       const id = randomUUID();
       const hashed = hashSecret(key);
       const title = String(body.title || "Импорт").slice(0, 80);
-      const campaign = body.campaign;
+      const fromId = String(body.roomId || body.id || "").replace(/[^\w-]/g, "");
+      const campaign = retarget(body.campaign, fromId, id);
       const frame = projectFrame(campaign);
       const now = Date.now();
       insertRoom.run(id, title, hashed.salt, hashed.hash, key, "live", JSON.stringify(campaign), JSON.stringify(frame), now);
@@ -356,6 +362,7 @@ const server = http.createServer(async function (req, res) {
 
     if (req.method === "GET" && tail === "backup") {
       send(res, 200, {
+        roomId: id,
         title: room.title,
         campaign: room.campaign,
         rolls: room.rolls,

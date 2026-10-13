@@ -220,6 +220,18 @@ label.file-btn:hover { border-color: var(--brass); color: var(--brass); }
 
 label.file-btn svg { width: 18px; height: 18px; display: block; }
 
+.gate label.file-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: auto;
+  height: auto;
+  min-height: 40px;
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  color: #f3ead8;
+}
+
 .file-name {
   flex: 1;
   min-width: 0;
