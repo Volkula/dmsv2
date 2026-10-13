@@ -286,7 +286,7 @@
     const marks = master && (kind === "npc" || kind === "loc" || kind === "foe")
       ? '<span class="pin-flags">' + flagMark("screen", shownScreen(item)) + flagMark("map", shownMap(item)) + "</span>"
       : "";
-    const hp = kind === "foe" && item.hpMax ? '<em class="pin-hp">' + esc(String(item.hp == null ? item.hpMax : item.hp)) + "/" + esc(String(item.hpMax)) + "</em>" : "";
+    const hp = master && kind === "foe" && item.hpMax ? '<em class="pin-hp">' + esc(String(item.hp == null ? item.hpMax : item.hp)) + "/" + esc(String(item.hpMax)) + "</em>" : "";
     const caption = '<b style="' + captionCss(item, 14) + '">' + esc(item.name || (kind === "loc" ? "Локация" : "Без имени")) + "</b>" + hp;
     const named = kind === "loc" ? ' aria-label="' + esc(item.name || "Локация") + '"' : "";
     return '<button type="button" class="map-pin ' + kind + (portrait ? " has-face" : "") + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="' + kind + '"' + named + ' style="left:' + (item.x * 100) + "%;top:" + (item.y * 100) + "%;--pin:" + size + 'px">' + marks + dot + caption + tip + "</button>";
@@ -994,9 +994,36 @@
       if (!loc || loc.trashed) return false;
       const places = book().places;
       if (loc.placeId && places.some(function (row) { return row.id === loc.placeId; })) return false;
-      const id = crypto.randomUUID();
-      places.push({ id: id, name: loc.name || "Локация", people: [] });
+      const id = loc.placeId || crypto.randomUUID();
+      places.push({
+        id: id,
+        name: loc.name || "Локация",
+        people: [],
+        portrait: loc.portrait || loc.day || "",
+        backdrop: loc.night || loc.day || ""
+      });
       loc.placeId = id;
+      return true;
+    }
+    function ensureNpc(marker) {
+      if (!marker || marker.kind !== "npc") return false;
+      const npcs = book().npcs;
+      if (marker.npcId && npcs.some(function (row) { return row.id === marker.npcId; })) return false;
+      const id = marker.npcId || crypto.randomUUID();
+      npcs.push({
+        id: id,
+        role: "npc",
+        name: marker.name || "НПС",
+        note: "",
+        weapon: "",
+        damage: "",
+        hp: 0,
+        hpMax: 0,
+        goods: [],
+        lines: [],
+        portrait: marker.portrait || ""
+      });
+      marker.npcId = id;
       return true;
     }
     function forgetPlace(loc) {
@@ -1007,11 +1034,7 @@
       book().places = places.filter(function (item) { return item.id !== loc.placeId; });
     }
     function syncPlaces() {
-      let changed = false;
-      (view().locations || []).forEach(function (loc) {
-        if (ensurePlace(loc)) changed = true;
-      });
-      if (changed) ctx.save();
+      if (window.ShirmoCodex && window.ShirmoCodex.adopt(ctx.campaign)) ctx.save();
     }
     function dialogueMood(who, row) {
       if (!who || !window.ShirmoNpc) return;
@@ -2200,7 +2223,7 @@
         });
         selected = { kind: "label", id: id };
       } else {
-        current.markers.push({
+        const marker = {
           id: id,
           name: kind === "npc" ? "НПС" : "Метка",
           x: at.x,
@@ -2209,7 +2232,9 @@
           tip: "",
           hidden: false,
           locId: current.focusId || ""
-        });
+        };
+        current.markers.push(marker);
+        if (kind === "npc") ensureNpc(marker);
         selected = { kind: kind === "npc" ? "npc" : "mark", id: id };
       }
       shownForm = "";

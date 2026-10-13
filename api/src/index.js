@@ -13,15 +13,19 @@ const db = openDb(dataDir);
 const filesDir = path.join(dataDir, "files");
 
 const selectRoom = db.prepare("SELECT * FROM rooms WHERE id = ?");
+const listRooms = db.prepare("SELECT id, title, master_key, updated_at, deleted_at FROM rooms ORDER BY updated_at DESC");
 const insertRoom = db.prepare(`
-  INSERT INTO rooms (id, title, master_salt, master_hash, publish_mode, campaign, frame, updated_at)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO rooms (id, title, master_salt, master_hash, master_key, publish_mode, campaign, frame, updated_at)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 `);
 const saveRoom = db.prepare(`
   UPDATE rooms
   SET title = ?, publish_mode = ?, campaign = ?, frame = ?, updated_at = ?
   WHERE id = ?
 `);
+const saveKey = db.prepare("UPDATE rooms SET master_key = ? WHERE id = ?");
+const trashRoom = db.prepare("UPDATE rooms SET deleted_at = ? WHERE id = ?");
+const restoreRoom = db.prepare("UPDATE rooms SET deleted_at = 0 WHERE id = ?");
 const saveRolls = db.prepare("UPDATE rooms SET roll_log = ? WHERE id = ?");
 const savePins = db.prepare("UPDATE rooms SET roll_pins = ? WHERE id = ?");
 
@@ -124,7 +128,13 @@ function roomById(id) {
 }
 
 function isMaster(req, room) {
-  return secretMatches(bearer(req), room.masterSalt, room.masterHash);
+  const secret = bearer(req);
+  const ok = secretMatches(secret, room.masterSalt, room.masterHash);
+  if (ok && !room.masterKey && secret) {
+    room.masterKey = secret;
+    saveKey.run(secret, room.id);
+  }
+  return ok;
 }
 
 function writeRoom(room) {
@@ -154,6 +164,19 @@ const server = http.createServer(async function (req, res) {
       return;
     }
 
+    if (req.method === "GET" && url.pathname === "/api/rooms") {
+      const rooms = [];
+      const trash = [];
+      listRooms.all().forEach(function (row) {
+        const item = { id: row.id, title: row.title, masterKey: row.master_key || "", updatedAt: row.updated_at, deletedAt: row.deleted_at || 0 };
+        if (item.deletedAt) trash.push(item);
+        else rooms.push(item);
+      });
+      trash.sort(function (a, b) { return b.deletedAt - a.deletedAt; });
+      send(res, 200, { rooms: rooms, trash: trash });
+      return;
+    }
+
     if (req.method === "POST" && url.pathname === "/api/rooms") {
       const body = await readJson(req);
       const title = String(body.title || "Комната").slice(0, 80);
@@ -164,7 +187,7 @@ const server = http.createServer(async function (req, res) {
       const campaign = blankCampaign(pageId);
       const frame = projectFrame(campaign);
       const now = Date.now();
-      insertRoom.run(id, title, hashed.salt, hashed.hash, "live", JSON.stringify(campaign), JSON.stringify(frame), now);
+      insertRoom.run(id, title, hashed.salt, hashed.hash, key, "live", JSON.stringify(campaign), JSON.stringify(frame), now);
       send(res, 201, { id: id, title: title, masterKey: key });
       return;
     }
@@ -182,6 +205,18 @@ const server = http.createServer(async function (req, res) {
     }
 
     const tail = parts.slice(3).join("/");
+
+    if (req.method === "DELETE" && !tail) {
+      trashRoom.run(Date.now(), id);
+      send(res, 200, { ok: true });
+      return;
+    }
+
+    if (req.method === "POST" && tail === "restore") {
+      restoreRoom.run(id);
+      send(res, 200, { ok: true });
+      return;
+    }
 
     if (req.method === "GET" && tail === "frame") {
       send(res, 200, room.frame);

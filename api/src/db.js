@@ -21,6 +21,8 @@ export function openDb(dir) {
   const names = db.prepare("PRAGMA table_info(rooms)").all().map(function (column) { return column.name; });
   if (names.indexOf("roll_log") < 0) db.exec("ALTER TABLE rooms ADD COLUMN roll_log TEXT NOT NULL DEFAULT '[]'");
   if (names.indexOf("roll_pins") < 0) db.exec("ALTER TABLE rooms ADD COLUMN roll_pins TEXT NOT NULL DEFAULT '[]'");
+  if (names.indexOf("master_key") < 0) db.exec("ALTER TABLE rooms ADD COLUMN master_key TEXT NOT NULL DEFAULT ''");
+  if (names.indexOf("deleted_at") < 0) db.exec("ALTER TABLE rooms ADD COLUMN deleted_at INTEGER NOT NULL DEFAULT 0");
   return db;
 }
 
@@ -40,6 +42,7 @@ export function rowToRoom(row) {
     title: row.title,
     masterSalt: row.master_salt,
     masterHash: row.master_hash,
+    masterKey: row.master_key || "",
     publishMode: row.publish_mode,
     campaign: JSON.parse(row.campaign),
     frame: JSON.parse(row.frame),

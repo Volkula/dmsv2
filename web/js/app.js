@@ -16,15 +16,51 @@
     return "shirmo-key-" + id;
   }
 
+  const SHELF = "shirmo-rooms";
+
+  function readShelf() {
+    try {
+      const list = JSON.parse(localStorage.getItem(SHELF) || "[]");
+      return Array.isArray(list) ? list : [];
+    } catch (err) {
+      return [];
+    }
+  }
+
+  function rememberRoom(room) {
+    if (!room || !room.id || !room.key) return;
+    const prev = readShelf().find(function (item) { return item.id === room.id; });
+    const list = readShelf().filter(function (item) { return item.id !== room.id; });
+    list.unshift({
+      id: room.id,
+      title: String(room.title || (prev && prev.title) || "Комната").slice(0, 80),
+      key: room.key,
+      at: Date.now()
+    });
+    localStorage.setItem(SHELF, JSON.stringify(list.slice(0, 40)));
+  }
+
+  function shelfKey(id) {
+    const found = readShelf().find(function (item) { return item.id === id; });
+    return found && found.key || "";
+  }
+
   function takeKey(id) {
     const query = new URLSearchParams(location.search);
     const fromUrl = query.get("k");
-    if (fromUrl) {
-      sessionStorage.setItem(keyName(id), fromUrl);
-      history.replaceState(null, "", location.pathname);
-      return fromUrl;
+    const key = fromUrl || sessionStorage.getItem(keyName(id)) || shelfKey(id) || "";
+    if (fromUrl) history.replaceState(null, "", location.pathname);
+    if (key) {
+      sessionStorage.setItem(keyName(id), key);
+      rememberRoom({ id: id, key: key });
     }
-    return sessionStorage.getItem(keyName(id)) || "";
+    return key;
+  }
+
+  function whenText(stamp) {
+    const date = new Date(Number(stamp) || 0);
+    if (!Number.isFinite(date.getTime()) || date.getTime() <= 0) return "";
+    return date.toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
   }
 
   async function api(url, options) {
@@ -67,6 +103,7 @@
     const page = frame && frame.page;
     if (!page) return '<div class="stage" style="background:#16130f"></div>';
     if (page.kind === "map" && window.ShirmoMap) return window.ShirmoMap.html(page, false);
+    if (page.kind === "battle" && window.ShirmoBattle) return window.ShirmoBattle.playerHtml(page);
     const image = page.image ? "url('" + esc(page.image) + "')" : "none";
     const look = textLook(page);
     const face = faceCss(page);
@@ -156,12 +193,13 @@
   })();
 
   function home() {
-    app.innerHTML = '<section class="gate"><form class="card" id="create">' +
+    app.innerHTML = '<section class="gate"><div class="gate-stack"><form class="card" id="create">' +
       "<h1>Ширма</h1>" +
-      '<p class="note">Комната на этом сервере. Мастер получает ссылку для правки, игроки — ссылку на экран.</p>' +
+      '<p class="note">Комнаты лежат на этом сервере. Ключ мастера записывается в базу, поэтому комнату можно снова открыть с главной.</p>' +
       '<label title="Имя новой комнаты">Название<input name="title" value="Новая комната" required></label>' +
       '<div class="row"><button class="primary" type="submit" title="Открыть комнату и перейти к ширме">Создать комнату</button></div>' +
-      '<p class="error" id="err"></p></form></section>';
+      '<p class="error" id="err"></p></form>' +
+      '<section class="card" id="shelf"><h2>Комнаты</h2><p class="note">Загрузка…</p></section></div></section>';
     app.querySelector("#create").addEventListener("submit", async function (event) {
       event.preventDefault();
       const title = new FormData(event.target).get("title");
@@ -171,12 +209,66 @@
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ title: title })
         });
+        rememberRoom({ id: room.id, title: room.title, key: room.masterKey });
         sessionStorage.setItem(keyName(room.id), room.masterKey);
         location.href = "/m/" + room.id;
       } catch (err) {
         app.querySelector("#err").textContent = err.message;
       }
     });
+    fillShelf();
+  }
+
+  async function fillShelf() {
+    const shelf = app.querySelector("#shelf");
+    if (!shelf) return;
+    const known = {};
+    readShelf().forEach(function (item) { known[item.id] = item; });
+    let rooms = [];
+    try {
+      const data = await api("/api/rooms");
+      rooms = data.rooms || [];
+      var trash = data.trash || [];
+    } catch (err) {
+      shelf.innerHTML = "<h2>Комнаты</h2>" + '<p class="error">' + esc(err.message) + "</p>";
+      return;
+    }
+    const rowHtml = function (room, bin) {
+      if (room.masterKey) rememberRoom({ id: room.id, title: room.title, key: room.masterKey });
+      const saved = room.masterKey || known[room.id];
+      const master = saved
+        ? '<a href="/m/' + esc(room.id) + '">Мастер</a>'
+        : '<span class="note">Ключ мастера не записан</span>';
+      const act = bin
+        ? '<button type="button" data-restore="' + esc(room.id) + '">Вернуть</button>'
+        : '<button type="button" data-drop="' + esc(room.id) + '">Удалить</button>';
+      return '<article class="room-row"><b>' + esc(room.title || "Комната") + "</b>" +
+        '<span class="note">' + esc(whenText(bin ? room.deletedAt : room.updatedAt)) + "</span>" +
+        '<div class="row">' + master + '<a href="/v/' + esc(room.id) + '">Игроки</a>' + act + "</div></article>";
+    };
+    const rows = rooms.map(function (room) { return rowHtml(room, false); }).join("");
+    const binRows = trash.map(function (room) { return rowHtml(room, true); }).join("");
+    shelf.innerHTML = "<h2>Комнаты</h2>" +
+      '<p class="note">Удаление уносит комнату в корзину. Оттуда её можно вернуть.</p>' +
+      (rows || '<p class="note">Пока нет комнат.</p>') +
+      "<h2>Корзина</h2>" +
+      (binRows || '<p class="note">Корзина пуста.</p>');
+    shelf.onclick = async function (event) {
+      const drop = event.target.closest("[data-drop]");
+      const back = event.target.closest("[data-restore]");
+      const button = drop || back;
+      if (!button || !shelf.contains(button)) return;
+      const id = button.getAttribute(drop ? "data-drop" : "data-restore");
+      button.disabled = true;
+      try {
+        if (drop) await api("/api/rooms/" + id, { method: "DELETE" });
+        else await api("/api/rooms/" + id + "/restore", { method: "POST" });
+        fillShelf();
+      } catch (err) {
+        button.disabled = false;
+        button.insertAdjacentHTML("afterend", '<span class="error">' + esc(err.message) + "</span>");
+      }
+    };
   }
 
   function showDie(roll, onClose) {
@@ -281,6 +373,7 @@
       const look = textLook(frame && frame.page);
       view.innerHTML = stageHtml(frame) + (event ? '<div class="flash" style="' + look.flash + '">' + esc(event.text) + "</div>" : "");
       fit(view);
+      if (window.ShirmoBattle && window.ShirmoBattle.revealActive) window.ShirmoBattle.revealActive(view);
       if (event) {
         clearTimeout(flashTimer);
         flashTimer = setTimeout(function () { paint(frame, null); }, 4000);
@@ -583,10 +676,12 @@
     const key = takeKey(id);
     if (!key) {
       app.innerHTML = '<section class="gate"><div class="card"><h1>Нет ключа</h1>' +
-        '<p class="note">Откройте ссылку мастера ещё раз. Ключ был в адресе при создании комнаты.</p></div></section>';
+        '<p class="note">Этот браузер не помнит ключ мастера. Откройте комнату с главной, если ключ уже сохранялся, или со ссылки, где он был в адресе.</p>' +
+        '<p><a href="/">К списку комнат</a></p></div></section>';
       return;
     }
     const headers = { authorization: "Bearer " + key, "content-type": "application/json" };
+    rememberRoom({ id: id, key: key });
     let state;
     try {
       state = await api("/api/rooms/" + id + "/campaign", { headers: { authorization: headers.authorization } });
@@ -594,6 +689,7 @@
       app.innerHTML = '<section class="gate"><div class="card"><h1>Комната не открылась</h1><p class="error">' + esc(err.message) + "</p></div></section>";
       return;
     }
+    rememberRoom({ id: id, key: key, title: state.title });
     const page = function () {
       return state.campaign.pages.find(function (item) { return item.id === state.campaign.activePageId; }) || state.campaign.pages[0];
     };
@@ -704,6 +800,7 @@
     }
     async function save() {
       readForm();
+      if (window.ShirmoCodex) window.ShirmoCodex.adopt(state.campaign);
       try {
         await api("/api/rooms/" + id + "/campaign", {
           method: "PUT",
@@ -805,13 +902,17 @@
         return;
       }
       if (kind === "battle" && window.ShirmoBattle) {
+        const fight = window.ShirmoBattle.ensure(state.campaign);
+        if (fight.screen == null) fight.screen = true;
         window.ShirmoBattle.mount(battleHost, {
           campaign: state.campaign,
           save: save,
           library: shelf,
+          upload: function (file) { return uploadFile(id, key, file); },
           roll: publishRoll,
           place: placeFoes
         });
+        save();
         return;
       }
       const target = kind === "map" ? window.ShirmoMap.ensure(state.campaign) : scenePage();
@@ -911,6 +1012,7 @@
     app.querySelector("#copy").addEventListener("click", function () {
       navigator.clipboard.writeText(viewerUrl);
     });
+    if (window.ShirmoCodex && window.ShirmoCodex.adopt(state.campaign)) save();
     if (page().kind === "map") showModule("map");
   }
 

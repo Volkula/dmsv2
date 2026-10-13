@@ -318,12 +318,111 @@ function projectNote(page) {
   };
 }
 
+function hex(value, fallback) {
+  return /^#[0-9a-fA-F]{6}$/.test(String(value || "")) ? String(value) : fallback;
+}
+
+function picture(value) {
+  const text = clip(value, 240);
+  if (!text.startsWith("/") || text.indexOf("..") >= 0) return "";
+  return text;
+}
+
+function placeImage(campaign) {
+  const pages = Array.isArray(campaign.pages) ? campaign.pages : [];
+  const map = pages.find(function (page) { return page && page.kind === "map" && page.id === campaign.activePageId; })
+    || pages.find(function (page) { return page && page.kind === "map"; });
+  if (!map) return "";
+  const views = Array.isArray(map.views) ? map.views : [];
+  const view = views.find(function (item) { return item && item.id === map.activeViewId; }) || views[0];
+  if (!view) return "";
+  const loc = view.focusId && (view.locations || []).find(function (item) { return item && item.id === view.focusId; });
+  const sheet = loc || view;
+  const night = sheet.mode === "night";
+  return night ? (sheet.night || sheet.day || "") : (sheet.day || "");
+}
+
+function scaleOf(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return 100;
+  return Math.min(200, Math.max(20, Math.round(n)));
+}
+
+function projectBattle(campaign, battle) {
+  const marks = {
+    down: "Сбит",
+    bleed: "Кровь",
+    poison: "Яд",
+    burn: "Горение",
+    stun: "Оглушение",
+    fear: "Страх",
+    blind: "Слепота",
+    deaf: "Глухота",
+    hold: "Оковы",
+    grab: "Захват",
+    charm: "Очарование",
+    focus: "Концентрация",
+    exhaust: "Истощение",
+    slow: "Замедление",
+    vanish: "Невидимость",
+    silence: "Тишина",
+    paralysis: "Паралич",
+    stone: "Окаменение"
+  };
+  const rows = (Array.isArray(battle.actors) ? battle.actors : []).map(function (actor, index) {
+    return { actor: actor, index: index };
+  }).filter(function (row) {
+    return row.actor && String(row.actor.name || "").trim();
+  }).sort(function (a, b) {
+    const diff = (Number(b.actor.init) || 0) - (Number(a.actor.init) || 0);
+    return diff || a.index - b.index;
+  });
+  const turn = rows.length ? ((Number(battle.turn) % rows.length) + rows.length) % rows.length : 0;
+  return {
+    kind: "battle",
+    round: Math.max(1, Math.round(Number(battle.round) || 1)),
+    bg: hex(battle.bg, "#14110e"),
+    ink: hex(battle.ink, "#f3ead8"),
+    player: hex(battle.player, "#7dcea0"),
+    foe: hex(battle.foe, "#e07a6a"),
+    brass: hex(battle.brass, "#e6c36a"),
+    image: battle.image === "none" ? "" : (picture(battle.image) || picture(placeImage(campaign))),
+    imageScale: scaleOf(battle.imageScale),
+    imageX: axis(battle.imageX),
+    imageY: axis(battle.imageY),
+    log: clip((Array.isArray(battle.log) ? battle.log : []).slice(0, 12).join("\n"), 1200),
+    actors: rows.slice(0, 40).map(function (row, index) {
+      const actor = row.actor;
+      const hpMax = Math.max(1, Math.round(Number(actor.hpMax) || 1));
+      const hp = Math.max(0, Math.min(hpMax, Math.round(Number(actor.hp) || 0)));
+      const tags = Array.isArray(actor.marks) ? actor.marks.filter(function (id) { return marks[id]; }) : [];
+      return {
+        name: clip(actor.name, 80),
+        side: actor.side === "player" ? "player" : "foe",
+        init: Math.round(Number(actor.init) || 0),
+        hp: hp,
+        hpMax: hpMax,
+        portrait: picture(actor.portrait),
+        color: hex(actor.color, ""),
+        dead: !!actor.dead || hp <= 0,
+        boss: actor.boss === true ? true : actor.boss === false ? false : undefined,
+        active: index === turn,
+        marks: tags
+      };
+    })
+  };
+}
+
 export function projectFrame(campaign) {
   const pages = Array.isArray(campaign.pages) ? campaign.pages : [];
   const page = pages.find(function (item) { return item.id === campaign.shownPageId; }) || pages[0] || null;
+  const battle = campaign.battle;
+  const fight = battle && battle.screen !== false && Array.isArray(battle.actors) && battle.actors.some(function (actor) {
+    return actor && String(actor.name || "").trim();
+  });
   return {
     stage: campaign.stage || { width: 1368, height: 786 },
-    page: page ? (page.kind === "map" ? projectMap(page, campaign) : projectNote(page)) : null,
+    page: fight ? projectBattle(campaign, battle) : (page ? (page.kind === "map" ? projectMap(page, campaign) : projectNote(page)) : null),
     at: Date.now()
   };
 }

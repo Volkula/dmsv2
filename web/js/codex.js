@@ -152,6 +152,190 @@ window.ShirmoCodex = (function () {
     return book;
   }
 
+  function adopt(campaign) {
+    if (!campaign) return false;
+    const book = ensure(campaign);
+    let changed = false;
+    function picture(value) {
+      const text = String(value || "");
+      return text && text.indexOf("..") < 0 ? text : "";
+    }
+    (campaign.pages || []).forEach(function (page) {
+      (page.views || []).forEach(function (view) {
+        (view.locations || []).forEach(function (loc) {
+          if (!loc || loc.trashed) return;
+          let place = loc.placeId && book.places.find(function (row) { return row.id === loc.placeId; });
+          if (!place) {
+            const id = loc.placeId || crypto.randomUUID();
+            place = { id: id, name: loc.name || "Локация", people: [] };
+            book.places.push(place);
+            loc.placeId = id;
+            changed = true;
+          }
+          if (!String(place.name || "").trim() && loc.name) {
+            place.name = loc.name;
+            changed = true;
+          }
+          const portrait = picture(loc.portrait || loc.day);
+          const backdrop = picture(loc.night || loc.day);
+          if (portrait && !place.portrait) {
+            place.portrait = portrait;
+            if (loc.portraitX != null) place.portraitX = loc.portraitX;
+            if (loc.portraitY != null) place.portraitY = loc.portraitY;
+            if (loc.portraitZoom != null) place.portraitZoom = loc.portraitZoom;
+            changed = true;
+          }
+          if (backdrop && !place.backdrop) {
+            place.backdrop = backdrop;
+            changed = true;
+          }
+        });
+        (view.markers || []).forEach(function (marker) {
+          if (!marker || marker.kind !== "npc") return;
+          let npc = marker.npcId && book.npcs.find(function (row) { return row.id === marker.npcId; });
+          if (!npc) {
+            const id = marker.npcId || crypto.randomUUID();
+            npc = {
+              id: id,
+              role: "npc",
+              name: marker.name || "НПС",
+              note: "",
+              weapon: "",
+              damage: "",
+              hp: 0,
+              hpMax: 0,
+              goods: [],
+              lines: [],
+              portrait: picture(marker.portrait)
+            };
+            book.npcs.push(npc);
+            marker.npcId = id;
+            changed = true;
+          } else if (picture(marker.portrait) && !npc.portrait) {
+            npc.portrait = picture(marker.portrait);
+            changed = true;
+          }
+        });
+      });
+    });
+    const actors = campaign.battle && Array.isArray(campaign.battle.actors) ? campaign.battle.actors : [];
+    const foeIds = [];
+    actors.forEach(function (actor) {
+      if (!actor || !String(actor.name || "").trim()) return;
+      const role = actor.side === "player" ? "npc" : "enemy";
+      let person = actor.codexId && book.npcs.find(function (row) { return row.id === actor.codexId; });
+      if (!person) {
+        person = {
+          id: crypto.randomUUID(),
+          role: role,
+          name: actor.name,
+          note: actor.note || (role === "npc" ? "Герой" : ""),
+          weapon: actor.weapon || "",
+          damage: actor.damage || "",
+          hp: actor.hpMax || actor.hp || 0,
+          hpMax: actor.hpMax || actor.hp || 0,
+          portrait: picture(actor.portrait)
+        };
+        book.npcs.push(person);
+        actor.codexId = person.id;
+        changed = true;
+      }
+      if (role === "enemy") foeIds.push(person.id);
+    });
+    (campaign.pages || []).forEach(function (page) {
+      (page.views || []).forEach(function (view) {
+        (view.markers || []).forEach(function (marker) {
+          if (!marker || marker.kind !== "foe") return;
+          const actor = actors.find(function (row) { return row && (row.markerId === marker.id || row.id === marker.actorId); });
+          if (actor && actor.codexId && marker.codexId !== actor.codexId) {
+            marker.codexId = actor.codexId;
+            changed = true;
+            return;
+          }
+          if (marker.codexId && book.npcs.some(function (row) { return row.id === marker.codexId; })) return;
+          if (actor) return;
+          const person = {
+            id: crypto.randomUUID(),
+            role: "enemy",
+            name: marker.name || "Враг",
+            note: "",
+            weapon: marker.weapon || "",
+            damage: marker.damage || "",
+            hp: marker.hpMax || marker.hp || 0,
+            hpMax: marker.hpMax || marker.hp || 0,
+            portrait: picture(marker.portrait)
+          };
+          book.npcs.push(person);
+          marker.codexId = person.id;
+          foeIds.push(person.id);
+          changed = true;
+        });
+      });
+    });
+    const usedPlaces = {};
+    (campaign.pages || []).forEach(function (page) {
+      (page.views || []).forEach(function (view) {
+        (view.locations || []).forEach(function (loc) {
+          if (loc && loc.placeId && !loc.trashed) usedPlaces[loc.placeId] = true;
+        });
+      });
+    });
+    const before = book.places.length;
+    book.places = book.places.filter(function (place) {
+      if (!place) return false;
+      if (usedPlaces[place.id]) return true;
+      if (place.people && place.people.length) return true;
+      if (place.portrait || place.backdrop) return true;
+      if (String(place.name || "").trim() && place.name !== "Локация") return true;
+      return false;
+    });
+    if (book.places.length !== before) changed = true;
+    const board = campaign.battle && campaign.battle.board;
+    if (Array.isArray(board) && board.some(function (group) { return group && group.kind !== "sep"; })) {
+      board.forEach(function (group) {
+        if (!group || group.kind === "sep") return;
+        const members = [];
+        (group.memberIds || []).forEach(function (id) {
+          const actor = actors.find(function (row) { return row && row.id === id; });
+          if (actor && actor.side !== "player" && actor.codexId) members.push(actor.codexId);
+        });
+        if (!members.length) return;
+        let squad = group.codexSquadId && book.squads.find(function (row) { return row.id === group.codexSquadId; });
+        if (!squad) squad = book.squads.find(function (row) { return row.name === group.name; });
+        if (!squad) {
+          squad = { id: crypto.randomUUID(), name: group.name || "Отряд", placeId: "", memberIds: [] };
+          book.squads.push(squad);
+          changed = true;
+        }
+        group.codexSquadId = squad.id;
+        squad.memberIds = squad.memberIds || [];
+        members.forEach(function (id) {
+          if (squad.memberIds.indexOf(id) < 0) {
+            squad.memberIds.push(id);
+            changed = true;
+          }
+        });
+      });
+    } else if (foeIds.length) {
+      const covered = {};
+      book.squads.forEach(function (squad) {
+        (squad.memberIds || []).forEach(function (id) { covered[id] = true; });
+      });
+      const fresh = foeIds.filter(function (id) { return !covered[id]; });
+      if (fresh.length) {
+        let squad = book.squads.find(function (row) { return row.name === "Засада"; });
+        if (!squad) {
+          squad = { id: crypto.randomUUID(), name: "Засада", placeId: "", memberIds: [] };
+          book.squads.push(squad);
+        }
+        squad.memberIds = squad.memberIds || [];
+        fresh.forEach(function (id) { squad.memberIds.push(id); });
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
   function mount(host, ctx) {
     if (host._codexOff) host._codexOff();
     let tab = "places";
@@ -370,18 +554,18 @@ window.ShirmoCodex = (function () {
     }
     function squadsHtml() {
       const squads = book().squads;
-      if (!squads.length) return '<p class="note">Отряда пока нет. Соберите его слева и привяжите к месту.</p>';
+      if (!squads.length) return '<p class="note">Отряда пока нет. Соберите его здесь и привяжите к месту.</p>';
       return squads.map(function (squad, index) {
         const options = '<option value="">Без места</option>' + book().places.map(function (place) {
           return '<option value="' + esc(place.id) + '"' + (place.id === squad.placeId ? " selected" : "") + ">" + esc(place.name || "Место") + "</option>";
         }).join("");
         const members = (squad.memberIds || []).map(function (id) {
           const npc = book().npcs.find(function (row) { return row.id === id; });
-          return npc ? esc(npc.name || "Враг") : "";
-        }).filter(Boolean).join(", ");
+          return npc ? "<li>" + esc(npc.name || "Враг") + "</li>" : "";
+        }).filter(Boolean).join("");
         return '<article class="place-card"><div class="codex-row"><input data-field="name" data-i="' + index + '" type="text" value="' + esc(squad.name || "") + '" title="Название отряда" aria-label="Название отряда"><button type="button" data-act="del" data-i="' + index + '" title="Удалить отряд" aria-label="Удалить">×</button></div>' +
           '<label title="Локация, к которой привязан отряд">Место<select data-squad-place="' + index + '" aria-label="Место отряда">' + options + "</select></label>" +
-          '<p class="note">' + (members || "В отряде никого нет.") + "</p></article>";
+          (members ? '<ol class="squad-members">' + members + "</ol>" : '<p class="note">В отряде никого нет.</p>') + "</article>";
       }).join("");
     }
     function parseCsv(text) {
@@ -477,10 +661,11 @@ window.ShirmoCodex = (function () {
         '<div class="ware-head"><span class="ware-face">' + face + "</span>" +
         '<span class="ware-title"><input data-ware="name"' + mark + ' type="text" value="' + esc(item.name || "") + '" placeholder="Название" title="Название товара" aria-label="Название товара">' +
         '<input data-ware="note"' + mark + ' class="ware-note" type="text" value="' + esc(item.note || "") + '" placeholder="Заметка" title="Заметка, игрокам не уходит" aria-label="Заметка"></span>' +
+        '<div class="ware-acts">' +
         '<button type="button" class="icon-btn" data-ware-edit' + mark + ' title="Иконка и цвет" aria-label="Иконка и цвет">' + pencil + "</button>" +
-        '<button type="button" class="icon-btn shop-fold' + (open ? " is-open" : "") + '" data-ware-fold="' + esc(key) + '" title="Параметры товара" aria-label="Параметры товара" aria-expanded="' + (open ? "true" : "false") + '">' + fold + "</button>" +
+        '<button type="button" class="icon-btn ware-fold' + (open ? " is-open" : "") + '" data-ware-fold="' + esc(key) + '" title="Параметры товара" aria-label="Параметры товара" aria-expanded="' + (open ? "true" : "false") + '">' + fold + "</button>" +
         '<button type="button" class="icon-btn eye' + (item.off ? " is-off" : "") + '" data-ware-eye' + mark + ' title="' + (item.off ? "Показать товар игрокам" : "Скрыть товар от игроков") + '" aria-label="' + (item.off ? "Показать товар игрокам" : "Скрыть товар от игроков") + '">' + eye + "</button>" +
-        '<button type="button" data-act="ware-del"' + mark + ' title="Убрать товар" aria-label="Убрать">×</button></div>' +
+        '<button type="button" data-act="ware-del"' + mark + ' title="Убрать товар" aria-label="Убрать">×</button></div></div>' +
         '<div class="ware-more"' + (open ? "" : " hidden") + ">" +
         (window.ShirmoCoins ? window.ShirmoCoins.fields(item, ctx.campaign, 'data-ware="price"' + mark, 'data-ware="coin"' + mark) : "") +
         '<label title="Количество. Пустое поле — без ограничения">Количество<input data-ware="qty"' + mark + ' class="num" type="number" min="0" value="' + (item.qty == null || item.qty === "" ? "" : esc(String(item.qty))) + '" placeholder="∞" aria-label="Количество"></label>' +
@@ -519,10 +704,11 @@ window.ShirmoCodex = (function () {
             '<div class="ware-head"><span class="ware-face">' + face + "</span>" +
             '<span class="ware-title"><input data-own-field="name"' + mark + ' type="text" value="' + esc(item.name || "") + '" aria-label="Название товара">' +
             '<input data-own-field="note"' + mark + ' class="ware-note" type="text" value="' + esc(item.note || "") + '" placeholder="Заметка" title="Заметка, игрокам не уходит" aria-label="Заметка"></span>' +
+            '<div class="ware-acts">' +
             '<button type="button" class="icon-btn" data-ware-edit' + mark + ' title="Иконка и цвет" aria-label="Иконка и цвет">' + (window.ShirmoGlyph ? window.ShirmoGlyph.pencil : "✎") + "</button>" +
-            '<button type="button" class="icon-btn shop-fold' + (open ? " is-open" : "") + '" data-ware-fold="' + esc(key) + '" title="Параметры товара" aria-label="Параметры товара" aria-expanded="' + (open ? "true" : "false") + '">' + (window.ShirmoGlyph ? window.ShirmoGlyph.fold : "▾") + "</button>" +
+            '<button type="button" class="icon-btn ware-fold' + (open ? " is-open" : "") + '" data-ware-fold="' + esc(key) + '" title="Параметры товара" aria-label="Параметры товара" aria-expanded="' + (open ? "true" : "false") + '">' + (window.ShirmoGlyph ? window.ShirmoGlyph.fold : "▾") + "</button>" +
             '<button type="button" class="icon-btn eye' + (item.off ? " is-off" : "") + '" data-own-eye' + mark + ' title="' + (item.off ? "Показать товар игрокам" : "Скрыть товар от игроков") + '" aria-label="' + (item.off ? "Показать товар игрокам" : "Скрыть товар от игроков") + '">' + eye + "</button>" +
-            '<button type="button" data-act="drop-own"' + mark + ' title="Убрать товар" aria-label="Убрать">×</button></div>' +
+            '<button type="button" data-act="drop-own"' + mark + ' title="Убрать товар" aria-label="Убрать">×</button></div></div>' +
             '<div class="ware-more"' + (open ? "" : " hidden") + ">" +
             (window.ShirmoCoins ? window.ShirmoCoins.fields(item, ctx.campaign, 'data-own-field="price"' + mark, 'data-own-field="coin"' + mark) : "") +
             '<label title="Количество. Пустое поле — без ограничения">Количество<input data-own-field="qty"' + mark + ' class="num" type="number" min="0" value="' + (item.qty == null || item.qty === "" ? "" : esc(String(item.qty))) + '" placeholder="∞" aria-label="Количество"></label>' +
@@ -618,29 +804,27 @@ window.ShirmoCodex = (function () {
         '<div id="cat-results"></div><div id="cat-preview" class="cat-preview" hidden></div>' + takenHtml();
     }
     function paint() {
-      const tabs = TABS.map(function (item) {
-        return '<button type="button" data-tab="' + item[0] + '" class="' + (tab === item[0] ? "is-on" : "") + '" title="' + esc(item[1]) + '" aria-label="' + esc(item[1]) + '">' + item[2] + "</button>";
+      const nav = TABS.map(function (item) {
+        return '<button type="button" data-tab="' + item[0] + '" class="' + (tab === item[0] ? "is-on" : "") + '" title="' + esc(item[1]) + '">' + item[2] + "<span>" + esc(item[1]) + "</span></button>";
       }).join("");
       const current = TABS.find(function (item) { return item[0] === tab; });
       const placeOptions = '<option value="">Без места</option>' + book().places.map(function (place) {
         return '<option value="' + esc(place.id) + '"' + (place.id === squadPlace ? " selected" : "") + ">" + esc(place.name || "Место") + "</option>";
       }).join("");
-      const squad = tab === "squads"
-        ? '<label title="Как называется группа врагов">Имя отряда<input id="codex-squad" type="text" value="' + esc(squadName) + '" placeholder="Волки"></label>' +
-          '<label title="Сколько одинаковых врагов создать">Сколько <input id="codex-count" class="num" type="number" min="1" max="12" value="' + esc(squadCount) + '"></label>' +
-          '<label title="Хиты каждого врага в отряде">ХП <input id="codex-hp" class="num" type="number" min="0" value="' + esc(squadHp) + '"></label>' +
-          '<label title="Урон каждого, например 1к6">Урон<input id="codex-damage" type="text" value="' + esc(squadDamage) + '" placeholder="1к6"></label>' +
-          '<label title="Локация, к которой привяжется отряд">Место<select id="codex-place" aria-label="Место отряда">' + placeOptions + "</select></label>" +
-          '<button type="button" data-act="squad" title="Создать врагов и связать их в отряд">Собрать отряд</button>'
-        : "";
-      host.innerHTML = '<aside class="side">' +
-        '<p class="note">Места заполняются персонажами.</p>' +
-        squad +
-        '<p class="error" id="codex-err"></p></aside>' +
-        '<div class="codex-main"><div class="codex-head"><div class="codex-tabs">' + tabs + '</div><b class="codex-tab-name">' + esc(current[1]) + "</b>" +
+      const squad = '<label title="Как называется группа врагов">Имя отряда<input id="codex-squad" type="text" value="' + esc(squadName) + '" placeholder="Волки"></label>' +
+        '<label title="Сколько одинаковых врагов создать">Сколько <input id="codex-count" class="num" type="number" min="1" max="12" value="' + esc(squadCount) + '"></label>' +
+        '<label title="Хиты каждого врага в отряде">ХП <input id="codex-hp" class="num" type="number" min="0" value="' + esc(squadHp) + '"></label>' +
+        '<label title="Урон каждого, например 1к6">Урон<input id="codex-damage" type="text" value="' + esc(squadDamage) + '" placeholder="1к6"></label>' +
+        '<label title="Локация, к которой привяжется отряд">Место<select id="codex-place" aria-label="Место отряда">' + placeOptions + "</select></label>" +
+        '<button type="button" data-act="squad" title="Создать врагов и связать их в отряд">Собрать отряд</button>';
+      const body = tab === "places" ? placesHtml() : (tab === "squads" ? squadsHtml() : (tab === "names" ? namesHtml() : (tab === "wares" ? waresHtml() : (tab === "coins" ? coinsHtml() : (catalogKind() ? catalogHtml() : (isPerson(tab) ? peopleHtml() : tableHtml()))))));
+      host.innerHTML = '<aside class="side codex-nav">' + nav + "</aside>" +
+        '<div class="codex-main"><div class="codex-head"><b class="codex-tab-name">' + esc(current[1]) + "</b>" +
         (catalogKind() || tab === "squads" || tab === "names" || tab === "wares" || tab === "coins" ? "" : '<button type="button" data-act="add" title="Новая запись на этой вкладке">Добавить</button>') + "</div>" +
-        (tab === "places" ? placesHtml() : (tab === "squads" ? squadsHtml() : (tab === "names" ? namesHtml() : (tab === "wares" ? waresHtml() : (tab === "coins" ? coinsHtml() : (catalogKind() ? catalogHtml() : (isPerson(tab) ? peopleHtml() : tableHtml()))))))) +
-        '</div><footer class="codex-foot">Использованы материалы с сайта <a href="https://tentaculus.ru/">tentaculus.ru</a>, CC BY-NC-SA 3.0.</footer>';
+        (tab === "places" ? '<p class="note">Места с карты попадают сюда сами. Сюда же ставятся персонажи.</p>' : "") +
+        (tab === "squads" ? '<div class="codex-tools">' + squad + "</div>" : "") +
+        body +
+        '<p class="error" id="codex-err"></p></div><footer class="codex-foot">Использованы материалы с сайта <a href="https://tentaculus.ru/">tentaculus.ru</a>, CC BY-NC-SA 3.0.</footer>';
       if (catalogKind()) paintResults();
       if (isPerson(tab) && window.ShirmoNpc) {
         host.querySelectorAll("[data-npc-sheet]").forEach(function (node) {
@@ -1608,5 +1792,5 @@ window.ShirmoCodex = (function () {
     paint();
   }
 
-  return { mount: mount, ensure: ensure };
+  return { mount: mount, ensure: ensure, adopt: adopt };
 })();
