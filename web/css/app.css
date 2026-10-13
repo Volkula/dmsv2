@@ -914,6 +914,17 @@ label.check input { width: auto; }
   overflow: auto;
 }
 
+.pin-menu.pin-home {
+  width: 220px;
+  max-height: min(60vh, 360px);
+  overflow: auto;
+}
+
+.pin-menu.pin-home button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .pin-style { display: flex; flex-direction: column; gap: 8px; margin-bottom: 6px; }
 
 .drop {

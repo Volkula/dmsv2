@@ -510,40 +510,198 @@ window.ShirmoCodex = (function () {
         return '<div class="cat-hit" data-i="' + index + '"><b>' + esc(hitTitle(row)) + '</b><span>' + esc(hitMeta(row)) + "</span>" + give + '<button type="button" data-act="take" data-i="' + index + '" title="Скопировать в справочник комнаты">' + label + "</button></div>";
       }).join("") : '<p class="note">Ничего не найдено.</p>';
     }
+    function placeIndex(id) {
+      return book().places.findIndex(function (row) { return row.id === id; });
+    }
+    function placeSubtree(id) {
+      const ids = {};
+      function walk(placeId) {
+        ids[placeId] = true;
+        book().places.forEach(function (place) {
+          if (place && (place.parentId || "") === placeId) walk(place.id);
+        });
+      }
+      walk(id);
+      return ids;
+    }
+    function seatOf(npcId) {
+      return book().places.find(function (place) {
+        return place && (place.people || []).indexOf(npcId) >= 0;
+      }) || null;
+    }
+    function closeHomeMenu() {
+      const menu = document.getElementById("pin-menu");
+      if (menu) menu.remove();
+    }
+    function eachMapLoc(visit) {
+      (ctx.campaign.pages || []).forEach(function (page) {
+        (page.views || []).forEach(function (view) {
+          (view.locations || []).forEach(function (loc) {
+            if (loc && !loc.trashed) visit(loc, view);
+          });
+        });
+      });
+    }
+    function eachMapMarker(visit) {
+      (ctx.campaign.pages || []).forEach(function (page) {
+        (page.views || []).forEach(function (view) {
+          (view.markers || []).forEach(function (marker) {
+            if (marker) visit(marker, view);
+          });
+        });
+      });
+    }
+    function locIdForPlace(placeId) {
+      if (!placeId) return "";
+      let found = "";
+      eachMapLoc(function (loc) {
+        if (!found && loc.placeId === placeId) found = loc.id;
+      });
+      return found;
+    }
+    function syncPlaceParent(placeId, parentPlaceId) {
+      const parentLoc = locIdForPlace(parentPlaceId);
+      const blocked = {};
+      eachMapLoc(function (loc) {
+        if (loc.placeId === placeId) blocked[loc.id] = true;
+      });
+      eachMapLoc(function (loc) {
+        if (loc.placeId !== placeId) return;
+        if (parentLoc && blocked[parentLoc]) return;
+        loc.parentId = parentLoc || "";
+      });
+    }
+    function syncNpcSeat(npcId, placeId) {
+      const locId = locIdForPlace(placeId);
+      eachMapMarker(function (marker) {
+        if (marker.npcId !== npcId) return;
+        marker.locId = locId || "";
+      });
+    }
+    function moveNpcToPlace(npcId, placeId) {
+      if (!npcId) return;
+      book().places.forEach(function (place) {
+        if (!place || !place.people) return;
+        place.people = place.people.filter(function (id) { return id !== npcId; });
+      });
+      if (placeId) {
+        const place = book().places.find(function (row) { return row.id === placeId; });
+        if (place) {
+          place.people = place.people || [];
+          if (place.people.indexOf(npcId) < 0) place.people.push(npcId);
+        }
+      }
+      syncNpcSeat(npcId, placeId || "");
+    }
+    function movePlaceTo(placeId, parentId) {
+      const place = book().places.find(function (row) { return row.id === placeId; });
+      if (!place) return;
+      const to = parentId || "";
+      if (to && placeSubtree(placeId)[to]) return;
+      if ((place.parentId || "") === to) return;
+      place.parentId = to;
+      syncPlaceParent(placeId, to);
+    }
+    function placePickHtml(blocked) {
+      const places = book().places;
+      const known = {};
+      places.forEach(function (place) { if (place) known[place.id] = true; });
+      function lines(parentId, depth) {
+        return places.filter(function (place) {
+          const parent = place.parentId || "";
+          if (parentId) return parent === parentId;
+          return !parent || !known[parent];
+        }).map(function (place) {
+          const off = blocked[place.id];
+          return '<button type="button" data-to="' + esc(place.id) + '"' + (off ? " disabled" : "") +
+            ' style="padding-left:' + (8 + depth * 12) + 'px" title="' + (off ? "Сюда нельзя" : "Перенести сюда") + '">' +
+            esc(place.name || "Место") + "</button>" + lines(place.id, depth + 1);
+        }).join("");
+      }
+      return '<button type="button" data-to="" title="Без родителя">Корень</button>' + lines("", 0);
+    }
+    function pickPlaceHome(kind, id, anchor) {
+      closeHomeMenu();
+      const blocked = kind === "place" ? placeSubtree(id) : {};
+      const menu = document.createElement("div");
+      menu.id = "pin-menu";
+      menu.className = "pin-menu pin-home";
+      const title = kind === "place" ? "Перенести место в" : "Перенести на место";
+      const none = kind === "place"
+        ? ""
+        : '<button type="button" data-to="" title="Убрать со всех мест">Нигде</button>';
+      menu.innerHTML = '<p class="note">' + title + "</p>" + (kind === "place" ? placePickHtml(blocked) : none + book().places.map(function (place) {
+        return '<button type="button" data-to="' + esc(place.id) + '" title="Поставить сюда">' + esc(place.name || "Место") + "</button>";
+      }).join("") || '<p class="roll-empty">Мест нет</p>');
+      const rect = (anchor || host).getBoundingClientRect();
+      menu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 240)) + "px";
+      menu.style.top = Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - 320)) + "px";
+      document.body.appendChild(menu);
+      menu.addEventListener("pointerdown", function (event) { event.stopPropagation(); });
+      menu.addEventListener("click", function (event) {
+        const button = event.target.closest("[data-to]");
+        if (!button || button.disabled) return;
+        const to = button.getAttribute("data-to") || "";
+        if (kind === "place") movePlaceTo(id, to);
+        else moveNpcToPlace(id, to);
+        closeHomeMenu();
+        paint();
+        saveSoon();
+      });
+    }
+    function placeCardHtml(place, index, depth) {
+      const npcs = book().npcs;
+      const people = (place.people || []).map(function (id) {
+        const npc = npcs.find(function (row) { return row.id === id; });
+        if (!npc) return "";
+        return '<span class="place-person" data-npc="' + esc(id) + '" title="ПКМ — перенести персонажа">' + esc(npc.name || "Без имени") + '<button type="button" data-act="unseat" data-i="' + index + '" data-npc="' + esc(id) + '" title="Убрать персонажа с места" aria-label="Убрать">×</button></span>';
+      }).join("");
+      const options = npcs.map(function (npc) {
+        return '<option value="' + esc(npc.id) + '">' + esc((npc.name || "Без имени") + " · " + (ROLES[npc.role] || "НПС")) + "</option>";
+      }).join("");
+      const bound = (book().squads || []).filter(function (squad) { return squad.placeId === place.id; });
+      const squadLine = bound.length ? '<p class="note">Отряд: ' + bound.map(function (squad) { return esc(squad.name || "Отряд"); }).join(", ") + "</p>" : "";
+      const parent = place.parentId && book().places.find(function (row) { return row.id === place.parentId; });
+      const parentLine = parent ? '<p class="note">Внутри: ' + esc(parent.name || "Место") + "</p>" : "";
+      const scene = place.backdrop ? ' style="background-image:url(&quot;' + esc(place.backdrop) + '&quot;)"' : "";
+      const face = place.portrait
+        ? '<button type="button" class="npc-portrait" data-act="face" data-i="' + index + '" title="Настроить, какая часть изображения видна"><img alt="" src="' + esc(place.portrait) + '" style="' + faceStyle(place) + '"></button>'
+        : '<span class="npc-portrait npc-portrait-empty" aria-hidden="true"></span>';
+      return '<article class="place-card" data-place="' + esc(place.id) + '" style="margin-left:' + (depth * 16) + 'px" title="ПКМ — перенести место">' +
+        '<div class="npc-scene"' + scene + ">" + face +
+        '<div class="npc-pics">' +
+        '<label class="file-btn" title="Загрузить изображение места, как портрет у НПС">' + FACE + '<input type="file" accept="image/*" data-pic="portrait" data-i="' + index + '" aria-label="Изображение места"></label>' +
+        '<label class="file-btn" title="Загрузить фон карточки места">' + SCENE + '<input type="file" accept="image/*" data-pic="backdrop" data-i="' + index + '" aria-label="Фон места"></label>' +
+        (place.portrait ? '<button type="button" data-act="clear-pic" data-pic="portrait" data-i="' + index + '" title="Убрать изображение" aria-label="Убрать изображение">×</button>' : "") +
+        (place.backdrop ? '<button type="button" data-act="clear-pic" data-pic="backdrop" data-i="' + index + '" title="Убрать фон" aria-label="Убрать фон">×</button>' : "") +
+        "</div></div>" +
+        '<div class="codex-row"><input data-field="name" data-i="' + index + '" type="text" value="' + esc(place.name || "") + '" title="Название места" aria-label="Название места"><button type="button" data-act="rehome" data-kind="place" data-id="' + esc(place.id) + '" title="Перенести в другое место">Перенести</button><button type="button" data-act="del" data-i="' + index + '" title="Удалить место" aria-label="Удалить">×</button></div>' +
+        parentLine + squadLine +
+        '<div class="place-people">' + (people || '<span class="note">На месте никого нет.</span>') + "</div>" +
+        (npcs.length
+          ? '<div class="codex-row"><select data-seat="' + index + '" title="Кого поставить на это место" aria-label="Персонаж"><option value="">Персонаж</option>' + options + '</select><button type="button" data-act="seat" data-i="' + index + '" title="Поставить выбранного персонажа">На место</button></div>'
+          : '<p class="note">Сначала заведите персонажей.</p>') +
+        "</article>";
+    }
     function placesHtml() {
       const places = book().places;
-      const npcs = book().npcs;
-      if (!places.length) return '<p class="note">Пока пусто. На место ставятся уже созданные персонажи.</p>';
-      return places.map(function (place, index) {
-        const people = (place.people || []).map(function (id) {
-          const npc = npcs.find(function (row) { return row.id === id; });
-          if (!npc) return "";
-          return '<span class="place-person">' + esc(npc.name || "Без имени") + '<button type="button" data-act="unseat" data-i="' + index + '" data-npc="' + esc(id) + '" title="Убрать персонажа с места" aria-label="Убрать">×</button></span>';
+      if (!places.length) return '<p class="note">Пока пусто. На место ставятся уже созданные персонажи. ПКМ по карточке — перенос.</p>';
+      const known = {};
+      places.forEach(function (place) { if (place) known[place.id] = true; });
+      const seen = {};
+      function walk(parentId, depth) {
+        return places.filter(function (place) {
+          const parent = place.parentId || "";
+          if (parentId) return parent === parentId;
+          return !parent || !known[parent];
+        }).map(function (place) {
+          if (seen[place.id]) return "";
+          seen[place.id] = true;
+          const index = placeIndex(place.id);
+          return placeCardHtml(place, index, depth) + walk(place.id, depth + 1);
         }).join("");
-        const options = npcs.map(function (npc) {
-          return '<option value="' + esc(npc.id) + '">' + esc((npc.name || "Без имени") + " · " + (ROLES[npc.role] || "НПС")) + "</option>";
-        }).join("");
-        const bound = (book().squads || []).filter(function (squad) { return squad.placeId === place.id; });
-        const squadLine = bound.length ? '<p class="note">Отряд: ' + bound.map(function (squad) { return esc(squad.name || "Отряд"); }).join(", ") + "</p>" : "";
-        const scene = place.backdrop ? ' style="background-image:url(&quot;' + esc(place.backdrop) + '&quot;)"' : "";
-        const face = place.portrait
-          ? '<button type="button" class="npc-portrait" data-act="face" data-i="' + index + '" title="Настроить, какая часть изображения видна"><img alt="" src="' + esc(place.portrait) + '" style="' + faceStyle(place) + '"></button>'
-          : '<span class="npc-portrait npc-portrait-empty" aria-hidden="true"></span>';
-        return '<article class="place-card"><div class="npc-scene"' + scene + ">" + face +
-          '<div class="npc-pics">' +
-          '<label class="file-btn" title="Загрузить изображение места, как портрет у НПС">' + FACE + '<input type="file" accept="image/*" data-pic="portrait" data-i="' + index + '" aria-label="Изображение места"></label>' +
-          '<label class="file-btn" title="Загрузить фон карточки места">' + SCENE + '<input type="file" accept="image/*" data-pic="backdrop" data-i="' + index + '" aria-label="Фон места"></label>' +
-          (place.portrait ? '<button type="button" data-act="clear-pic" data-pic="portrait" data-i="' + index + '" title="Убрать изображение" aria-label="Убрать изображение">×</button>' : "") +
-          (place.backdrop ? '<button type="button" data-act="clear-pic" data-pic="backdrop" data-i="' + index + '" title="Убрать фон" aria-label="Убрать фон">×</button>' : "") +
-          "</div></div>" +
-          '<div class="codex-row"><input data-field="name" data-i="' + index + '" type="text" value="' + esc(place.name || "") + '" title="Название места" aria-label="Название места"><button type="button" data-act="del" data-i="' + index + '" title="Удалить место" aria-label="Удалить">×</button></div>' +
-          squadLine +
-          '<div class="place-people">' + (people || '<span class="note">На месте никого нет.</span>') + "</div>" +
-          (npcs.length
-            ? '<div class="codex-row"><select data-seat="' + index + '" title="Кого поставить на это место" aria-label="Персонаж"><option value="">Персонаж</option>' + options + '</select><button type="button" data-act="seat" data-i="' + index + '" title="Поставить выбранного персонажа">На место</button></div>'
-            : '<p class="note">Сначала заведите персонажей.</p>') +
-          "</article>";
-      }).join("");
+      }
+      return walk("", 0);
     }
     function takenHtml() {
       const rows = list();
@@ -736,14 +894,17 @@ window.ShirmoCodex = (function () {
           const kind = field[2] === "number" ? ' type="number" min="0" class="num"' : ' type="text"';
           return '<label title="' + esc(hint(field[0]) || field[1]) + '">' + esc(field[1]) + '<input data-field="' + field[0] + '" data-i="' + index + '"' + kind + ' value="' + esc(row[field[0]] == null ? "" : row[field[0]]) + '" aria-label="' + esc(field[1]) + '"></label>';
         }).join("");
-        return '<article class="npc-card"><div class="npc-scene"' + scene + ">" + face + badge +
+        const home = seatOf(row.id);
+        const homeLine = '<p class="note">' + (home ? "Место: " + esc(home.name || "Место") : "Без места") + "</p>";
+        return '<article class="npc-card" data-npc="' + esc(row.id) + '" title="ПКМ — перенести на место"><div class="npc-scene"' + scene + ">" + face + badge +
           '<div class="npc-pics">' +
           '<label class="file-btn" title="Загрузить свой портрет">' + FACE + '<input type="file" accept="image/*" data-pic="portrait" data-i="' + index + '" aria-label="Портрет"></label>' +
           '<label class="file-btn" title="Загрузить свой фон карточки">' + SCENE + '<input type="file" accept="image/*" data-pic="backdrop" data-i="' + index + '" aria-label="Фон"></label>' +
           (row.portrait ? '<button type="button" data-act="clear-pic" data-pic="portrait" data-i="' + index + '" title="Убрать портрет" aria-label="Убрать портрет">×</button>' : "") +
           (row.backdrop ? '<button type="button" data-act="clear-pic" data-pic="backdrop" data-i="' + index + '" title="Убрать фон" aria-label="Убрать фон">×</button>' : "") +
           "</div></div>" +
-          '<div class="npc-fields"><div class="codex-row"><input data-field="name" data-i="' + index + '" type="text" value="' + esc(row.name || "") + '" title="Имя в справочнике и на карте" aria-label="Имя"><button type="button" data-act="del" data-i="' + index + '" title="Удалить запись" aria-label="Удалить">×</button></div>' +
+          '<div class="npc-fields"><div class="codex-row"><input data-field="name" data-i="' + index + '" type="text" value="' + esc(row.name || "") + '" title="Имя в справочнике и на карте" aria-label="Имя"><button type="button" data-act="rehome" data-kind="npc" data-id="' + esc(row.id) + '" title="Перенести на другое место">Перенести</button><button type="button" data-act="del" data-i="' + index + '" title="Удалить запись" aria-label="Удалить">×</button></div>' +
+          homeLine +
           '<div class="npc-stats">' + rest + "</div>" +
           (window.ShirmoNpc ? window.ShirmoNpc.html(row, images, index) : "") +
           tradeHtml(row, index) +
@@ -1449,23 +1610,27 @@ window.ShirmoCodex = (function () {
         return;
       }
       const act = button.getAttribute("data-act");
+      if (act === "rehome") {
+        const kind = button.getAttribute("data-kind");
+        const id = button.getAttribute("data-id");
+        if (kind && id) pickPlaceHome(kind === "place" ? "place" : "npc", id, button);
+        return;
+      }
       if (act === "seat") {
         const index = Number(button.getAttribute("data-i"));
         const place = book().places[index];
         const sel = host.querySelector('[data-seat="' + index + '"]');
         const id = sel && sel.value;
         if (!place || !id) return;
-        place.people = place.people || [];
-        if (place.people.indexOf(id) < 0) place.people.push(id);
+        moveNpcToPlace(id, place.id);
         paint();
         saveSoon();
         return;
       }
       if (act === "unseat") {
-        const place = book().places[Number(button.getAttribute("data-i"))];
-        if (!place || !place.people) return;
         const id = button.getAttribute("data-npc");
-        place.people = place.people.filter(function (item) { return item !== id; });
+        if (!id) return;
+        moveNpcToPlace(id, "");
         paint();
         saveSoon();
         return;
@@ -1598,6 +1763,10 @@ window.ShirmoCodex = (function () {
         if (tab === "places") {
           unlink("places", row.id);
           book().squads.forEach(function (squad) { if (squad.placeId === row.id) squad.placeId = ""; });
+          const lift = row.parentId || "";
+          book().places.forEach(function (place) {
+            if (place && (place.parentId || "") === row.id) place.parentId = lift;
+          });
           book().places.splice(index, 1);
         } else if (isPerson(tab)) {
           unlink("npcs", row.id);
@@ -1761,9 +1930,31 @@ window.ShirmoCodex = (function () {
       if (next && (hit.contains(next) || card.contains(next))) return;
       card.hidden = true;
     }
+    function onContextMenu(event) {
+      const person = event.target.closest(".place-person[data-npc]");
+      if (person && host.contains(person)) {
+        event.preventDefault();
+        pickPlaceHome("npc", person.getAttribute("data-npc"), person);
+        return;
+      }
+      const npcCard = event.target.closest(".npc-card[data-npc]");
+      if (npcCard && host.contains(npcCard)) {
+        if (event.target.closest("input, textarea, select, button, label")) return;
+        event.preventDefault();
+        pickPlaceHome("npc", npcCard.getAttribute("data-npc"), npcCard);
+        return;
+      }
+      const placeCard = event.target.closest(".place-card[data-place]");
+      if (placeCard && host.contains(placeCard)) {
+        if (event.target.closest("input, textarea, select, button, label, .place-person")) return;
+        event.preventDefault();
+        pickPlaceHome("place", placeCard.getAttribute("data-place"), placeCard);
+      }
+    }
     host.addEventListener("input", onInput);
     host.addEventListener("change", onInput);
     host.addEventListener("click", onClick);
+    host.addEventListener("contextmenu", onContextMenu);
     host.addEventListener("mouseover", showPreview);
     host.addEventListener("mouseout", hidePreview);
     host.addEventListener("mousedown", onMouseDown);
@@ -1775,11 +1966,13 @@ window.ShirmoCodex = (function () {
       alive = false;
       clearTimeout(timer);
       closeWheel();
+      closeHomeMenu();
       const facePop = document.getElementById("face-pop");
       if (facePop) facePop.remove();
       host.removeEventListener("input", onInput);
       host.removeEventListener("change", onInput);
       host.removeEventListener("click", onClick);
+      host.removeEventListener("contextmenu", onContextMenu);
       host.removeEventListener("mouseover", showPreview);
       host.removeEventListener("mouseout", hidePreview);
       host.removeEventListener("mousedown", onMouseDown);

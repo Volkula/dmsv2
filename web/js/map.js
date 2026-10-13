@@ -489,6 +489,7 @@
     del: icon('<path d="M6 7h12M9 7V5h6v2M8 7l1 13h6l1-13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'),
     copy: icon('<rect x="8" y="8" width="10" height="10" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 16V6h10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>'),
     move: icon('<path d="M12 4v16M4 12h16M12 4l-2.4 2.4M12 4l2.4 2.4M12 20l-2.4-2.4M12 20l2.4-2.4M4 12l2.4-2.4M4 12l2.4 2.4M20 12l-2.4-2.4M20 12l-2.4 2.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>'),
+    rehome: icon('<path d="M4 11l8-7 8 7M6 10.5V19h4v-5h4v5h4v-8.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M15 4h4v4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'),
     rename: icon('<path d="M4 20l4-1 11-11-3-3L5 16z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>'),
     book: icon('<path d="M5 5.5h5.5A2.5 2.5 0 0113 8v11H8a3 3 0 00-3 3zM19 5.5h-5.5A2.5 2.5 0 0011 8v11h5a3 3 0 013 3z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>'),
     setup: icon('<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 3.5v2M12 18.5v2M3.5 12h2M18.5 12h2M5.8 5.8l1.4 1.4M16.8 16.8l1.4 1.4M18.2 5.8l-1.4 1.4M7.2 16.8l-1.4 1.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>')
@@ -1848,6 +1849,78 @@
         menu.querySelector("[data-act=add]").click();
       });
     }
+    function seatNpcAt(npcId, placeId) {
+      if (!npcId) return;
+      (book().places || []).forEach(function (place) {
+        if (!place || !place.people) return;
+        place.people = place.people.filter(function (id) { return id !== npcId; });
+      });
+      if (!placeId) return;
+      const place = (book().places || []).find(function (row) { return row.id === placeId; });
+      if (!place) return;
+      place.people = place.people || [];
+      if (place.people.indexOf(npcId) < 0) place.people.push(npcId);
+    }
+    function homeTreeHtml(blocked) {
+      const locs = (view().locations || []).filter(function (item) { return item && !item.trashed; });
+      function lines(parentId, depth) {
+        return locs.filter(function (item) { return (item.parentId || "") === parentId; }).map(function (item) {
+          const off = blocked[item.id];
+          return '<button type="button" data-to="' + esc(item.id) + '"' + (off ? " disabled" : "") +
+            ' style="padding-left:' + (8 + depth * 12) + 'px" title="' + (off ? "Сюда нельзя" : "Перенести сюда") + '">' +
+            esc(item.name || "Локация") + "</button>" + lines(item.id, depth + 1);
+        }).join("");
+      }
+      return '<button type="button" data-to="" title="На верхний уровень карты">Корень карты</button>' + lines("", 0);
+    }
+    function applyHome(targetId, kind, id) {
+      const current = view();
+      const to = targetId || "";
+      if (kind === "loc") {
+        const loc = findLoc(id);
+        if (!loc || loc.trashed) return;
+        const blocked = subtree(id);
+        if (to && blocked[to]) return;
+        if ((loc.parentId || "") === to) return;
+        loc.parentId = to;
+        leaveFocus(blocked, to);
+        if (selected && selected.id === id) selected = null;
+      } else {
+        const list = kind === "label" ? current.labels : current.markers;
+        const row = (list || []).find(function (item) { return item.id === id; });
+        if (!row) return;
+        if ((row.locId || "") === to) return;
+        row.locId = to;
+        if (row.kind === "npc" && row.npcId) {
+          const hostLoc = to ? findLoc(to) : null;
+          seatNpcAt(row.npcId, hostLoc && hostLoc.placeId);
+        }
+        if (selected && selected.id === id) selected = null;
+      }
+      current.focusId = to;
+      closeMenu();
+      paintBoard();
+      paintTree();
+      ctx.save();
+    }
+    function pickHome(kind, id, anchor) {
+      closeMenu();
+      const blocked = kind === "loc" ? subtree(id) : {};
+      const menu = document.createElement("div");
+      menu.id = "pin-menu";
+      menu.className = "pin-menu pin-home";
+      menu.innerHTML = '<p class="note">Перенести в</p>' + homeTreeHtml(blocked);
+      const rect = (anchor || board).getBoundingClientRect();
+      menu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 240)) + "px";
+      menu.style.top = Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - 320)) + "px";
+      document.body.appendChild(menu);
+      menu.addEventListener("pointerdown", function (event) { event.stopPropagation(); });
+      menu.addEventListener("click", function (event) {
+        const button = event.target.closest("[data-to]");
+        if (!button || button.disabled) return;
+        applyHome(button.getAttribute("data-to") || "", kind, id);
+      });
+    }
     function styleHtml(item, kind) {
       const currentFont = item.font || "Georgia, serif";
       const fonts = ctx.fonts();
@@ -1923,9 +1996,10 @@
       function actBtn(act, label) {
         return '<button type="button" class="pin-act" data-act="' + act + '" title="' + label + '" aria-label="' + label + '">' + ACT[act] + "</button>";
       }
+      const canHome = selected.kind === "loc" || selected.kind === "npc" || selected.kind === "mark" || selected.kind === "foe" || selected.kind === "label";
       const actions = '<div class="pin-acts">' + (selected.kind === "label"
-        ? actBtn("del", "Удалить надпись") + actBtn("rename", "Изменить текст")
-        : actBtn("del", "Удалить точку") + actBtn("copy", "Копировать точку") + actBtn("move", "Перетащить точку") + actBtn("rename", "Изменить имя") + (selected.kind === "loc" ? actBtn("setup", "Имя, день и ночь, фоны") : "") + (bookBtn ? actBtn("book", "Назначить запись из справочника") : "")) + "</div>";
+        ? actBtn("del", "Удалить надпись") + actBtn("rename", "Изменить текст") + actBtn("rehome", "Перенести в другую локацию")
+        : actBtn("del", "Удалить точку") + actBtn("copy", "Копировать точку") + actBtn("move", "Перетащить точку") + (canHome ? actBtn("rehome", "Перенести в другую локацию") : "") + actBtn("rename", "Изменить имя") + (selected.kind === "loc" ? actBtn("setup", "Имя, день и ночь, фоны") : "") + (bookBtn ? actBtn("book", "Назначить запись из справочника") : "")) + "</div>";
       menu.innerHTML = styleHtml(item, selected.kind) + actions;
       menu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 256)) + "px";
       menu.style.top = Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - Math.min(520, window.innerHeight * 0.7) - 8)) + "px";
@@ -2086,6 +2160,10 @@
           closeMenu();
           armedMove = true;
           host.querySelector("#map-hint").textContent = "Кликните новое место или перетащите точку.";
+        }
+        if (act === "rehome") {
+          const row = findItem();
+          if (row && selected) pickHome(selected.kind, selected.id, pin);
         }
         if (act === "foe-attack" || act === "foe-damage") rollFoe(act === "foe-damage");
       });
@@ -2355,6 +2433,13 @@
       const button = event.target.closest("[data-loc]");
       if (!button) return;
       enter(button.getAttribute("data-loc"));
+    });
+    host.querySelector("#map-tree").addEventListener("contextmenu", function (event) {
+      const button = event.target.closest("[data-loc]");
+      if (!button || !host.querySelector("#map-tree").contains(button)) return;
+      event.preventDefault();
+      selected = { kind: "loc", id: button.getAttribute("data-loc") };
+      pickHome("loc", selected.id, button);
     });
 
     let wheel = null;
