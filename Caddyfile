@@ -1,3 +1,7 @@
+{
+	auto_https off
+}
+
 (shirmo) {
 	handle /api/* {
 		reverse_proxy api:8080 {
@@ -15,7 +19,7 @@
 	import shirmo
 }
 
-:443 {
+vpn.volkula.com:443, localhost:443 {
 	tls internal
 	import shirmo
 }
