@@ -3,20 +3,12 @@
 set -e
 . "$(dirname "$0")/lib.sh"
 
-ENV_FILE="$ROOT/.env"
 NEW="$(openssl rand -hex 12)"
+env_set ADMIN_PASSWORD "$NEW"
+# на всякий случай лимит файлов тоже в нормальном виде
+grep -q '^ROOM_FILES_MAX=' "$ROOT/.env" || env_set ROOM_FILES_MAX 1073741824
 
-if [ -f "$ENV_FILE" ]; then
-  if grep -q '^ADMIN_PASSWORD=' "$ENV_FILE"; then
-    sed -i.bak "s/^ADMIN_PASSWORD=.*/ADMIN_PASSWORD=$NEW/" "$ENV_FILE"
-  else
-    printf '\nADMIN_PASSWORD=%s\n' "$NEW" >> "$ENV_FILE"
-  fi
-else
-  printf 'ADMIN_PASSWORD=%s\n' "$NEW" > "$ENV_FILE"
-fi
-
-$COMPOSE up -d "$SERVICE"
+recreate "$SERVICE"
 echo "Новый пароль админа: $NEW"
-echo "Записан в $ENV_FILE и сервису $SERVICE перезапущен."
+echo "Записан в $ROOT/.env, сервис $SERVICE перезапущен."
 echo "Откройте /admin и войдите новым паролем."
