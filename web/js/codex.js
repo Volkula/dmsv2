@@ -791,7 +791,7 @@ window.ShirmoCodex = (function () {
           const npc = book().npcs.find(function (row) { return row.id === id; });
           if (!npc) return "";
           return '<li class="squad-member"><span>' + esc(npc.name || "Враг") + "</span>" +
-            '<button type="button" data-act="squad-kick" data-i="' + index + '" data-npc="' + esc(id) + '" title="Убрать из отряда" aria-label="Убрать из отряда">×</button></li>';
+            '<button type="button" data-act="squad-kick" data-i="' + index + '" data-npc="' + esc(id) + '" title="Удалить из отряда, списка и с карты" aria-label="Удалить">×</button></li>';
         }).filter(Boolean).join("");
         return '<article class="place-card"><div class="codex-row"><input data-field="name" data-i="' + index + '" type="text" value="' + esc(squad.name || "") + '" title="Название отряда" aria-label="Название отряда">' +
           '<button type="button" data-act="del" data-i="' + index + '" title="Удалить отряд" aria-label="Удалить отряд">Удалить</button></div>' +
@@ -1833,11 +1833,9 @@ window.ShirmoCodex = (function () {
         return;
       }
       if (act === "squad-kick") {
-        const squad = book().squads[Number(button.getAttribute("data-i"))];
         const npcId = button.getAttribute("data-npc");
-        if (!squad || !npcId) return;
-        squad.memberIds = (squad.memberIds || []).filter(function (item) { return item !== npcId; });
-        dropEmptySquads();
+        if (!npcId) return;
+        purgePerson(npcId);
         paint();
         saveNow();
         return;
