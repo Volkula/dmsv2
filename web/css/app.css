@@ -1980,14 +1980,40 @@ button.icon-btn[data-good-eye].is-off { color: #e07a6a; }
 .ware-more {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
+  gap: 8px 10px;
+  align-items: flex-end;
   margin-top: 8px;
 }
 
 .ware-more[hidden] { display: none; }
 
-.ware-more select { flex: 1 1 160px; min-width: 0; }
+.ware-more > label {
+  flex: 0 1 auto;
+  gap: 4px;
+  font-size: 13px;
+  min-width: 0;
+}
+
+.ware-more > label.check {
+  align-self: center;
+  padding-bottom: 6px;
+}
+
+.ware-more > label select,
+.ware-more > select {
+  flex: none;
+  width: 180px;
+  max-width: 100%;
+  height: 34px;
+  padding: 4px 10px;
+}
+
+.ware-more > label input[type="number"],
+.ware-more > label input[type="text"] {
+  height: 34px;
+  padding: 4px 10px;
+  width: 88px;
+}
 
 .pop-card.ware-edit-card {
   width: min(420px, 100%);
