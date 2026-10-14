@@ -545,6 +545,104 @@
       return window.ShirmoCodex.ensure(ctx.campaign);
     }
 
+    function groupOfActor(actorId) {
+      return (battle.board || []).find(function (group) {
+        return group && group.kind !== "sep" && (group.memberIds || []).indexOf(actorId) >= 0;
+      }) || null;
+    }
+
+    function leaveCodexSquads(personId, keepSquadId) {
+      if (!personId) return;
+      const shelf = book();
+      (shelf.squads || []).forEach(function (squad) {
+        if (!squad || !squad.memberIds) return;
+        if (keepSquadId && squad.id === keepSquadId) return;
+        squad.memberIds = squad.memberIds.filter(function (id) { return id !== personId; });
+      });
+      shelf.squads = (shelf.squads || []).filter(function (squad) {
+        return squad && (squad.memberIds || []).some(Boolean);
+      });
+    }
+
+    function nextCopyName(base) {
+      const root = String(base || "Враг").replace(/\s+\d+$/, "").trim() || "Враг";
+      let n = 2;
+      const names = {};
+      (battle.actors || []).forEach(function (actor) {
+        if (actor && actor.name) names[actor.name] = true;
+      });
+      while (names[root + " " + n]) n += 1;
+      return root + " " + n;
+    }
+
+    function moveActorToGroup(actorId, targetId) {
+      const actor = (battle.actors || []).find(function (row) { return row && row.id === actorId; });
+      if (!actor) return;
+      let target = targetId && (battle.board || []).find(function (group) {
+        return group && group.id === targetId && group.kind !== "sep";
+      });
+      if (!target) {
+        target = {
+          id: crypto.randomUUID(),
+          kind: "squad",
+          name: actor.name || "Отряд",
+          memberIds: [],
+          codexSquadId: ""
+        };
+        battle.board.push(target);
+      }
+      if ((target.memberIds || []).indexOf(actorId) >= 0 && groupOfActor(actorId) === target) return;
+      battle.board.forEach(function (group) {
+        if (!group || !group.memberIds) return;
+        group.memberIds = group.memberIds.filter(function (id) { return id !== actorId; });
+      });
+      target.memberIds = target.memberIds || [];
+      target.memberIds.push(actorId);
+      battle.board = battle.board.filter(function (group) {
+        return group && (group.kind === "sep" || (group.memberIds && group.memberIds.length));
+      });
+      if (actor.side !== "player") {
+        leaveCodexSquads(actor.codexId, target.codexSquadId || "");
+        const linked = remember(actor, target.name, target.codexSquadId);
+        if (linked) target.codexSquadId = linked.id;
+      }
+      save();
+      paint();
+    }
+
+    function cloneActorInGroup(actorId) {
+      const actor = (battle.actors || []).find(function (row) { return row && row.id === actorId; });
+      const group = groupOfActor(actorId);
+      if (!actor || !group) return;
+      const copy = JSON.parse(JSON.stringify(actor));
+      copy.id = crypto.randomUUID();
+      copy.codexId = "";
+      copy.markerId = "";
+      copy.name = nextCopyName(actor.name);
+      copy.weapons = (copy.weapons || []).map(function (arm) {
+        return Object.assign({}, arm, { id: crypto.randomUUID() });
+      });
+      copy.marks = Array.isArray(copy.marks) ? copy.marks.slice() : [];
+      battle.actors.push(copy);
+      group.memberIds = group.memberIds || [];
+      group.memberIds.push(copy.id);
+      if (copy.side !== "player") {
+        const linked = remember(copy, group.name, group.codexSquadId);
+        if (linked) group.codexSquadId = linked.id;
+      } else remember(copy, "", "");
+      assignInks(battle);
+      save();
+      paint();
+    }
+
+    function squadOptions(selectedId) {
+      return '<option value="">Новый отряд</option>' + (battle.board || []).filter(function (group) {
+        return group && group.kind !== "sep";
+      }).map(function (group) {
+        return '<option value="' + esc(group.id) + '"' + (group.id === selectedId ? " selected" : "") + ">" + esc(group.name || "Отряд") + "</option>";
+      }).join("");
+    }
+
     function remember(actor, squadName, codexSquadId) {
       const shelf = book();
       shelf.npcs = shelf.npcs || [];
@@ -795,6 +893,10 @@
         '<td><button type="button" data-fold="' + esc(actor.id) + '" title="Параметры">' + (open ? "▴" : "▾") + "</button></td>" +
         '<td><button type="button" data-go="' + esc(actor.id) + '" title="Сделать ход этого бойца">ход</button></td>' +
         '<td><button type="button" data-act="life" data-id="' + esc(actor.id) + '">' + (actor.dead ? "Оживить" : "Убить") + "</button></td></tr>";
+      const home = groupOfActor(actor.id);
+      const squadPick = '<label title="Перенести бойца в другой отряд">Отряд<select data-move-squad="' + esc(actor.id) + '" aria-label="Отряд бойца">' +
+        squadOptions(home && home.id) + "</select></label>" +
+        '<button type="button" data-act="copy-fighter" data-id="' + esc(actor.id) + '" title="Скопировать бойца в этот же отряд">Копия</button>';
       const more = '<tr class="fighter-more" data-more="' + esc(actor.id) + '"' + (open ? "" : " hidden") + '><td colspan="8"><div class="more-grid">' +
         '<label>Макс.<input data-q="hpMax" data-id="' + esc(actor.id) + '" class="num" type="number" min="1" value="' + max + '" aria-label="Максимум хитов"></label>' +
         '<label>КД<input data-q="ac" data-id="' + esc(actor.id) + '" class="num" type="number" min="0" value="' + esc(String(actor.ac || 0)) + '" aria-label="Класс доспеха"></label>' +
@@ -802,6 +904,7 @@
         '<label>Оружие<input data-q="weapon" data-id="' + esc(actor.id) + '" type="text" value="' + esc(actor.weapon || "") + '" aria-label="Оружие"></label>' +
         '<label>Урон<input data-q="damage" data-id="' + esc(actor.id) + '" type="text" value="' + esc(actor.damage || "") + '" aria-label="Урон"></label>' +
         inkField(actor) +
+        squadPick +
         "</div></td></tr>";
       return main + more;
     }
@@ -977,8 +1080,13 @@
         const on = (actor.marks || []).indexOf(item[0]) >= 0;
         return '<button type="button" data-mark="' + item[0] + '" class="' + (on ? "is-on" : "") + '">' + item[1] + "</button>";
       }).join("");
+      const home = groupOfActor(actor.id);
       openPop(actor.name || "Боец",
         '<button type="button" data-act="life">' + (actor.dead ? "Оживить" : "Убить") + "</button>" +
+        '<details class="pop-fold" open><summary>Отряд</summary>' +
+        '<label title="Перенести бойца в другой отряд">Отряд<select id="pop-squad">' + squadOptions(home && home.id) + "</select></label>" +
+        '<div class="row"><button type="button" data-act="move-squad" title="Перенести в выбранный отряд">Перенести</button>' +
+        '<button type="button" data-act="copy-fighter" title="Скопировать в этот же отряд">Копия</button></div></details>' +
         '<details class="pop-fold"><summary>Атака</summary>' + weapons +
         '<label>Цель<select id="arm-target"><option value="">Сама выберется</option>' + targets + "</select></label>" +
         '<div class="row"><button type="button" data-act="strike">Атаковать</button><button type="button" data-act="wound">Урон в цель</button></div>' +
@@ -1308,6 +1416,11 @@
           save();
         });
       });
+      host.querySelectorAll("[data-move-squad]").forEach(function (input) {
+        input.addEventListener("change", function () {
+          moveActorToGroup(input.getAttribute("data-move-squad"), input.value);
+        });
+      });
       host.querySelectorAll("[data-sep]").forEach(function (input) {
         input.addEventListener("change", function () {
           const group = battle.board.find(function (row) { return row.id === input.getAttribute("data-sep"); });
@@ -1401,6 +1514,9 @@
       if (act === "life") {
         const actor = battle.actors.find(function (row) { return row.id === button.getAttribute("data-id"); });
         if (actor) toggleLife(actor);
+      }
+      if (act === "copy-fighter") {
+        cloneActorInGroup(button.getAttribute("data-id"));
       }
       if (act === "quick-attack") {
         const box = button.getBoundingClientRect();
@@ -1507,6 +1623,15 @@
         damage(actor, true);
       }
       if (act === "life" && actor) toggleLife(actor);
+      if (act === "copy-fighter" && actor) {
+        cloneActorInGroup(actor.id);
+        closePop();
+      }
+      if (act === "move-squad" && actor) {
+        const pick = field("pop-squad");
+        moveActorToGroup(actor.id, pick ? pick.value : "");
+        closePop();
+      }
     }
 
     function onPopInput(event) {
