@@ -283,7 +283,10 @@
       const url = item.url || item.icon || "";
       if (!url) return "";
       const size = Math.min(480, Math.max(24, Number(item.pinSize) || 120));
-      return '<button type="button" class="map-pin image' + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="image" aria-label="' + esc(item.name || "Картинка") + '" style="left:' + (item.x * 100) + "%;top:" + (item.y * 100) + "%;--pin:" + size + 'px"><img alt="" src="' + esc(url) + '">' + tip + "</button>";
+      const marks = master
+        ? '<span class="pin-flags">' + flagMark("screen", shownScreen(item)) + flagMark("map", shownMap(item)) + "</span>"
+        : "";
+      return '<button type="button" class="map-pin image' + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="image" aria-label="' + esc(item.name || "Картинка") + '" style="left:' + (item.x * 100) + "%;top:" + (item.y * 100) + "%;--pin:" + size + 'px">' + marks + '<img alt="" src="' + esc(url) + '">' + tip + "</button>";
     }
     const portrait = kind === "npc" || kind === "loc" || kind === "foe" ? (item.portrait || "") : "";
     const size = Math.min(160, Math.max(12, Number(item.pinSize) || (portrait ? 56 : 14)));
@@ -491,13 +494,18 @@
       locations + markers + labels + "</div>";
   }
 
-  function zoomImage(url) {
+  function closeZoomImage() {
+    const old = document.getElementById("map-image-zoom");
+    if (old) old.remove();
+  }
+
+  function zoomImage(url, forceOpen) {
+    const src = String(url || "").trim();
     const old = document.getElementById("map-image-zoom");
     if (old) {
       old.remove();
-      return;
+      if (!forceOpen) return;
     }
-    const src = String(url || "").trim();
     if (!src) return;
     const pop = document.createElement("div");
     pop.id = "map-image-zoom";
@@ -513,9 +521,9 @@
     if (!root || root._mapImageBound) return;
     root._mapImageBound = true;
     root.addEventListener("click", function (event) {
-      if (document.getElementById("map-image-zoom")) return;
       const pin = event.target.closest && event.target.closest(".map-pin.image");
       if (!pin || !root.contains(pin)) return;
+      if (event.target.closest && event.target.closest("[data-flag]")) return;
       const img = pin.querySelector("img");
       const src = img && (img.getAttribute("src") || img.src);
       if (!src) return;
@@ -2595,6 +2603,7 @@
           url: url,
           tip: "",
           hidden: false,
+          screen: false,
           pinSize: Number(host.querySelector("#map-image-size").value) || 120,
           locId: current.focusId || ""
         });
@@ -2816,6 +2825,11 @@
       if (item.screen == null) item.screen = !item.hidden;
       if (which === "map") item.hidden = !item.hidden;
       else item.screen = item.screen === false;
+      if (item.kind === "image") {
+        const url = item.url || item.icon || "";
+        if (which === "screen" && shownScreen(item) && url && ctx.showImage) ctx.showImage(url);
+        else if (which === "screen" && !shownScreen(item) && ctx.hideImage) ctx.hideImage();
+      }
       paintBoard();
       paintTree();
       dirty();
@@ -3058,7 +3072,9 @@
         else if (open && kind === "foe" && ctx.openBattle) ctx.openBattle(id);
         else if (open && kind === "image") {
           const row = (view().markers || []).find(function (item) { return item && item.id === id; });
-          zoomImage(row && (row.url || row.icon));
+          const url = row && (row.url || row.icon);
+          zoomImage(url);
+          if (url && shownScreen(row) && ctx.showImage) ctx.showImage(url);
         }
         else if (open) showMenu();
       } else if (reopen) {
@@ -3581,5 +3597,13 @@
     }
   };
 
-  window.ShirmoMap = { ensure: ensure, mount: mount, html: html, ping: ping, zoomImage: zoomImage, bindImages: bindImages };
+  window.ShirmoMap = {
+    ensure: ensure,
+    mount: mount,
+    html: html,
+    ping: ping,
+    zoomImage: zoomImage,
+    closeZoomImage: closeZoomImage,
+    bindImages: bindImages
+  };
 })();

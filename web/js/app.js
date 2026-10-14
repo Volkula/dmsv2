@@ -717,6 +717,14 @@
         showBoard(event.text || "Товары", event.goods || [], null, { fontSize: event.fontSize });
         return;
       }
+      if (event && event.type === "map-image-hide") {
+        if (window.ShirmoMap && window.ShirmoMap.closeZoomImage) window.ShirmoMap.closeZoomImage();
+        return;
+      }
+      if (event && event.type === "map-image" && event.url) {
+        if (window.ShirmoMap && window.ShirmoMap.zoomImage) window.ShirmoMap.zoomImage(event.url, true);
+        return;
+      }
       const look = textLook(frame && frame.page);
       view.innerHTML = stageHtml(frame) + (event ? '<div class="flash" style="' + look.flash + '">' + esc(event.text) + "</div>" : "");
       bindShopFonts(view);
@@ -1293,6 +1301,20 @@
           upload: function (file) { return uploadFile(id, key, file); },
           showGoods: function (goods) { return publishGoods(id, headers, goods, state.campaign); },
           hideGoods: function () { return hidePlayerGoods(id, headers); },
+          showImage: function (url) {
+            return api("/api/rooms/" + id + "/events", {
+              method: "POST",
+              headers: headers,
+              body: JSON.stringify({ type: "map-image", url: url })
+            });
+          },
+          hideImage: function () {
+            return api("/api/rooms/" + id + "/events", {
+              method: "POST",
+              headers: headers,
+              body: JSON.stringify({ type: "map-image-hide" })
+            });
+          },
           roll: publishRoll,
           openBattle: function (markerId) { showModule("battle"); const host = app.querySelector("#work-battle"); if (host && host._battleFocus) host._battleFocus(markerId); },
           ping: function (at, look) {

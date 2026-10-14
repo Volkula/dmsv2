@@ -244,9 +244,10 @@ function projectMap(page, campaign) {
     return item && !item.hidden && (item.locId || "") === here;
   }).slice(0, 200).map(function (item) {
     if (item.kind === "image") {
-      const url = clip(item.url || item.icon, 300);
+      if (!shownOnScreen(item) || item.hidden) return null;
+      const url = clip(item.url || item.icon, 500);
       if (!url) return null;
-      return Object.assign({
+      return {
         id: clip(item.id, 80),
         name: clip(item.name, 80),
         x: unit(item.x),
@@ -255,7 +256,7 @@ function projectMap(page, campaign) {
         url: url,
         tip: clip(item.tip, 400),
         pinSize: Math.min(480, Math.max(24, Number(item.pinSize) || 120))
-      }, textLook(item, 14));
+      };
     }
     const npc = item.kind === "npc" ? npcs.find(function (row) { return row && row.id === item.npcId; }) : null;
     const face = activeFace(npc);

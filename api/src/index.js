@@ -632,6 +632,14 @@ const server = http.createServer(async function (req, res) {
         if (Number.isFinite(y)) event.y = Math.min(1, Math.max(0, y));
       }
       if (body.look === "rings" || body.look === "flash" || body.look === "lights") event.look = body.look;
+      if (event.type === "map-image") {
+        const url = safePath(body.url);
+        if (!url) {
+          send(res, 400, { error: "Нет картинки" });
+          return;
+        }
+        event.url = url;
+      }
       if (event.type === "wares" && Array.isArray(body.goods)) {
         event.goods = body.goods.slice(0, 40).map(function (item) {
           const row = {
