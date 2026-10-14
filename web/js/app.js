@@ -720,6 +720,7 @@
       const look = textLook(frame && frame.page);
       view.innerHTML = stageHtml(frame) + (event ? '<div class="flash" style="' + look.flash + '">' + esc(event.text) + "</div>" : "");
       bindShopFonts(view);
+      if (window.ShirmoMap && window.ShirmoMap.bindImages) window.ShirmoMap.bindImages(view);
       fit(view);
       if (window.ShirmoBattle && window.ShirmoBattle.revealActive) window.ShirmoBattle.revealActive(view);
       if (event) {

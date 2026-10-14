@@ -938,6 +938,29 @@ label.check input { width: auto; }
   filter: drop-shadow(0 1px 3px #000);
 }
 
+.map-pin.image { cursor: zoom-in; }
+
+.map-image-zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 24px;
+  background: rgba(8, 6, 4, 0.9);
+  cursor: zoom-out;
+}
+
+.map-image-zoom img {
+  max-width: min(100%, 1400px);
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 8px 28px #000);
+}
+
 .map-label {
   transform: translate(-50%, -50%);
   white-space: pre;

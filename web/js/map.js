@@ -491,6 +491,40 @@
       locations + markers + labels + "</div>";
   }
 
+  function zoomImage(url) {
+    const old = document.getElementById("map-image-zoom");
+    if (old) {
+      old.remove();
+      return;
+    }
+    const src = String(url || "").trim();
+    if (!src) return;
+    const pop = document.createElement("div");
+    pop.id = "map-image-zoom";
+    pop.className = "map-image-zoom";
+    pop.setAttribute("role", "dialog");
+    pop.setAttribute("aria-label", "Картинка");
+    pop.innerHTML = '<img alt="" src="' + esc(src) + '">';
+    pop.addEventListener("click", function () { pop.remove(); });
+    document.body.appendChild(pop);
+  }
+
+  function bindImages(root) {
+    if (!root || root._mapImageBound) return;
+    root._mapImageBound = true;
+    root.addEventListener("click", function (event) {
+      if (document.getElementById("map-image-zoom")) return;
+      const pin = event.target.closest && event.target.closest(".map-pin.image");
+      if (!pin || !root.contains(pin)) return;
+      const img = pin.querySelector("img");
+      const src = img && (img.getAttribute("src") || img.src);
+      if (!src) return;
+      event.preventDefault();
+      event.stopPropagation();
+      zoomImage(src);
+    });
+  }
+
   function ping(stage, x, y, look) {
     if (!stage) return;
     const node = document.createElement("div");
@@ -3022,6 +3056,10 @@
         if (open && kind === "loc") enter(id);
         else if (open && kind === "npc") openTalk(id);
         else if (open && kind === "foe" && ctx.openBattle) ctx.openBattle(id);
+        else if (open && kind === "image") {
+          const row = (view().markers || []).find(function (item) { return item && item.id === id; });
+          zoomImage(row && (row.url || row.icon));
+        }
         else if (open) showMenu();
       } else if (reopen) {
         reopen = false;
@@ -3543,5 +3581,5 @@
     }
   };
 
-  window.ShirmoMap = { ensure: ensure, mount: mount, html: html, ping: ping };
+  window.ShirmoMap = { ensure: ensure, mount: mount, html: html, ping: ping, zoomImage: zoomImage, bindImages: bindImages };
 })();
