@@ -688,6 +688,58 @@
       popActorId = actor.id;
     }
 
+    function personHp(person, fallback) {
+      const rawMax = Number(person && person.hpMax);
+      const rawHp = Number(person && person.hp);
+      const fallMax = Number(fallback && fallback.hpMax);
+      const fallHp = Number(fallback && fallback.hp);
+      const max = Math.max(1, Math.round(
+        (Number.isFinite(rawMax) && rawMax > 0 ? rawMax : 0) ||
+        (Number.isFinite(rawHp) && rawHp > 0 ? rawHp : 0) ||
+        (Number.isFinite(fallMax) && fallMax > 0 ? fallMax : 0) ||
+        (Number.isFinite(fallHp) && fallHp > 0 ? fallHp : 0) ||
+        1
+      ));
+      const hp = Math.max(0, Math.min(max, Math.round(
+        Number.isFinite(rawHp) && rawHp >= 0 ? rawHp : max
+      )));
+      return { hp: hp, hpMax: max };
+    }
+
+    function applyPerson(actor, person) {
+      if (!actor || !person) return actor;
+      const life = personHp(person, actor);
+      actor.name = person.name || actor.name;
+      actor.hp = life.hp;
+      actor.hpMax = life.hpMax;
+      actor.dead = actor.hp <= 0;
+      actor.weapon = person.weapon || actor.weapon;
+      actor.damage = person.damage || actor.damage;
+      actor.bonus = Number(person.bonus) || actor.bonus;
+      actor.ac = Number(person.ac) || actor.ac;
+      actor.portrait = person.portrait || actor.portrait || "";
+      actor.note = person.note || actor.note || "";
+      actor.codexId = person.id;
+      actor.weapons = [];
+      armsOf(actor);
+      return actor;
+    }
+
+    function syncPerson(actor) {
+      if (!actor || !actor.codexId) return;
+      const shelf = book();
+      const person = (shelf.npcs || []).find(function (row) { return row && row.id === actor.codexId; });
+      if (!person) return;
+      person.name = actor.name || person.name;
+      person.weapon = actor.weapon || person.weapon;
+      person.damage = actor.damage || person.damage;
+      person.hp = Number(actor.hp) || 0;
+      person.hpMax = Number(actor.hpMax) || person.hp || 0;
+      person.ac = Number(actor.ac) || person.ac || 0;
+      person.bonus = Number(actor.bonus) || person.bonus || 0;
+      if (actor.portrait) person.portrait = actor.portrait;
+    }
+
     function remember(actor, squadName, codexSquadId) {
       const shelf = book();
       shelf.npcs = shelf.npcs || [];
@@ -710,10 +762,7 @@
         shelf.npcs.push(person);
         actor.codexId = person.id;
       } else {
-        person.name = actor.name || person.name;
-        person.weapon = actor.weapon || person.weapon;
-        person.damage = actor.damage || person.damage;
-        if (actor.portrait) person.portrait = actor.portrait;
+        syncPerson(actor);
       }
       if (actor.side === "player") return null;
       let squad = codexSquadId && shelf.squads.find(function (row) { return row.id === codexSquadId; });
@@ -951,7 +1000,8 @@
         '<button type="button" data-act="roll-init" data-id="' + esc(actor.id) + '" title="' + esc(initRollTitle(actor)) + '">' + esc(initRollLabel(actor)) + "</button></td>" +
         '<td><input data-q="name" data-id="' + esc(actor.id) + '" type="text" value="' + esc(actor.name || "") + '" aria-label="Имя"></td>' +
         '<td class="hp-cell"><span class="hp-stack">' + hpMeter(hp, max) +
-        '<input data-q="hp" data-id="' + esc(actor.id) + '" type="range" min="0" max="' + max + '" value="' + hp + '" aria-label="Хиты"></span><b class="hp-read">' + hp + "</b></td>" +
+        '<input data-q="hp" data-id="' + esc(actor.id) + '" type="range" min="0" max="' + max + '" value="' + hp + '" aria-label="Хиты"></span>' +
+        '<input data-q="hp" data-id="' + esc(actor.id) + '" class="num hp-read" type="number" min="0" max="' + max + '" value="' + hp + '" aria-label="Хиты числом" title="Текущие хиты"></td>' +
         '<td><button type="button" data-fold="' + esc(actor.id) + '" title="Параметры">' + (open ? "▴" : "▾") + "</button></td>" +
         '<td><button type="button" data-go="' + esc(actor.id) + '" title="Сделать ход этого бойца">ход</button></td>' +
         '<td><button type="button" data-act="life" data-id="' + esc(actor.id) + '">' + (actor.dead ? "Оживить" : "Убить") + "</button></td></tr>";
@@ -1144,8 +1194,13 @@
         return '<button type="button" data-mark="' + item[0] + '" class="' + (on ? "is-on" : "") + '">' + item[1] + "</button>";
       }).join("");
       const home = groupOfActor(actor.id);
+      const max = Math.max(1, Math.round(Number(actor.hpMax) || 1));
+      const hp = Math.max(0, Math.min(max, Math.round(Number(actor.hp) || 0)));
       openPop(actor.name || "Боец",
         '<button type="button" data-act="life">' + (actor.dead ? "Оживить" : "Убить") + "</button>" +
+        '<div class="battle-pair"><label title="Текущие хиты">ХП<input id="pop-hp" type="number" min="0" value="' + hp + '"></label>' +
+        '<label title="Максимум хитов">Макс.<input id="pop-hp-max" type="number" min="1" value="' + max + '"></label></div>' +
+        '<button type="button" data-act="save-hp" title="Записать хиты">Сохранить ХП</button>' +
         '<details class="pop-fold" open><summary>Отряд</summary>' +
         '<label title="Перенести бойца в другой отряд">Отряд<select id="pop-squad">' + squadOptions(home && home.id) + "</select></label>" +
         '<div class="row"><button type="button" data-act="move-squad" title="Перенести в выбранный отряд">Перенести</button>' +
@@ -1249,18 +1304,7 @@
         let actor = battle.actors.find(function (row) { return row.codexId === person.id; });
         if (!actor) {
           actor = blank(person.role === "enemy" ? "foe" : "player");
-          actor.name = person.name || actor.name;
-          actor.hp = person.hpMax || person.hp || actor.hp;
-          actor.hpMax = actor.hp;
-          actor.weapon = person.weapon || actor.weapon;
-          actor.damage = person.damage || actor.damage;
-          actor.bonus = Number(person.bonus) || actor.bonus;
-          actor.ac = Number(person.ac) || actor.ac;
-          actor.portrait = person.portrait || "";
-          actor.note = person.note || "";
-          actor.codexId = person.id;
-          actor.weapons = [];
-          armsOf(actor);
+          applyPerson(actor, person);
           battle.actors.push(actor);
         }
         battle.board.forEach(function (row) {
@@ -1431,19 +1475,21 @@
             if (arm && key === "damage") arm.damage = input.value;
           } else if (key === "color") {
             actor.color = inkOk(input.value) ? input.value : "";
-          } else {
+          }           else {
             actor[key] = Math.round(Number(input.value) || 0);
             if (key === "hpMax") actor.hpMax = Math.max(1, actor.hpMax || 1);
             if (key === "hp" || key === "hpMax") setHp(actor, key === "hp" ? actor.hp : actor.hp);
           }
+          if (key === "hp" || key === "hpMax" || key === "name" || key === "weapon" || key === "damage" || key === "ac") syncPerson(actor);
           return key;
         }
         if (input.type === "range") {
           input.addEventListener("input", function () {
             apply();
+            const cell = input.closest(".hp-cell");
+            const read = cell && cell.querySelector("input.hp-read");
+            if (read) read.value = input.value;
             const stack = input.closest(".hp-stack");
-            const read = input.closest(".hp-cell") && input.closest(".hp-cell").querySelector(".hp-read");
-            if (read) read.textContent = input.value;
             const bar = stack && stack.querySelector(".hp-meter i");
             if (bar) {
               const max = Number(input.max) || 1;
@@ -1701,6 +1747,16 @@
         damage(actor, true);
       }
       if (act === "life" && actor) toggleLife(actor);
+      if (act === "save-hp" && actor) {
+        const maxField = field("pop-hp-max");
+        const hpField = field("pop-hp");
+        actor.hpMax = Math.max(1, Math.round(Number(maxField && maxField.value) || actor.hpMax || 1));
+        setHp(actor, Number(hpField && hpField.value));
+        syncPerson(actor);
+        save();
+        paint();
+        openFighter(actor);
+      }
       if (act === "copy-fighter" && actor) {
         cloneActorInGroup(actor.id);
         closePop();
