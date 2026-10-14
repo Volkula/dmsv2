@@ -575,17 +575,18 @@
       return root + " " + n;
     }
 
-    function moveActorToGroup(actorId, targetId) {
+    function moveActorToGroup(actorId, targetId, squadName) {
       const actor = (battle.actors || []).find(function (row) { return row && row.id === actorId; });
       if (!actor) return;
       let target = targetId && (battle.board || []).find(function (group) {
         return group && group.id === targetId && group.kind !== "sep";
       });
       if (!target) {
+        if (!squadName && targetId !== "") return;
         target = {
           id: crypto.randomUUID(),
           kind: "squad",
-          name: actor.name || "Отряд",
+          name: (squadName || "").trim() || actor.name || "Отряд",
           memberIds: [],
           codexSquadId: ""
         };
@@ -636,11 +637,20 @@
     }
 
     function squadOptions(selectedId) {
-      return '<option value="">Новый отряд</option>' + (battle.board || []).filter(function (group) {
+      return '<option value="">---</option><option value="__new__">Новый отряд</option>' + (battle.board || []).filter(function (group) {
         return group && group.kind !== "sep";
       }).map(function (group) {
         return '<option value="' + esc(group.id) + '"' + (group.id === selectedId ? " selected" : "") + ">" + esc(group.name || "Отряд") + "</option>";
       }).join("");
+    }
+
+    function openNewBattleSquad(actorId) {
+      const actor = (battle.actors || []).find(function (row) { return row && row.id === actorId; });
+      if (!actor) return;
+      openPop("Новый отряд",
+        '<label title="Название отряда">Имя<input id="new-squad-name" type="text" value="' + esc(actor.name || "Отряд") + '" placeholder="Отряд" aria-label="Имя отряда"></label>' +
+        '<button type="button" data-act="make-squad">Создать</button>');
+      popActorId = actor.id;
     }
 
     function remember(actor, squadName, codexSquadId) {
@@ -1418,7 +1428,19 @@
       });
       host.querySelectorAll("[data-move-squad]").forEach(function (input) {
         input.addEventListener("change", function () {
-          moveActorToGroup(input.getAttribute("data-move-squad"), input.value);
+          const actorId = input.getAttribute("data-move-squad");
+          const value = input.value;
+          if (value === "__new__") {
+            const home = groupOfActor(actorId);
+            input.value = (home && home.id) || "";
+            openNewBattleSquad(actorId);
+            return;
+          }
+          if (!value) {
+            input.value = (groupOfActor(actorId) && groupOfActor(actorId).id) || "";
+            return;
+          }
+          moveActorToGroup(actorId, value);
         });
       });
       host.querySelectorAll("[data-sep]").forEach(function (input) {
@@ -1627,9 +1649,23 @@
         cloneActorInGroup(actor.id);
         closePop();
       }
+      if (act === "make-squad" && actor) {
+        const name = (field("new-squad-name") && field("new-squad-name").value || "").trim() || actor.name || "Отряд";
+        moveActorToGroup(actor.id, "", name);
+        closePop();
+      }
       if (act === "move-squad" && actor) {
         const pick = field("pop-squad");
-        moveActorToGroup(actor.id, pick ? pick.value : "");
+        const value = pick ? pick.value : "";
+        if (value === "__new__") {
+          openNewBattleSquad(actor.id);
+          return;
+        }
+        if (!value) {
+          closePop();
+          return;
+        }
+        moveActorToGroup(actor.id, value);
         closePop();
       }
     }

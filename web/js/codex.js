@@ -443,21 +443,65 @@ window.ShirmoCodex = (function () {
     }
     function moveNpcToSquad(npcId, squadId) {
       const npc = (book().npcs || []).find(function (row) { return row && row.id === npcId; });
-      if (!npc) return;
-      let squad = squadId && (book().squads || []).find(function (row) { return row && row.id === squadId; });
-      if (!squad) {
-        squad = {
-          id: crypto.randomUUID(),
-          name: npc.name || "Отряд",
-          placeId: "",
-          memberIds: []
-        };
-        book().squads.push(squad);
-      }
+      if (!npc || !squadId) return;
+      const squad = (book().squads || []).find(function (row) { return row && row.id === squadId; });
+      if (!squad) return;
       leaveNpcSquads(npcId, squad.id);
       squad.memberIds = squad.memberIds || [];
       if (squad.memberIds.indexOf(npcId) < 0) squad.memberIds.push(npcId);
       syncBattleSquadMove(npcId, squad);
+    }
+    function openNewSquadDialog(npcId) {
+      const npc = npcId && (book().npcs || []).find(function (row) { return row && row.id === npcId; });
+      const old = document.getElementById("squad-pop");
+      if (old) old.remove();
+      const placeOptions = '<option value="">Без места</option>' + (book().places || []).map(function (place) {
+        return '<option value="' + esc(place.id) + '">' + esc(place.name || "Место") + "</option>";
+      }).join("");
+      const draft = (npc && npc.name) || "Отряд";
+      const pop = document.createElement("div");
+      pop.id = "squad-pop";
+      pop.className = "pop";
+      pop.innerHTML = '<div class="pop-card" role="dialog" aria-label="Новый отряд">' +
+        '<div class="pop-head"><h2>Новый отряд</h2><button type="button" data-pop-close title="Закрыть" aria-label="Закрыть">×</button></div>' +
+        '<label title="Название отряда">Имя<input id="squad-pop-name" type="text" value="' + esc(draft) + '" placeholder="Отряд" aria-label="Имя отряда"></label>' +
+        '<label title="Локация, к которой привяжется отряд">Место<select id="squad-pop-place" aria-label="Место отряда">' + placeOptions + "</select></label>" +
+        (npc ? '<p class="note">В отряд попадёт: ' + esc(personTitle(npc)) + "</p>" : "") +
+        '<div class="codex-row"><button type="button" data-squad-create title="Создать отряд">Создать</button></div></div>';
+      document.body.appendChild(pop);
+      const nameField = pop.querySelector("#squad-pop-name");
+      if (nameField) {
+        nameField.focus();
+        nameField.select();
+      }
+      function close() { pop.remove(); }
+      pop.addEventListener("click", function (event) { if (event.target === pop) close(); });
+      pop.querySelector("[data-pop-close]").addEventListener("click", close);
+      pop.querySelector("[data-squad-create]").addEventListener("click", function () {
+        const name = ((pop.querySelector("#squad-pop-name") && pop.querySelector("#squad-pop-name").value) || "").trim() || "Отряд";
+        const placeId = (pop.querySelector("#squad-pop-place") && pop.querySelector("#squad-pop-place").value) || "";
+        const squad = {
+          id: crypto.randomUUID(),
+          name: name,
+          placeId: "",
+          memberIds: []
+        };
+        book().squads = book().squads || [];
+        book().squads.push(squad);
+        if (placeId) moveSquadToPlace(squad, placeId);
+        if (npcId) moveNpcToSquad(npcId, squad.id);
+        close();
+        paint();
+        saveSoon();
+      });
+      if (nameField) {
+        nameField.addEventListener("keydown", function (event) {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            pop.querySelector("[data-squad-create]").click();
+          }
+        });
+      }
     }
     function cloneNpcInSquad(npcId) {
       const npc = (book().npcs || []).find(function (row) { return row && row.id === npcId; });
@@ -495,16 +539,16 @@ window.ShirmoCodex = (function () {
       group.memberIds = group.memberIds || [];
       group.memberIds.push(twin.id);
     }
-    function squadPickOptions(selectedId) {
-      return '<option value="">Новый отряд</option>' + (book().squads || []).map(function (squad) {
-        return '<option value="' + esc(squad.id) + '"' + (squad.id === selectedId ? " selected" : "") + ">" + esc(squad.name || "Отряд") + "</option>";
-      }).join("");
-    }
     function personTitle(npc) {
       if (!npc) return "Персонаж";
       const role = ROLES[npc.role] || "";
       const name = npc.name || role || "Персонаж";
       return role && npc.role !== "enemy" ? name + " · " + role : name;
+    }
+    function squadPickOptions(selectedId) {
+      return '<option value="">---</option><option value="__new__">Новый отряд</option>' + (book().squads || []).map(function (squad) {
+        return '<option value="' + esc(squad.id) + '"' + (squad.id === selectedId ? " selected" : "") + ">" + esc(squad.name || "Отряд") + "</option>";
+      }).join("");
     }
     function purgePerson(id) {
       if (!id) return;
@@ -1532,7 +1576,21 @@ window.ShirmoCodex = (function () {
         return;
       }
       if (event.target.hasAttribute("data-move-enemy")) {
-        moveNpcToSquad(event.target.getAttribute("data-move-enemy"), event.target.value);
+        const npcId = event.target.getAttribute("data-move-enemy");
+        const value = event.target.value;
+        if (value === "__new__") {
+          const pack = squadOfNpc(npcId);
+          event.target.value = (pack && pack.id) || "";
+          openNewSquadDialog(npcId);
+          return;
+        }
+        if (!value) {
+          leaveNpcSquads(npcId, "");
+          paint();
+          saveSoon();
+          return;
+        }
+        moveNpcToSquad(npcId, value);
         paint();
         saveSoon();
         return;
