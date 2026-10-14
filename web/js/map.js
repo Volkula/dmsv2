@@ -387,10 +387,14 @@
       : "";
     const shopCount = talk.goods && talk.goods.length ? talk.goods.length : 0;
     const shopCols = shopCount > 24 ? 4 : (shopCount > 14 ? 3 : (shopCount > 7 ? 2 : 1));
+    const shopFont = window.ShirmoShopFont
+      ? window.ShirmoShopFont.size(talk.fontSize)
+      : Math.min(28, Math.max(12, Number(talk.fontSize) || 16));
+    const fontCtrl = window.ShirmoShopFont ? window.ShirmoShopFont.control(shopFont) : "";
     const goods = talk.shop
-      ? '<aside class="talk-shop talk-shop-cols-' + shopCols + '"><div class="talk-shop-head"><b>Товары</b>' +
+      ? '<aside class="talk-shop talk-shop-cols-' + shopCols + '" style="--board-font:' + shopFont + 'px"><div class="talk-shop-head"><b>Товары</b><span class="talk-shop-tools">' + fontCtrl +
         (master ? '<button type="button" class="icon-btn" data-talk="show-goods" title="Показать игрокам" aria-label="Показать игрокам">' + (window.ShirmoGlyph ? window.ShirmoGlyph.cast : "") + "</button>" : "") +
-        '</div><ul class="talk-shop-grid">' + ((talk.goods && talk.goods.length)
+        '</span></div><ul class="talk-shop-grid">' + ((talk.goods && talk.goods.length)
         ? talk.goods.map(function (item) {
             if (!master) {
               const icon = item.icon ? '<img class="shop-icon" alt="" src="' + esc(item.icon) + '">' : "";
@@ -1085,6 +1089,7 @@
         campaign: ctx.campaign,
         shop: shop,
         goods: goods,
+        fontSize: window.ShirmoShopFont ? window.ShirmoShopFont.read(ctx.campaign) : 16,
         backdrop: (npc && npc.backdrop) || shot.image || ""
       };
     }
@@ -1173,6 +1178,12 @@
       if (wareBtn) wareBtn.addEventListener("click", function () { openWare(linkedNpc(marker) || marker); });
       const linesBtn = board.querySelector("[data-talk=lines]");
       if (linesBtn) linesBtn.addEventListener("click", function () { openLines(linkedNpc(marker) || marker); });
+      if (window.ShirmoShopFont) {
+        window.ShirmoShopFont.bind(board, function (size) {
+          window.ShirmoShopFont.write(size, ctx.campaign);
+          dirty();
+        });
+      }
       const showGoods = board.querySelector("[data-talk=show-goods]");
       if (showGoods) showGoods.addEventListener("click", function (event) {
         event.stopPropagation();

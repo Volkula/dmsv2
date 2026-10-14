@@ -264,6 +264,7 @@ function projectMap(page, campaign) {
     const face = activeFace(npc);
     const shop = !!talkMarker.shopOpen;
     const figure = standOf(npc || talkMarker, shop);
+    const shopFont = Math.round(Number(campaign && campaign.shopFont) || 0);
     talk = {
       name: clip(talkMarker.name || (npc && npc.name) || "НПС", 80),
       line: clip(chosen ? (chosen.text || "...") : (fallback || "..."), 800),
@@ -271,6 +272,7 @@ function projectMap(page, campaign) {
       figure: { x: figure.x, y: figure.y, h: figure.h },
       shop: shop,
       goods: shop ? saleRows(npc, campaign) : null,
+      fontSize: shopFont >= 12 && shopFont <= 28 ? shopFont : 16,
       backdrop: clip((npc && npc.backdrop) || image, 300)
     };
   }

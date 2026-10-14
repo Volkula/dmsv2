@@ -1127,6 +1127,7 @@ label.check input { width: auto; }
 .talk-size-pop input { width: 100%; }
 
 .talk-shop {
+  --board-font: 16px;
   position: absolute;
   z-index: 2;
   top: 28px;
@@ -1140,13 +1141,47 @@ label.check input { width: auto; }
   border: 1px solid var(--brass);
   border-radius: 12px;
   cursor: default;
+  font-size: var(--board-font);
+  color: #f3ead8;
 }
 
 .talk-shop.talk-shop-cols-2 { width: min(720px, calc(100% - 56px)); }
 .talk-shop.talk-shop-cols-3 { width: min(960px, calc(100% - 56px)); }
 .talk-shop.talk-shop-cols-4 { width: min(1120px, calc(100% - 56px)); }
 
-.talk-shop b { color: var(--brass); font-size: 22px; font-weight: 500; }
+.talk-shop b { color: var(--brass); font-size: 1.35em; font-weight: 500; }
+
+.talk-shop-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.talk-shop .board-item b { color: var(--brass); font-size: 1em; }
+
+.talk-shop .board-note { font-size: 0.82em; }
+
+.talk-shop em {
+  margin-left: auto;
+  font-style: normal;
+  color: #e6c36a;
+  flex: none;
+  font-size: 1em;
+}
+
+.talk-shop .shop-icon,
+.talk-shop .ware-face.shop-icon {
+  width: 2.5em;
+  height: 2.5em;
+  min-width: 2.5em;
+  min-height: 2.5em;
+  max-height: 2.5em;
+}
+
+.talk-shop .shop-title span { font-size: 1em; }
+
+.talk-shop .shop-title input { font-size: 0.85em; }
 
 .talk-shop ul,
 .talk-shop ul.talk-shop-grid {

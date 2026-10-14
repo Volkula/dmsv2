@@ -571,6 +571,51 @@
     return Math.min(28, Math.max(12, n || 16));
   }
 
+  function readShopFont(campaign) {
+    if (campaign && campaign.shopFont != null && campaign.shopFont !== "") {
+      return boardFontSize(campaign.shopFont);
+    }
+    return boardFontSize(sessionStorage.getItem("shirmo-board-font") || 16);
+  }
+
+  function writeShopFont(size, campaign) {
+    const next = boardFontSize(size);
+    sessionStorage.setItem("shirmo-board-font", String(next));
+    if (campaign) campaign.shopFont = next;
+    return next;
+  }
+
+  function shopFontControl(font) {
+    return '<label class="board-font" title="Размер шрифта списка">Aa<input data-board-font type="range" min="12" max="28" step="1" value="' +
+      boardFontSize(font) + '" aria-label="Размер шрифта"></label>';
+  }
+
+  function bindShopFonts(root, onChange) {
+    if (!root) return;
+    root.querySelectorAll("[data-board-font]").forEach(function (input) {
+      if (input._shopFontBound) return;
+      input._shopFontBound = true;
+      const card = input.closest(".board-card, .talk-shop");
+      function apply() {
+        const next = boardFontSize(input.value);
+        if (card) card.style.setProperty("--board-font", next + "px");
+        sessionStorage.setItem("shirmo-board-font", String(next));
+        if (typeof onChange === "function") onChange(next);
+      }
+      input.addEventListener("input", apply);
+      input.addEventListener("click", function (event) { event.stopPropagation(); });
+      input.addEventListener("pointerdown", function (event) { event.stopPropagation(); });
+    });
+  }
+
+  window.ShirmoShopFont = {
+    size: boardFontSize,
+    read: readShopFont,
+    write: writeShopFont,
+    control: shopFontControl,
+    bind: bindShopFonts
+  };
+
   function showBoard(title, goods, onClose, opts) {
     const old = document.querySelector(".board-show");
     if (old) old.remove();
@@ -579,8 +624,7 @@
     const list = goods || [];
     const count = list.length;
     const cols = count > 24 ? 4 : (count > 14 ? 3 : (count > 7 ? 2 : 1));
-    const stored = Number(sessionStorage.getItem("shirmo-board-font")) || 0;
-    const font = boardFontSize((opts && opts.fontSize) || stored || 16);
+    const font = boardFontSize((opts && opts.fontSize) || readShopFont(opts && opts.campaign));
     const rows = list.map(function (item) {
       const icon = item.icon ? '<img alt="" src="' + esc(item.icon) + '">' : "";
       const note = String(item.note || "").trim();
@@ -589,22 +633,13 @@
         "</span><em>" + esc(item.price || "") + "</em></li>";
     }).join("");
     show.innerHTML = '<div class="board-card board-cols-' + cols + '" role="dialog" aria-label="' + esc(title || "Товары") + '" style="--board-font:' + font + 'px">' +
-      '<div class="board-head"><h2>' + esc(title || "Товары") + '</h2>' +
-      '<label class="board-font" title="Размер шрифта списка">Aa<input data-board-font type="range" min="12" max="28" step="1" value="' + font + '" aria-label="Размер шрифта"></label></div>' +
+      '<div class="board-head"><h2>' + esc(title || "Товары") + "</h2>" + shopFontControl(font) + "</div>" +
       '<ul class="board-grid">' + (rows || '<li class="note">Пусто</li>') + "</ul></div>";
     document.body.appendChild(show);
-    const card = show.querySelector(".board-card");
-    const fontInput = show.querySelector("[data-board-font]");
-    if (fontInput && card) {
-      fontInput.addEventListener("input", function () {
-        const next = boardFontSize(fontInput.value);
-        card.style.setProperty("--board-font", next + "px");
-        sessionStorage.setItem("shirmo-board-font", String(next));
-        if (opts && typeof opts.onFont === "function") opts.onFont(next);
-      });
-      fontInput.addEventListener("click", function (event) { event.stopPropagation(); });
-      fontInput.addEventListener("pointerdown", function (event) { event.stopPropagation(); });
-    }
+    bindShopFonts(show, function (size) {
+      writeShopFont(size, opts && opts.campaign);
+      if (opts && typeof opts.onFont === "function") opts.onFont(size);
+    });
     show.addEventListener("click", function (event) {
       if (event.target.closest(".board-card")) return;
       show.remove();
@@ -612,7 +647,7 @@
     });
   }
 
-  function publishGoods(roomId, headers, goods) {
+  function publishGoods(roomId, headers, goods, campaign) {
     const list = (goods || []).slice(0, 40).map(function (item) {
       return {
         name: item.name || "",
@@ -621,7 +656,7 @@
         note: item.note || ""
       };
     }).filter(function (item) { return String(item.name).trim(); });
-    let fontSize = boardFontSize(sessionStorage.getItem("shirmo-board-font") || 16);
+    let fontSize = readShopFont(campaign);
     function send(size) {
       return api("/api/rooms/" + roomId + "/events", {
         method: "POST",
@@ -631,9 +666,10 @@
     }
     showBoard("Товары", list, function () { hidePlayerGoods(roomId, headers); }, {
       fontSize: fontSize,
+      campaign: campaign,
       onFont: function (size) {
-        fontSize = size;
-        send(size);
+        fontSize = writeShopFont(size, campaign);
+        send(fontSize);
       }
     });
     return send(fontSize);
@@ -679,6 +715,7 @@
       }
       const look = textLook(frame && frame.page);
       view.innerHTML = stageHtml(frame) + (event ? '<div class="flash" style="' + look.flash + '">' + esc(event.text) + "</div>" : "");
+      bindShopFonts(view);
       fit(view);
       if (window.ShirmoBattle && window.ShirmoBattle.revealActive) window.ShirmoBattle.revealActive(view);
       if (event) {
@@ -1216,7 +1253,7 @@
           campaign: state.campaign,
           save: save,
           upload: function (file) { return uploadFile(id, key, file); },
-          showGoods: function (goods) { return publishGoods(id, headers, goods); }
+          showGoods: function (goods) { return publishGoods(id, headers, goods, state.campaign); }
         });
         save();
         return;
@@ -1249,7 +1286,7 @@
           },
           save: save,
           upload: function (file) { return uploadFile(id, key, file); },
-          showGoods: function (goods) { return publishGoods(id, headers, goods); },
+          showGoods: function (goods) { return publishGoods(id, headers, goods, state.campaign); },
           hideGoods: function () { return hidePlayerGoods(id, headers); },
           roll: publishRoll,
           openBattle: function (markerId) { showModule("battle"); const host = app.querySelector("#work-battle"); if (host && host._battleFocus) host._battleFocus(markerId); },
