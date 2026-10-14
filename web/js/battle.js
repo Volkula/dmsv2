@@ -725,19 +725,65 @@
       return actor;
     }
 
-    function syncPerson(actor) {
+    function syncPerson(actor, keys) {
       if (!actor || !actor.codexId) return;
       const shelf = book();
       const person = (shelf.npcs || []).find(function (row) { return row && row.id === actor.codexId; });
       if (!person) return;
-      person.name = actor.name || person.name;
-      person.weapon = actor.weapon || person.weapon;
-      person.damage = actor.damage || person.damage;
-      person.hp = Number(actor.hp) || 0;
-      person.hpMax = Number(actor.hpMax) || person.hp || 0;
-      person.ac = Number(actor.ac) || person.ac || 0;
-      person.bonus = Number(actor.bonus) || person.bonus || 0;
-      if (actor.portrait) person.portrait = actor.portrait;
+      const all = !keys || !keys.length;
+      const has = function (key) { return all || keys.indexOf(key) >= 0; };
+      if (has("name")) person.name = actor.name || person.name;
+      if (has("weapon")) person.weapon = actor.weapon || person.weapon;
+      if (has("damage")) person.damage = actor.damage || person.damage;
+      if (has("hp") || has("hpMax")) {
+        person.hp = Number(actor.hp) || 0;
+        person.hpMax = Number(actor.hpMax) || person.hp || 0;
+      }
+      if (has("ac")) person.ac = Number(actor.ac) || person.ac || 0;
+      if (has("bonus")) person.bonus = Number(actor.bonus) || person.bonus || 0;
+      if (has("portrait") && actor.portrait) person.portrait = actor.portrait;
+    }
+
+    function personForActor(actor) {
+      if (!actor) return null;
+      const shelf = book().npcs || [];
+      if (actor.codexId) {
+        const byId = shelf.find(function (row) { return row && row.id === actor.codexId; });
+        if (byId) return byId;
+      }
+      const name = String(actor.name || "").trim().toLowerCase();
+      if (!name) return null;
+      const hits = shelf.filter(function (row) {
+        return row && String(row.name || "").trim().toLowerCase() === name;
+      });
+      return hits.length === 1 ? hits[0] : null;
+    }
+
+    function pullPersonHp(actor, force) {
+      const person = personForActor(actor);
+      if (!actor || !person) return false;
+      if (!actor.codexId) actor.codexId = person.id;
+      const rawMax = Number(person.hpMax);
+      const rawHp = Number(person.hp);
+      const hasBook = (Number.isFinite(rawMax) && rawMax > 0) || (Number.isFinite(rawHp) && rawHp > 0);
+      if (!hasBook) return false;
+      const life = personHp(person, actor);
+      const curMax = Number(actor.hpMax) || 0;
+      const curHp = Number(actor.hp) || 0;
+      const looksBlank = (actor.side === "player" && curMax === 38) || (actor.side !== "player" && curMax === 11) || curMax <= 0;
+      if (!force && !looksBlank && curMax === life.hpMax) return false;
+      actor.hpMax = life.hpMax;
+      actor.hp = looksBlank || force || curHp >= curMax ? life.hp : Math.min(curHp, life.hpMax);
+      actor.dead = actor.hp <= 0;
+      return true;
+    }
+
+    function pullBattleFromCodex(force) {
+      let changed = false;
+      (battle.actors || []).forEach(function (actor) {
+        if (pullPersonHp(actor, force)) changed = true;
+      });
+      return changed;
     }
 
     function remember(actor, squadName, codexSquadId) {
@@ -762,7 +808,7 @@
         shelf.npcs.push(person);
         actor.codexId = person.id;
       } else {
-        syncPerson(actor);
+        syncPerson(actor, ["name", "weapon", "damage", "portrait"]);
       }
       if (actor.side === "player") return null;
       let squad = codexSquadId && shelf.squads.find(function (row) { return row.id === codexSquadId; });
@@ -1304,9 +1350,9 @@
         let actor = battle.actors.find(function (row) { return row.codexId === person.id; });
         if (!actor) {
           actor = blank(person.role === "enemy" ? "foe" : "player");
-          applyPerson(actor, person);
           battle.actors.push(actor);
         }
+        applyPerson(actor, person);
         battle.board.forEach(function (row) {
           if (!row.memberIds) return;
           row.memberIds = row.memberIds.filter(function (mid) { return mid !== actor.id; });
@@ -1480,7 +1526,8 @@
             if (key === "hpMax") actor.hpMax = Math.max(1, actor.hpMax || 1);
             if (key === "hp" || key === "hpMax") setHp(actor, key === "hp" ? actor.hp : actor.hp);
           }
-          if (key === "hp" || key === "hpMax" || key === "name" || key === "weapon" || key === "damage" || key === "ac") syncPerson(actor);
+          if (key === "hp" || key === "hpMax") syncPerson(actor, ["hp", "hpMax"]);
+          else if (key === "name" || key === "weapon" || key === "damage" || key === "ac") syncPerson(actor, [key]);
           return key;
         }
         if (input.type === "range") {
@@ -1752,7 +1799,7 @@
         const hpField = field("pop-hp");
         actor.hpMax = Math.max(1, Math.round(Number(maxField && maxField.value) || actor.hpMax || 1));
         setHp(actor, Number(hpField && hpField.value));
-        syncPerson(actor);
+        syncPerson(actor, ["hp", "hpMax"]);
         save();
         paint();
         openFighter(actor);
@@ -1884,6 +1931,7 @@
       window.removeEventListener("pointerup", onPointerUp);
       document.removeEventListener("pointerdown", onDocDown);
     };
+    if (pullBattleFromCodex(false)) save();
     loadMonsters().then(function () { if (alive) paint(); });
     paint();
   }
