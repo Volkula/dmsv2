@@ -500,6 +500,12 @@ window.ShirmoCodex = (function () {
         return '<option value="' + esc(squad.id) + '"' + (squad.id === selectedId ? " selected" : "") + ">" + esc(squad.name || "Отряд") + "</option>";
       }).join("");
     }
+    function personTitle(npc) {
+      if (!npc) return "Персонаж";
+      const role = ROLES[npc.role] || "";
+      const name = npc.name || role || "Персонаж";
+      return role && npc.role !== "enemy" ? name + " · " + role : name;
+    }
     function purgePerson(id) {
       if (!id) return;
       unlink("npcs", id);
@@ -965,25 +971,25 @@ window.ShirmoCodex = (function () {
         }).join("");
         const inSquad = {};
         (squad.memberIds || []).forEach(function (id) { inSquad[id] = true; });
-        const addOptions = '<option value="">Враг в отряд</option>' + (book().npcs || []).filter(function (npc) {
-          return npc && npc.role === "enemy" && !inSquad[npc.id];
+        const addOptions = '<option value="">Персонаж в отряд</option>' + (book().npcs || []).filter(function (npc) {
+          return npc && !inSquad[npc.id];
         }).map(function (npc) {
           const home = squadOfNpc(npc.id);
           const mark = home ? " (" + (home.name || "Отряд") + ")" : "";
-          return '<option value="' + esc(npc.id) + '">' + esc((npc.name || "Враг") + mark) + "</option>";
+          return '<option value="' + esc(npc.id) + '">' + esc(personTitle(npc) + mark) + "</option>";
         }).join("");
         const members = (squad.memberIds || []).map(function (id) {
           const npc = book().npcs.find(function (row) { return row.id === id; });
           if (!npc) return "";
-          return '<li class="squad-member"><span>' + esc(npc.name || "Враг") + "</span>" +
-            '<button type="button" data-act="squad-copy" data-npc="' + esc(id) + '" title="Скопировать врага в этот отряд">Копия</button>' +
+          return '<li class="squad-member"><span>' + esc(personTitle(npc)) + "</span>" +
+            '<button type="button" data-act="squad-copy" data-npc="' + esc(id) + '" title="Скопировать в этот отряд">Копия</button>' +
             '<button type="button" data-act="squad-kick" data-i="' + index + '" data-npc="' + esc(id) + '" title="Удалить из отряда, списка и с карты" aria-label="Удалить">×</button></li>';
         }).filter(Boolean).join("");
         return '<article class="place-card"><div class="codex-row"><input data-field="name" data-i="' + index + '" type="text" value="' + esc(squad.name || "") + '" title="Название отряда" aria-label="Название отряда">' +
           '<button type="button" data-act="del" data-i="' + index + '" title="Удалить отряд" aria-label="Удалить отряд">Удалить</button></div>' +
           '<label title="Локация, к которой привязан отряд">Место<select data-squad-place="' + index + '" aria-label="Место отряда">' + options + "</select></label>" +
-          '<div class="codex-row"><select data-squad-add="' + esc(squad.id) + '" title="Перенести врага в этот отряд" aria-label="Добавить врага">' + addOptions + "</select>" +
-          '<button type="button" data-act="squad-add" data-squad="' + esc(squad.id) + '" title="Перенести выбранного врага в отряд">В отряд</button></div>' +
+          '<div class="codex-row"><select data-squad-add="' + esc(squad.id) + '" title="Перенести НПС, торговца или врага в этот отряд" aria-label="Добавить в отряд">' + addOptions + "</select>" +
+          '<button type="button" data-act="squad-add" data-squad="' + esc(squad.id) + '" title="Перенести выбранного персонажа в отряд">В отряд</button></div>' +
           (members ? '<ol class="squad-members">' + members + "</ol>" : '<p class="note">В отряде никого нет.</p>') + "</article>";
       }).join("");
     }
@@ -1320,10 +1326,10 @@ window.ShirmoCodex = (function () {
         const home = seatOf(row.id);
         const homeLine = '<p class="note">' + (home ? "Место: " + esc(home.name || "Место") : "Без места") + "</p>";
         const pack = squadOfNpc(row.id);
-        const squadLine = tab === "enemy"
-          ? '<div class="codex-row"><label title="Перенести врага в отряд">Отряд<select data-move-enemy="' + esc(row.id) + '" aria-label="Отряд врага">' +
+        const squadLine = isPerson(tab)
+          ? '<div class="codex-row"><label title="Перенести в отряд">Отряд<select data-move-enemy="' + esc(row.id) + '" aria-label="Отряд">' +
             squadPickOptions(pack && pack.id) + "</select></label>" +
-            (pack ? '<button type="button" data-act="squad-copy" data-npc="' + esc(row.id) + '" title="Скопировать врага в этот же отряд">Копия</button>' : "") +
+            (pack ? '<button type="button" data-act="squad-copy" data-npc="' + esc(row.id) + '" title="Скопировать в этот же отряд">Копия</button>' : "") +
             "</div>"
           : "";
         return '<article class="npc-card" data-npc="' + esc(row.id) + '" title="ПКМ — перенести на место"><div class="npc-scene"' + scene + ">" + face + badge +
