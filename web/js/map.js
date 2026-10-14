@@ -496,15 +496,23 @@
 
   function closeZoomImage() {
     const old = document.getElementById("map-image-zoom");
-    if (old) old.remove();
+    if (!old) return;
+    const hide = old._onClose;
+    old._onClose = null;
+    old.remove();
+    if (typeof hide === "function") hide();
   }
 
-  function zoomImage(url, forceOpen) {
+  function zoomImage(url, forceOpen, onClose) {
     const src = String(url || "").trim();
     const old = document.getElementById("map-image-zoom");
     if (old) {
+      old._onClose = null;
       old.remove();
-      if (!forceOpen) return;
+      if (!forceOpen) {
+        if (typeof onClose === "function") onClose();
+        return;
+      }
     }
     if (!src) return;
     const pop = document.createElement("div");
@@ -513,7 +521,8 @@
     pop.setAttribute("role", "dialog");
     pop.setAttribute("aria-label", "Картинка");
     pop.innerHTML = '<img alt="" src="' + esc(src) + '">';
-    pop.addEventListener("click", function () { pop.remove(); });
+    if (typeof onClose === "function") pop._onClose = onClose;
+    pop.addEventListener("click", function () { closeZoomImage(); });
     document.body.appendChild(pop);
   }
 
@@ -3073,8 +3082,11 @@
         else if (open && kind === "image") {
           const row = (view().markers || []).find(function (item) { return item && item.id === id; });
           const url = row && (row.url || row.icon);
-          zoomImage(url);
-          if (url && shownScreen(row) && ctx.showImage) ctx.showImage(url);
+          const wasOpen = !!document.getElementById("map-image-zoom");
+          zoomImage(url, false, function () {
+            if (ctx.hideImage) ctx.hideImage();
+          });
+          if (!wasOpen && url && shownScreen(row) && ctx.showImage) ctx.showImage(url);
         }
         else if (open) showMenu();
       } else if (reopen) {
