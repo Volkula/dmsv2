@@ -189,6 +189,23 @@ window.ShirmoCodex = (function () {
             place.backdrop = backdrop;
             changed = true;
           }
+          if (picture(place.portrait) && !picture(loc.portrait)) {
+            loc.portrait = place.portrait;
+            if (place.portraitX != null) loc.portraitX = place.portraitX;
+            if (place.portraitY != null) loc.portraitY = place.portraitY;
+            if (place.portraitZoom != null) loc.portraitZoom = place.portraitZoom;
+            changed = true;
+          }
+          if (picture(place.backdrop)) {
+            if (!picture(loc.day)) {
+              loc.day = place.backdrop;
+              changed = true;
+            }
+            if (!picture(loc.night)) {
+              loc.night = place.backdrop;
+              changed = true;
+            }
+          }
         });
         (view.markers || []).forEach(function (marker) {
           if (!marker || marker.kind !== "npc") return;
@@ -588,6 +605,24 @@ window.ShirmoCodex = (function () {
       });
       return found;
     }
+    function syncPlaceMedia(place) {
+      if (!place || !place.id) return;
+      eachMapLoc(function (loc) {
+        if (!loc || loc.placeId !== place.id) return;
+        if (place.portrait) {
+          loc.portrait = place.portrait;
+          if (place.portraitX != null) loc.portraitX = place.portraitX;
+          if (place.portraitY != null) loc.portraitY = place.portraitY;
+          if (place.portraitZoom != null) loc.portraitZoom = place.portraitZoom;
+        } else {
+          loc.portrait = "";
+        }
+        if (place.backdrop) {
+          if (!loc.day) loc.day = place.backdrop;
+          if (!loc.night) loc.night = place.backdrop;
+        }
+      });
+    }
     function syncPlaceParent(placeId, parentPlaceId) {
       const parentLoc = locIdForPlace(parentPlaceId);
       const blocked = {};
@@ -614,11 +649,29 @@ window.ShirmoCodex = (function () {
     function syncNpcSeat(personId, placeId) {
       if (!personId) return;
       const locId = locIdForPlace(placeId);
+      const person = (book().npcs || []).find(function (row) { return row && row.id === personId; });
+      let touched = false;
       eachMapView(function (view) {
         const hits = (view.markers || []).filter(function (marker) {
           return !!markerPersonIds(marker)[personId];
         });
-        if (!hits.length) return;
+        if (!hits.length) {
+          if (!locId) return;
+          view.markers = view.markers || [];
+          view.markers.push({
+            id: crypto.randomUUID(),
+            name: (person && person.name) || "НПС",
+            x: 0.5,
+            y: 0.52,
+            kind: "npc",
+            tip: "",
+            hidden: false,
+            locId: locId,
+            npcId: personId
+          });
+          touched = true;
+          return;
+        }
         hits.sort(function (a, b) {
           const rank = function (marker) {
             return marker.kind === "npc" ? 0 : (marker.kind === "foe" ? 1 : 2);
@@ -629,6 +682,8 @@ window.ShirmoCodex = (function () {
         keep.locId = locId || "";
         if (keep.kind === "npc" && !keep.npcId) keep.npcId = personId;
         if (keep.kind === "foe" && !keep.codexId) keep.codexId = personId;
+        if (person && person.name) keep.name = person.name;
+        touched = true;
         if (hits.length === 1) return;
         const drop = {};
         hits.slice(1).forEach(function (marker) { drop[marker.id] = true; });
@@ -638,6 +693,11 @@ window.ShirmoCodex = (function () {
           if (actor && drop[actor.markerId]) actor.markerId = keep.id;
         });
       });
+      if (touched) refreshMap();
+    }
+    function refreshMap() {
+      const mapHost = document.getElementById("work-map");
+      if (mapHost && typeof mapHost._refresh === "function") mapHost._refresh();
     }
     function seatPerson(personId, placeId) {
       if (!personId) return;
@@ -1556,9 +1616,11 @@ window.ShirmoCodex = (function () {
             row.portrait = url;
             window.ShirmoNpc.write(row);
           }
+          if (tab === "places") syncPlaceMedia(row);
           keepImage(row, url, file.name.replace(/\.[^.]+$/, ""));
           paint();
           saveSoon();
+          refreshMap();
         }, function (error) {
           const node = host.querySelector("#codex-err");
           if (node) node.textContent = error.message || "Не удалось загрузить.";
@@ -1606,6 +1668,7 @@ window.ShirmoCodex = (function () {
         if (shiftY && document.activeElement !== shiftY) shiftY.value = String(Math.round(100 - face.y));
         if (zoomNode && document.activeElement !== zoomNode) zoomNode.value = String(Math.round(face.zoom * 100));
         if (isPerson(tab) && window.ShirmoNpc) window.ShirmoNpc.write(row);
+        if (tab === "places") syncPlaceMedia(row);
         saveSoon();
       }
       function bindShift(node, key) {
@@ -2111,8 +2174,10 @@ window.ShirmoCodex = (function () {
         if (!row || (slot !== "portrait" && slot !== "backdrop")) return;
         row[slot] = "";
         if (slot === "portrait" && isPerson(tab) && window.ShirmoNpc) window.ShirmoNpc.write(row);
+        if (tab === "places") syncPlaceMedia(row);
         paint();
         saveSoon();
+        refreshMap();
         return;
       }
       if (act === "add") {

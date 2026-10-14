@@ -209,18 +209,35 @@ function projectMap(page, campaign) {
   const focused = here ? locById(here) : null;
   const night = focused ? focused.mode === "night" : view.mode === "night";
   const sheet = focused || view;
-  const image = night ? (sheet.night || sheet.day || "") : (sheet.day || "");
+  const places = campaign && campaign.codex && Array.isArray(campaign.codex.places) ? campaign.codex.places : [];
+  const focusedPlace = focused && focused.placeId
+    ? places.find(function (row) { return row && row.id === focused.placeId; })
+    : null;
+  const placeBackdrop = focusedPlace && focusedPlace.backdrop ? focusedPlace.backdrop : "";
+  const image = night
+    ? (sheet.night || sheet.day || placeBackdrop || "")
+    : (sheet.day || placeBackdrop || "");
   const npcs = campaign && campaign.codex && Array.isArray(campaign.codex.npcs) ? campaign.codex.npcs : [];
   const locations = locationsAll.filter(function (item) {
     return item && !item.hidden && !item.trashed && (item.parentId || "") === here;
   }).slice(0, 200).map(function (item) {
+    const place = item.placeId
+      ? places.find(function (row) { return row && row.id === item.placeId; })
+      : null;
+    const face = item.portrait || (place && place.portrait) || "";
+    const portrait = face ? clip(face, 300) : "";
+    const source = item.portrait ? item : (place || {});
     return Object.assign({
       id: clip(item.id, 80),
       name: clip(item.name, 80),
       x: unit(item.x),
       y: unit(item.y),
       tip: clip(item.tip, 400),
-      pinSize: Math.min(160, Math.max(12, Number(item.pinSize) || 14))
+      pinSize: Math.min(160, Math.max(12, Number(item.pinSize) || (portrait ? 56 : 14))),
+      portrait: portrait,
+      portraitX: portrait ? axis(source.portraitX) : 50,
+      portraitY: portrait ? axis(source.portraitY) : 50,
+      portraitZoom: portrait ? zoomOf(source.portraitZoom) : 1
     }, textLook(item, 14));
   });
   const markers = (Array.isArray(view.markers) ? view.markers : []).filter(function (item) {

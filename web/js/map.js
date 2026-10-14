@@ -301,13 +301,17 @@
     return (list || []).filter(function (item) { return ((item && item[key]) || "") === here; });
   }
 
-  function levelImage(current) {
+  function levelImage(current, places) {
     const id = current.focusId || "";
     const loc = id ? (current.locations || []).find(function (item) { return item.id === id; }) : null;
     const sheet = loc || current;
     const night = sheet.mode === "night";
-    const image = night ? (sheet.night || sheet.day || "") : (sheet.day || "");
-    return { image: image, dim: night && !sheet.night };
+    const place = loc && loc.placeId && Array.isArray(places)
+      ? places.find(function (row) { return row && row.id === loc.placeId; })
+      : null;
+    const backdrop = place && place.backdrop || "";
+    const image = night ? (sheet.night || sheet.day || backdrop || "") : (sheet.day || backdrop || "");
+    return { image: image, dim: night && !sheet.night && !backdrop };
   }
 
   function tabList(current) {
@@ -626,7 +630,7 @@
         current.talkId = "";
       }
       const here = current.focusId || "";
-      const shot = levelImage(current);
+      const shot = levelImage(current, book().places);
       const draft = draw ? [draw] : [];
       const inside = here ? (current.locations || []).find(function (item) { return item.id === here && !item.trashed; }) : null;
       board.innerHTML = html({
@@ -882,13 +886,30 @@
       });
       pop.querySelector("#setup-day").addEventListener("click", function () { setMode("day"); });
       pop.querySelector("#setup-night").addEventListener("click", function () { setMode("night"); });
+      function linkedPlace() {
+        if (!loc || !loc.placeId) return null;
+        return (book().places || []).find(function (row) { return row.id === loc.placeId; }) || null;
+      }
+      function syncPlaceShot(field, url) {
+        const place = linkedPlace();
+        if (!place) return;
+        if (field === "portrait") {
+          place.portrait = url || "";
+          return;
+        }
+        if (url) place.backdrop = place.backdrop || url;
+        else if (field === "day" && place.backdrop === sheet.day) place.backdrop = sheet.night || "";
+        else if (field === "night" && place.backdrop === sheet.night) place.backdrop = sheet.day || "";
+      }
       pop.querySelector("#setup-day-img").addEventListener("change", function (event) {
         sheet.day = event.target.value;
+        syncPlaceShot("day", sheet.day);
         paintBoard();
         dirty();
       });
       pop.querySelector("#setup-night-img").addEventListener("change", function (event) {
         sheet.night = event.target.value;
+        syncPlaceShot("night", sheet.night);
         paintBoard();
         dirty();
       });
@@ -909,19 +930,22 @@
       }
       pop.querySelector("#setup-day-file").addEventListener("change", function (event) {
         const file = event.target.files && event.target.files[0];
-        keepShot(file, function (url) { sheet.day = url; });
+        keepShot(file, function (url) {
+          sheet.day = url;
+          syncPlaceShot("day", url);
+        });
       });
       pop.querySelector("#setup-night-file").addEventListener("change", function (event) {
         const file = event.target.files && event.target.files[0];
-        keepShot(file, function (url) { sheet.night = url; });
+        keepShot(file, function (url) {
+          sheet.night = url;
+          syncPlaceShot("night", url);
+        });
       });
       const facePick = pop.querySelector("#setup-face");
       if (facePick) facePick.addEventListener("change", function (event) {
         loc.portrait = event.target.value;
-        if (loc.placeId) {
-          const place = (book().places || []).find(function (row) { return row.id === loc.placeId; });
-          if (place) place.portrait = loc.portrait;
-        }
+        syncPlaceShot("portrait", loc.portrait);
         paintBoard();
         dirty();
       });
@@ -930,10 +954,7 @@
         const file = event.target.files && event.target.files[0];
         keepShot(file, function (url) {
           loc.portrait = url;
-          if (loc.placeId) {
-            const place = (book().places || []).find(function (row) { return row.id === loc.placeId; });
-            if (place) place.portrait = url;
-          }
+          syncPlaceShot("portrait", url);
         });
       });
     }
@@ -1066,7 +1087,7 @@
       const chosen = index >= 0 ? lines[index] : null;
       dialogueMood(who, chosen);
       const fallback = !lines.length ? String((npc && npc.note) || (marker && marker.tip) || "").trim() : "";
-      const shot = levelImage(view());
+      const shot = levelImage(view(), book().places);
       const shop = !!marker.shopOpen;
       const goods = shop ? saleGoods(npc || marker).map(function (item) {
         return Object.assign({}, item, {
@@ -1871,8 +1892,19 @@
       menu.addEventListener("pointerdown", function (event) { event.stopPropagation(); });
       function take(entry) {
         item.name = entry.name || item.name;
-        if (selected.kind === "loc") item.placeId = entry.id;
-        else item.npcId = entry.id;
+        if (selected.kind === "loc") {
+          item.placeId = entry.id;
+          if (entry.portrait) {
+            item.portrait = entry.portrait;
+            if (entry.portraitX != null) item.portraitX = entry.portraitX;
+            if (entry.portraitY != null) item.portraitY = entry.portraitY;
+            if (entry.portraitZoom != null) item.portraitZoom = entry.portraitZoom;
+          }
+          if (entry.backdrop) {
+            if (!item.day) item.day = entry.backdrop;
+            if (!item.night) item.night = entry.backdrop;
+          }
+        } else item.npcId = entry.id;
         closeMenu();
         paintBoard();
         paintTree();
@@ -2403,7 +2435,11 @@
       ctx.save();
     }
 
-    host._refresh = paintLists;
+    host._refresh = function () {
+      paintLists();
+      paintBoard();
+      paintTree();
+    };
     paintLists();
     paintBoard();
     paintSelected();
