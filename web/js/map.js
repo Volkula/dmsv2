@@ -452,7 +452,7 @@
     const wareBtn = master
       ? '<button type="button" class="talk-ico talk-ware" data-talk="ware" title="Товары. Если персонаж ещё не торговец, он им станет" aria-label="Товары">' + glyph.bag + "</button>"
       : "";
-    return '<div class="stage talk-stage is-talk" style="background-image:' + bg + '">' + top + figure + goods +
+    return '<div class="stage talk-stage is-talk' + (talk.shop ? " is-shop" : "") + '" style="background-image:' + bg + '">' + top + figure + goods +
       '<div class="talk-box">' + wareBtn + '<div class="talk-name">' + mood + "<b>" + esc(talk.name || "НПС") + "</b>" + linesBtn + "</div><p>" + esc(talk.line || "...") + "</p>" + reps + "</div></div>";
   }
 

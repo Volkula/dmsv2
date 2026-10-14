@@ -1130,11 +1130,12 @@ label.check input { width: auto; }
   --board-font: 16px;
   position: absolute;
   z-index: 2;
-  top: 28px;
+  top: 58px;
   right: 28px;
+  bottom: 220px;
   width: 380px;
   max-width: calc(100% - 56px);
-  max-height: calc(100% - 180px);
+  max-height: none;
   overflow: auto;
   padding: 16px 18px;
   background: rgba(20, 17, 14, 0.92);
@@ -1257,8 +1258,6 @@ label.check input { width: auto; }
 
 .shop-fold[aria-expanded="true"] svg { transform: rotate(180deg); }
 
-.talk-shop .ware-face.shop-icon { width: 28px; height: 28px; }
-
 .talk-shop-head button.icon-btn { width: 32px; height: 32px; }
 
 .talk-shop li.is-gone { opacity: 0.45; }
@@ -1334,7 +1333,7 @@ label.check input { width: auto; }
 
 .talk-box {
   position: absolute;
-  z-index: 2;
+  z-index: 5;
   left: 46%;
   right: 36px;
   bottom: 28px;
@@ -1345,6 +1344,17 @@ label.check input { width: auto; }
   background: rgba(20, 17, 14, 0.9);
   border: 1px solid var(--brass);
   border-radius: 12px;
+}
+
+.talk-stage.is-shop .talk-box {
+  left: 28px;
+  right: 28px;
+  max-height: 180px;
+  overflow: auto;
+}
+
+.talk-stage.is-shop .talk-shop {
+  bottom: 220px;
 }
 
 .talk-name {
