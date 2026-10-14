@@ -429,7 +429,7 @@
         '<button type="button" data-talk="back" title="Вернуться на карту">На карту</button></div>'
       : "";
     const moodList = master
-      ? '<div class="talk-mood-list"' + (talk.moodOpen ? "" : " hidden") + '><button type="button" data-talk="mood-auto" class="' + (talk.hold ? "" : "is-on") + '" title="По реплике. Если у реплики нет своей фазы — эмоция по умолчанию">−</button>' +
+      ? '<div class="talk-mood-list" hidden><button type="button" data-talk="mood-auto" class="' + (talk.hold ? "" : "is-on") + '" title="По реплике. Если у реплики нет своей фазы — эмоция по умолчанию">−</button>' +
         (talk.phases || []).map(function (phase, index) {
           const on = talk.hold && phase.on ? " is-on" : "";
           return '<button type="button" data-talk="phase" data-i="' + index + '" class="' + on + '" title="Закрепить эту эмоцию. Реплики её не сменят" aria-label="Фаза ' + (index + 1) + '">' + esc(phase.emoji || String(index + 1)) + "</button>";
@@ -445,7 +445,7 @@
     const wareBtn = master
       ? '<button type="button" class="talk-ico talk-ware" data-talk="ware" title="Товары. Если персонаж ещё не торговец, он им станет" aria-label="Товары">' + glyph.bag + "</button>"
       : "";
-    return '<div class="stage talk-stage" style="background-image:' + bg + '">' + top + figure + goods +
+    return '<div class="stage talk-stage is-talk" style="background-image:' + bg + '">' + top + figure + goods +
       '<div class="talk-box">' + wareBtn + '<div class="talk-name">' + mood + "<b>" + esc(talk.name || "НПС") + "</b>" + linesBtn + "</div><p>" + esc(talk.line || "...") + "</p>" + reps + "</div></div>";
   }
 
@@ -1049,16 +1049,6 @@
       window.ShirmoNpc.apply(who);
     }
     const shopFold = {};
-    let moodMenuOpen = false;
-    function placeMoodList(anchor, list) {
-      if (!anchor || !list || list.hidden) return;
-      const rect = anchor.getBoundingClientRect();
-      list.style.position = "fixed";
-      list.style.left = Math.max(8, Math.round(rect.left)) + "px";
-      list.style.bottom = Math.max(8, Math.round(window.innerHeight - rect.top + 6)) + "px";
-      list.style.top = "auto";
-      list.style.right = "auto";
-    }
     function talkView(marker) {
       const npc = linkedNpc(marker);
       const who = npc || marker;
@@ -1087,7 +1077,6 @@
         }),
         emoji: who.emoji || "",
         hold: !!who.moodHold,
-        moodOpen: moodMenuOpen,
         portrait: npc && npc.portrait ? npc.portrait : "",
         figure: figureOf(npc || marker, shop),
         campaign: ctx.campaign,
@@ -1107,7 +1096,6 @@
     }
     function leaveTalk() {
       closeTalkPop();
-      moodMenuOpen = false;
       if (ctx.hideGoods) ctx.hideGoods();
       const marker = (view().markers || []).find(function (item) { return item.id === view().talkId; });
       if (marker) marker.shopOpen = false;
@@ -1123,7 +1111,7 @@
       let suppress = false;
       if (stage) stage.addEventListener("click", function (event) {
         if (suppress) { suppress = false; return; }
-        if (event.target.closest(".talk-box, .talk-figure, .talk-shop, .talk-top")) return;
+        if (event.target.closest(".talk-box, .talk-figure, .talk-shop, .talk-top, .talk-mood-list")) return;
         leaveTalk();
       });
       if (back) back.addEventListener("click", function (event) {
@@ -1148,15 +1136,10 @@
       });
       const moodOpen = board.querySelector("[data-talk=mood]");
       const moodList = board.querySelector(".talk-mood-list");
-      if (moodOpen && moodList) {
-        placeMoodList(moodOpen, moodList);
-        moodOpen.addEventListener("click", function (event) {
-          event.stopPropagation();
-          moodMenuOpen = !moodMenuOpen;
-          moodList.hidden = !moodMenuOpen;
-          placeMoodList(moodOpen, moodList);
-        });
-      }
+      if (moodOpen && moodList) moodOpen.addEventListener("click", function (event) {
+        event.stopPropagation();
+        moodList.hidden = !moodList.hidden;
+      });
       board.querySelectorAll("[data-talk=line]").forEach(function (button) {
         button.addEventListener("click", function () {
           marker.talkLine = Number(button.getAttribute("data-i")) || 0;
@@ -1169,10 +1152,6 @@
         event.stopPropagation();
         const who = linkedNpc(marker) || marker;
         who.moodHold = false;
-        const lines = window.ShirmoNpc.replicas(who);
-        const index = lines.length ? Math.min(lines.length - 1, Math.max(0, Number(marker.talkLine) || 0)) : -1;
-        dialogueMood(who, index >= 0 ? lines[index] : null);
-        moodMenuOpen = true;
         paintBoard();
         ctx.save();
       });
@@ -1180,11 +1159,9 @@
         button.addEventListener("click", function (event) {
           event.stopPropagation();
           const who = linkedNpc(marker) || marker;
-          const next = Number(button.getAttribute("data-i"));
           who.moodHold = true;
-          who.mood = Number.isFinite(next) ? next : 0;
+          who.mood = Number(button.getAttribute("data-i")) || 0;
           window.ShirmoNpc.apply(who);
-          moodMenuOpen = true;
           paintBoard();
           ctx.save();
         });
@@ -2944,15 +2921,12 @@
       if (!npc) return { portrait: "" };
       if (!Array.isArray(npc.moods) || !npc.moods.length) npc.moods = [moodFace(npc)];
       npc.moods = npc.moods.map(function (mood) { return moodFace(mood || {}); });
-      const moodIndex = Math.min(npc.moods.length - 1, Math.max(0, Number(npc.mood) || 0));
-      npc.mood = moodIndex;
-      const mood = npc.moods[moodIndex];
-      const base = npc.moods[0] || mood;
-      const portrait = mood.portrait || base.portrait || "";
-      npc.portrait = portrait;
-      npc.portraitX = mood.portrait ? mood.portraitX : base.portraitX;
-      npc.portraitY = mood.portrait ? mood.portraitY : base.portraitY;
-      npc.portraitZoom = mood.portrait ? mood.portraitZoom : base.portraitZoom;
+      npc.mood = Math.min(npc.moods.length - 1, Math.max(0, Number(npc.mood) || 0));
+      const mood = npc.moods[npc.mood];
+      npc.portrait = mood.portrait;
+      npc.portraitX = mood.portraitX;
+      npc.portraitY = mood.portraitY;
+      npc.portraitZoom = mood.portraitZoom;
       npc.emoji = mood.emoji || "";
       return mood;
     },
@@ -3207,14 +3181,7 @@
         }
         if (button.hasAttribute("data-mood-add")) {
           window.ShirmoNpc.apply(npc);
-          const cur = npc.moods[npc.mood] || moodFace(npc);
-          npc.moods.push({
-            portrait: cur.portrait || "",
-            portraitX: cur.portraitX,
-            portraitY: cur.portraitY,
-            portraitZoom: cur.portraitZoom,
-            emoji: ""
-          });
+          npc.moods.push({ portrait: "", portraitX: 50, portraitY: 50, portraitZoom: 1 });
           npc.mood = npc.moods.length - 1;
           window.ShirmoNpc.apply(npc);
           paintSheet();
