@@ -825,11 +825,62 @@ window.ShirmoCodex = (function () {
         return out;
       }
       let rows = lines.map(cells);
-      const head = String(rows[0][0] || "").toLowerCase();
-      if (head === "название" || head === "name" || head === "товар") rows = rows.slice(1);
+      const head0 = String(rows[0][0] || "").toLowerCase();
+      const head1 = String(rows[0][1] || "").toLowerCase();
+      const withSheet = head0 === "лист" || head0 === "sheet";
+      if (withSheet || head0 === "название" || head0 === "name" || head0 === "товар") rows = rows.slice(1);
+      if (withSheet || head1 === "название" || head1 === "name") {
+        const groups = {};
+        const order = [];
+        rows.forEach(function (row) {
+          const sheetName = String(row[0] || "Лист").trim() || "Лист";
+          const name = String(row[1] || "").trim();
+          if (!name) return;
+          if (!groups[sheetName]) {
+            groups[sheetName] = [];
+            order.push(sheetName);
+          }
+          groups[sheetName].push({
+            id: crypto.randomUUID(),
+            name: name,
+            price: row[2] || "",
+            note: row[3] || "",
+            icon: row[4] || ""
+          });
+        });
+        return order.map(function (name) { return { name: name, items: groups[name] }; });
+      }
       return rows.filter(function (row) { return row[0]; }).map(function (row) {
         return { id: crypto.randomUUID(), name: row[0], price: row[1] || "", note: row[2] || "", icon: row[3] || "" };
       });
+    }
+    function csvCell(value) {
+      const text = String(value == null ? "" : value);
+      if (/[;"\n\r]/.test(text)) return '"' + text.replace(/"/g, '""') + '"';
+      return text;
+    }
+    function downloadCsv(filename, rows) {
+      const body = rows.map(function (row) { return row.map(csvCell).join(";"); }).join("\r\n");
+      const blob = new Blob(["\uFEFF" + body + "\r\n"], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename || "товары.csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+    }
+    function warePriceText(item) {
+      if (window.ShirmoCoins) return window.ShirmoCoins.text(item, ctx.campaign) || "";
+      return String(item && item.price || "");
+    }
+    function wareCsvRows(items) {
+      return [["название", "цена", "заметка"]].concat((items || []).filter(function (item) {
+        return item && String(item.name || "").trim();
+      }).map(function (item) {
+        return [item.name || "", warePriceText(item), item.note || ""];
+      }));
     }
     function keepImage(npc, url, name) {
       if (!window.ShirmoLib || !url) return;
@@ -907,14 +958,18 @@ window.ShirmoCodex = (function () {
     }
     function waresHtml() {
       const sheets = book().wares || [];
-      const head = '<div class="codex-row"><button type="button" data-act="ware-sheet" title="Новый лист товаров">Новый лист</button>' +
-        '<label class="file-btn" title="CSV: название, цена, заметка. Разделитель — запятая или точка с запятой">Импорт CSV<input type="file" accept=".csv,text/csv" data-ware-csv aria-label="Импорт CSV"></label></div>' +
-        '<p class="note">Лист можно отдать персонажу. Товары из меню НПС появляются здесь: в листе или в блоке «Свои товары». Поиск предмета ставит иконку. Цвет задаётся строке.</p>';
+      const head = '<div class="codex-row ware-toolbar">' +
+        '<button type="button" data-act="ware-sheet" title="Новый лист товаров">Новый лист</button>' +
+        '<label class="text-file" title="CSV: название; цена; заметка. Разделитель — ; или ,">Импорт CSV<input type="file" accept=".csv,text/csv" data-ware-csv aria-label="Импорт CSV"></label>' +
+        '<button type="button" data-act="ware-export" title="Скачать все листы товаров в CSV">Экспорт CSV</button>' +
+        '<button type="button" data-act="ware-template" title="Скачать пустой CSV-шаблон для заполнения">Шаблон</button>' +
+        "</div>" +
+        '<p class="note">Лист можно отдать персонажу. Товары из меню НПС появляются здесь: в листе или в блоке «Свои товары». Поиск предмета ставит иконку. Цвет задаётся строке. CSV: название; цена; заметка.</p>';
       if (!sheets.length && !ownGoodsHtml()) return head + '<p class="note">Листа пока нет.</p>';
       return head + sheets.map(function (sheet, index) {
         const owners = book().npcs.filter(function (npc) { return npc.wareId === sheet.id; }).map(function (npc) { return npc.name || "Без имени"; });
         const items = (sheet.items || []).map(function (item, itemIndex) { return wareItemHtml(index, item, itemIndex); }).join("");
-        return '<article class="place-card"><div class="codex-row"><input data-field="name" data-i="' + index + '" type="text" value="' + esc(sheet.name || "") + '" title="Название листа" aria-label="Название листа"><button type="button" class="icon-btn" data-act="show-sheet" data-i="' + index + '" title="Показать этот лист игрокам" aria-label="Показать игрокам">' + (window.ShirmoGlyph ? window.ShirmoGlyph.cast : "↗") + '</button><button type="button" data-act="del" data-i="' + index + '" title="Удалить лист" aria-label="Удалить">×</button></div>' +
+        return '<article class="place-card"><div class="codex-row"><input data-field="name" data-i="' + index + '" type="text" value="' + esc(sheet.name || "") + '" title="Название листа" aria-label="Название листа"><button type="button" class="icon-btn" data-act="show-sheet" data-i="' + index + '" title="Показать этот лист игрокам" aria-label="Показать игрокам">' + (window.ShirmoGlyph ? window.ShirmoGlyph.cast : "↗") + '</button><button type="button" data-act="ware-export" data-i="' + index + '" title="Экспорт этого листа в CSV">CSV</button><button type="button" data-act="del" data-i="' + index + '" title="Удалить лист" aria-label="Удалить">×</button></div>' +
           '<div class="codex-row"><select data-ware-owner data-i="' + index + '" title="Отдать этот лист персонажу" aria-label="Кому отдать лист">' + npcOptions("Отдать НПС") + "</select></div>" +
           (owners.length ? '<p class="note">Лист у: ' + esc(owners.join(", ")) + "</p>" : "") +
           items +
@@ -1327,17 +1382,33 @@ window.ShirmoCodex = (function () {
       }
       if (event.target.type === "file" && event.target.hasAttribute("data-ware-csv")) {
         const file = event.target.files && event.target.files[0];
+        event.target.value = "";
         if (!file) return;
         const reader = new FileReader();
         reader.onload = function () {
           if (!alive) return;
-          const items = parseCsv(String(reader.result || ""));
+          const parsed = parseCsv(String(reader.result || ""));
           const fail = host.querySelector("#codex-err");
-          if (!items.length) {
+          if (!parsed.length) {
             if (fail) fail.textContent = "В файле нет строк с названием.";
             return;
           }
-          book().wares.push({ id: crypto.randomUUID(), name: file.name.replace(/\.[^.]+$/, "") || "Лист", items: items });
+          if (parsed[0] && Array.isArray(parsed[0].items)) {
+            parsed.forEach(function (sheet) {
+              if (!sheet.items || !sheet.items.length) return;
+              book().wares.push({
+                id: crypto.randomUUID(),
+                name: sheet.name || "Лист",
+                items: sheet.items
+              });
+            });
+          } else {
+            book().wares.push({
+              id: crypto.randomUUID(),
+              name: file.name.replace(/\.[^.]+$/, "") || "Лист",
+              items: parsed
+            });
+          }
           paint();
           saveSoon();
         };
@@ -1791,6 +1862,46 @@ window.ShirmoCodex = (function () {
         book().wares.push({ id: crypto.randomUUID(), name: "Лист", items: [] });
         paint();
         saveSoon();
+        return;
+      }
+      if (act === "ware-template") {
+        downloadCsv("шаблон-товары.csv", [
+          ["название", "цена", "заметка"],
+          ["Кувшин с пивом", "5", "Кружка эля"],
+          ["Кувшин вина", "8", "Бутылка красного"],
+          ["Ужин", "10", "Суп и хлеб"]
+        ]);
+        return;
+      }
+      if (act === "ware-export") {
+        const index = button.getAttribute("data-i");
+        if (index != null && index !== "") {
+          const sheet = book().wares[Number(index)];
+          if (!sheet) return;
+          const name = String(sheet.name || "лист").replace(/[\\/:*?"<>|]+/g, "_").trim() || "лист";
+          downloadCsv(name + ".csv", wareCsvRows(sheet.items));
+          return;
+        }
+        const rows = [["лист", "название", "цена", "заметка"]];
+        (book().wares || []).forEach(function (sheet) {
+          const sheetName = sheet && sheet.name || "Лист";
+          (sheet && sheet.items || []).forEach(function (item) {
+            if (!item || !String(item.name || "").trim()) return;
+            rows.push([sheetName, item.name || "", warePriceText(item), item.note || ""]);
+          });
+        });
+        book().npcs.forEach(function (npc) {
+          (npc.goods || []).forEach(function (item) {
+            if (!item || !String(item.name || "").trim()) return;
+            rows.push([(npc.name || "НПС") + " · свои", item.name || "", warePriceText(item), item.note || ""]);
+          });
+        });
+        if (rows.length < 2) {
+          const fail = host.querySelector("#codex-err");
+          if (fail) fail.textContent = "Нечего экспортировать.";
+          return;
+        }
+        downloadCsv("товары.csv", rows);
         return;
       }
       if (act === "ware-add") {

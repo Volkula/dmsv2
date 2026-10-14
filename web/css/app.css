@@ -220,6 +220,29 @@ label.file-btn:hover { border-color: var(--brass); color: var(--brass); }
 
 label.file-btn svg { width: 18px; height: 18px; display: block; }
 
+label.text-file {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  height: auto;
+  min-height: 36px;
+  flex: 0 0 auto;
+  padding: 6px 12px;
+  cursor: pointer;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #120f0c;
+  color: inherit;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+label.text-file:hover { border-color: var(--brass); color: var(--brass); }
+
+.ware-toolbar { margin-bottom: 4px; }
+
 .gate label.file-btn {
   display: inline-flex;
   align-items: center;
