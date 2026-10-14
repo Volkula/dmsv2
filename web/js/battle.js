@@ -309,8 +309,8 @@
       name: side === "player" ? "Герой" : "Враг",
       side: side,
       init: 0,
-      hp: side === "player" ? 38 : 11,
-      hpMax: side === "player" ? 38 : 11,
+      hp: 0,
+      hpMax: 0,
       ac: side === "player" ? 16 : 12,
       weapon: side === "player" ? "Атака" : "Скимитар",
       damage: side === "player" ? "1d8+3" : "1d6+1",
@@ -744,37 +744,79 @@
       if (has("portrait") && actor.portrait) person.portrait = actor.portrait;
     }
 
+    function personScore(person) {
+      if (!person) return -1;
+      let score = 0;
+      const max = Number(person.hpMax) || 0;
+      const hp = Number(person.hp) || 0;
+      const life = max > 0 ? max : hp;
+      if (life > 0) score += 5;
+      if (life > 0 && life !== 38 && life !== 11) score += 20;
+      if (String(person.note || "").trim()) score += 8;
+      if (person.portrait) score += 4;
+      if (String(person.weapon || "").trim()) score += 2;
+      if (String(person.damage || "").trim()) score += 2;
+      if (person.role === "npc" || person.role === "merchant" || person.role === "enemy") score += 1;
+      return score;
+    }
+
+    function pickBestPerson(hits) {
+      if (!hits || !hits.length) return null;
+      if (hits.length === 1) return hits[0];
+      return hits.slice().sort(function (a, b) { return personScore(b) - personScore(a); })[0];
+    }
+
+    function peopleByName(name) {
+      const key = String(name || "").trim().toLowerCase();
+      if (!key) return [];
+      return (book().npcs || []).filter(function (row) {
+        return row && String(row.name || "").trim().toLowerCase() === key;
+      });
+    }
+
     function personForActor(actor) {
       if (!actor) return null;
       const shelf = book().npcs || [];
+      const named = peopleByName(actor.name);
+      const bestNamed = pickBestPerson(named);
       if (actor.codexId) {
         const byId = shelf.find(function (row) { return row && row.id === actor.codexId; });
-        if (byId) return byId;
+        if (byId) {
+          if (bestNamed && bestNamed.id !== byId.id && personScore(bestNamed) > personScore(byId) + 5) {
+            actor.codexId = bestNamed.id;
+            return bestNamed;
+          }
+          return byId;
+        }
       }
-      const name = String(actor.name || "").trim().toLowerCase();
-      if (!name) return null;
-      const hits = shelf.filter(function (row) {
-        return row && String(row.name || "").trim().toLowerCase() === name;
-      });
-      return hits.length === 1 ? hits[0] : null;
+      if (bestNamed) {
+        actor.codexId = bestNamed.id;
+        return bestNamed;
+      }
+      return null;
     }
 
     function pullPersonHp(actor, force) {
       const person = personForActor(actor);
       if (!actor || !person) return false;
-      if (!actor.codexId) actor.codexId = person.id;
       const rawMax = Number(person.hpMax);
       const rawHp = Number(person.hp);
       const hasBook = (Number.isFinite(rawMax) && rawMax > 0) || (Number.isFinite(rawHp) && rawHp > 0);
       if (!hasBook) return false;
-      const life = personHp(person, actor);
+      const life = personHp(person, null);
       const curMax = Number(actor.hpMax) || 0;
       const curHp = Number(actor.hp) || 0;
-      const looksBlank = (actor.side === "player" && curMax === 38) || (actor.side !== "player" && curMax === 11) || curMax <= 0;
-      if (!force && !looksBlank && curMax === life.hpMax) return false;
+      const looksBlank = (actor.side === "player" && (curMax === 38 || curMax <= 0)) ||
+        (actor.side !== "player" && (curMax === 11 || curMax <= 0));
+      const bookBetter = life.hpMax !== curMax && life.hpMax > 0;
+      if (!force && !looksBlank && !bookBetter) return false;
       actor.hpMax = life.hpMax;
-      actor.hp = looksBlank || force || curHp >= curMax ? life.hp : Math.min(curHp, life.hpMax);
+      actor.hp = looksBlank || force || curHp >= curMax || bookBetter ? Math.min(life.hp, life.hpMax) : Math.min(curHp, life.hpMax);
       actor.dead = actor.hp <= 0;
+      if (person.portrait && !actor.portrait) actor.portrait = person.portrait;
+      if (person.note && !actor.note) actor.note = person.note;
+      if (person.weapon && (!actor.weapon || actor.weapon === "Атака" || actor.weapon === "Скимитар")) actor.weapon = person.weapon;
+      if (person.damage && (!actor.damage || actor.damage === "1d8+3" || actor.damage === "1d6+1")) actor.damage = person.damage;
       return true;
     }
 
@@ -790,7 +832,7 @@
       const shelf = book();
       shelf.npcs = shelf.npcs || [];
       shelf.squads = shelf.squads || [];
-      let person = actor.codexId && shelf.npcs.find(function (row) { return row.id === actor.codexId; });
+      let person = personForActor(actor);
       if (!person) {
         person = {
           id: crypto.randomUUID(),
@@ -808,7 +850,8 @@
         shelf.npcs.push(person);
         actor.codexId = person.id;
       } else {
-        syncPerson(actor, ["name", "weapon", "damage", "portrait"]);
+        actor.codexId = person.id;
+        applyPerson(actor, person);
       }
       if (actor.side === "player") return null;
       let squad = codexSquadId && shelf.squads.find(function (row) { return row.id === codexSquadId; });
@@ -990,7 +1033,8 @@
         '<label class="check" title="Пока включено, игроки видят бой вместо карты"><input id="battle-screen" type="checkbox"' + (battle.screen !== false ? " checked" : "") + "> Игрокам</label>" +
         '<button type="button" data-act="sort" class="' + (battle.autoSort ? "is-on" : "") + '" title="Большее число выше. Внутри отряда и между отрядами. Разделители остаются на месте">По числу</button>' +
         '<button type="button" data-act="init" title="Бросить инициативу всем на ширме, без показа кубиков">Инициатива всем</button>' +
-        '<button type="button" data-act="place" title="Поставить врагов на текущую карту. Игроки их не видят, пока не снимете скрытие">На карту</button></div></div>' +
+        '<button type="button" data-act="place" title="Поставить врагов на текущую карту. Игроки их не видят, пока не снимете скрытие">На карту</button>' +
+        '<button type="button" data-act="pull-hp" title="Подтянуть хиты и характеристики из справочника по имени">ХП из справочника</button></div></div>' +
         '<p class="note">«Атаковать» — кто бьёт и чем. Средняя кнопка — боец, черта или отряд. Правая по бойцу — статус и убить. к20 — инициатива этого бойца.</p>' +
         toneHtml();
     }
@@ -1637,6 +1681,12 @@
         foes.forEach(pushMarker);
         save();
         paint();
+      }
+      if (act === "pull-hp") {
+        if (pullBattleFromCodex(true)) {
+          save();
+          paint();
+        }
       }
       if (act === "init") {
         battle.actors.forEach(function (actor) {
