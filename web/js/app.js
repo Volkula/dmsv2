@@ -628,7 +628,8 @@
     const rows = list.map(function (item) {
       const icon = item.icon ? '<img alt="" src="' + esc(item.icon) + '">' : "";
       const note = String(item.note || "").trim();
-      return "<li>" + icon + '<span class="board-item"><b>' + esc(item.name || "Предмет") + "</b>" +
+      const ink = item.ink ? ' style="color:' + esc(item.ink) + '"' : "";
+      return "<li" + ink + ">" + icon + '<span class="board-item"><b>' + esc(item.name || "Предмет") + "</b>" +
         (note ? '<small class="board-note">' + esc(note) + "</small>" : "") +
         "</span><em>" + esc(item.price || "") + "</em></li>";
     }).join("");
@@ -649,11 +650,14 @@
 
   function publishGoods(roomId, headers, goods, campaign) {
     const list = (goods || []).slice(0, 40).map(function (item) {
+      const ink = window.ShirmoItems ? window.ShirmoItems.inkOf(item) : (item.ink || "");
       return {
         name: item.name || "",
         price: item.price || "",
         icon: item.icon || "",
-        note: item.note || ""
+        note: item.note || "",
+        ink: ink,
+        rarity: item.rarity || ""
       };
     }).filter(function (item) { return String(item.name).trim(); });
     let fontSize = readShopFont(campaign);

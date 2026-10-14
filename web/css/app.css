@@ -488,6 +488,23 @@ label.text-file:hover { border-color: var(--brass); color: var(--brass); }
   font-size: 1em;
 }
 
+.board-card li[style*="color"] .board-item b,
+.board-card li[style*="color"] .board-note,
+.board-card li[style*="color"] em,
+.talk-shop li[style*="color"] .board-item b,
+.talk-shop li[style*="color"] .board-note,
+.talk-shop li[style*="color"] em,
+.talk-shop li[style*="color"] .shop-title span,
+.talk-shop li[style*="color"] .shop-title input,
+.ware-item[style*="color"] .ware-title input {
+  color: inherit;
+}
+
+.board-card li[style*="color"] .board-note,
+.talk-shop li[style*="color"] .board-note {
+  opacity: 0.88;
+}
+
 .talk-shop-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 
 .price-coin { width: 108px; }
@@ -1159,7 +1176,7 @@ label.check input { width: auto; }
   flex: none;
 }
 
-.talk-shop .board-item b { color: var(--brass); font-size: 1em; }
+.talk-shop .board-item b { color: inherit; font-size: 1em; }
 
 .talk-shop .board-note { font-size: 0.82em; }
 
@@ -1213,6 +1230,7 @@ label.check input { width: auto; }
   justify-content: space-between;
   gap: 12px;
   padding: 6px 0;
+  color: var(--brass);
 }
 
 .talk-shop li.shop-item {
@@ -1962,6 +1980,16 @@ button.icon-btn[data-good-eye].is-off { color: #e07a6a; }
   gap: 8px;
   margin: 0;
   flex: none;
+}
+
+.ware-ink select {
+  min-width: 148px;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #120f0c;
+  color: inherit;
 }
 
 .ware-edit input[type="color"],

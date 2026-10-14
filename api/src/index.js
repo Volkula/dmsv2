@@ -634,12 +634,17 @@ const server = http.createServer(async function (req, res) {
       if (body.look === "rings" || body.look === "flash" || body.look === "lights") event.look = body.look;
       if (event.type === "wares" && Array.isArray(body.goods)) {
         event.goods = body.goods.slice(0, 40).map(function (item) {
-          return {
+          const row = {
             name: String(item && item.name || "").slice(0, 80),
             price: String(item && item.price || "").slice(0, 40),
             icon: safePath(item && item.icon),
             note: String(item && item.note || "").slice(0, 400)
           };
+          const ink = String(item && item.ink || "").trim().slice(0, 20);
+          if (ink) row.ink = ink;
+          const rarity = Number(item && item.rarity) || 0;
+          if (rarity >= 1 && rarity <= 6) row.rarity = rarity;
+          return row;
         }).filter(function (item) { return item.name; });
         const fontSize = Math.round(Number(body.fontSize) || 0);
         if (fontSize >= 12 && fontSize <= 28) event.fontSize = fontSize;

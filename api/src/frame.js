@@ -125,6 +125,8 @@ function saleRows(npc, campaign) {
       note: clip(item.note, 400)
     };
     if (qty != null) row.qty = qty;
+    const rarity = Number(item.rarity) || 0;
+    if (rarity >= 1 && rarity <= 6) row.rarity = rarity;
     if (item.ink) row.ink = clip(item.ink, 20);
     return row;
   });

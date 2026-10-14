@@ -399,7 +399,8 @@
             if (!master) {
               const icon = item.icon ? '<img class="shop-icon" alt="" src="' + esc(item.icon) + '">' : "";
               const count = item.qty == null ? "" : '<i class="shop-qty">×' + esc(String(item.qty)) + "</i>";
-              const ink = item.ink ? ' style="color:' + esc(item.ink) + '"' : "";
+              const tint = window.ShirmoItems ? window.ShirmoItems.inkOf(item) : (item.ink || "");
+              const ink = tint ? ' style="color:' + esc(tint) + '"' : "";
               const note = String(item.note || "").trim();
               return "<li" + ink + ">" + icon + '<span class="board-item"><b>' + esc(item.name || "Предмет") + "</b>" +
                 (note ? '<small class="board-note">' + esc(note) + "</small>" : "") +
@@ -410,10 +411,11 @@
             const eye = item.off ? g.hide : g.eye;
             const eyeTitle = item.off ? "Показать товар игрокам" : "Скрыть товар от игроков";
             const mark = ' data-id="' + esc(item.id || "") + '"';
-            const ink = item.ink ? ' style="color:' + esc(item.ink) + '"' : "";
+            const tint = window.ShirmoItems ? window.ShirmoItems.inkOf(item) : (item.ink || "");
+            const ink = tint ? ' style="color:' + esc(tint) + '"' : "";
             const face = item.icon ? '<img alt="" src="' + esc(item.icon) + '">' : (g.bag || "");
             return '<li class="shop-item' + (item.off ? " is-off" : "") + (item.hidden ? " is-gone" : "") + '"' + ink + ' data-good="' + esc(item.id || "") + '">' +
-              '<div class="shop-head"><button type="button" class="ware-face shop-icon" data-shop-edit' + mark + ' title="Иконка и цвет" aria-label="Иконка и цвет">' + face + "</button>" +
+              '<div class="shop-head"><button type="button" class="ware-face shop-icon" data-shop-edit' + mark + ' title="Иконка и редкость" aria-label="Иконка и редкость">' + face + "</button>" +
               '<div class="shop-title"><span>' + esc(item.name || "Предмет") + "</span>" +
               '<input data-shop="note"' + mark + ' type="text" value="' + esc(item.note || "") + '" placeholder="Заметка" aria-label="Заметка"></div>' +
               '<div class="shop-acts">' +
@@ -1188,7 +1190,15 @@
       if (showGoods) showGoods.addEventListener("click", function (event) {
         event.stopPropagation();
         const rows = saleGoods(linkedNpc(marker) || marker).filter(function (item) { return !item.hidden && !item.off; }).map(function (item) {
-          return { name: item.name, price: window.ShirmoCoins.text(item, ctx.campaign), icon: item.icon || "", note: item.note || "" };
+          const ink = window.ShirmoItems ? window.ShirmoItems.inkOf(item) : (item.ink || "");
+          return {
+            name: item.name,
+            price: window.ShirmoCoins.text(item, ctx.campaign),
+            icon: item.icon || "",
+            note: item.note || "",
+            ink: ink,
+            rarity: item.rarity || ""
+          };
         });
         if (ctx.showGoods) ctx.showGoods(rows);
       });
@@ -1352,9 +1362,15 @@
       edit.id = "good-edit";
       edit.className = "pop";
       edit._item = item;
-      const ink = item.ink || "#f3ead8";
+      if (window.ShirmoItems) window.ShirmoItems.applyRarity(item);
       function face() {
         return item.icon ? '<img alt="" src="' + esc(item.icon) + '">' : "";
+      }
+      function tintRows() {
+        const tint = window.ShirmoItems ? window.ShirmoItems.inkOf(item) : (item.ink || "");
+        document.querySelectorAll('.shop-item[data-good="' + item.id + '"], .ware-item[data-id="' + item.id + '"]').forEach(function (row) {
+          row.style.color = tint || "";
+        });
       }
       function libraryOptions() {
         return ((ctx.library().images) || []).map(function (image) {
@@ -1363,9 +1379,14 @@
           return '<option value="' + esc(image.url) + '">' + esc(label) + "</option>";
         }).join("");
       }
-      edit.innerHTML = '<div class="pop-card ware-edit-card" role="dialog" aria-label="Иконка и цвет"><div class="pop-head"><h2>Иконка и цвет</h2><button type="button" data-pop-close title="Закрыть">×</button></div>' +
+      function raritySelect() {
+        if (!window.ShirmoItems) return "";
+        return '<label class="ware-ink" title="Редкость задаёт цвет строки">Редкость<select data-edit-rarity aria-label="Редкость">' +
+          window.ShirmoItems.rarityOptions(item.rarity) + "</select></label>";
+      }
+      edit.innerHTML = '<div class="pop-card ware-edit-card" role="dialog" aria-label="Иконка и редкость"><div class="pop-head"><h2>Иконка и редкость</h2><button type="button" data-pop-close title="Закрыть">×</button></div>' +
         '<div class="ware-edit"><div class="ware-edit-face">' + face() + "</div>" +
-        '<label class="ware-ink">Цвет<input data-edit-ink type="color" value="' + esc(ink) + '" aria-label="Цвет строки"></label>' +
+        raritySelect() +
         '<label class="file-btn" title="Своя иконка. Попадёт в библиотеку, в раздел «Иконки товаров»">' + window.ShirmoGlyph.upload + '<input type="file" accept="image/*" data-edit-file aria-label="Загрузить иконку"></label>' +
         '<select data-edit-lib title="Иконка из библиотеки" aria-label="Иконка из библиотеки"><option value="">Библиотека</option>' + libraryOptions() + "</select>" +
         '<div class="ware-find"><input data-edit-find type="text" placeholder="Поиск" aria-label="Поиск предмета для иконки" title="Иконка из общего списка предметов"><div class="ware-hits" hidden></div></div>' +
@@ -1377,19 +1398,26 @@
       function shown() {
         const slot = edit.querySelector(".ware-edit-face");
         if (slot && edit.isConnected) slot.innerHTML = face();
+        tintRows();
         if (onChange) onChange();
         else {
           paintBoard();
           dirty();
         }
       }
-      edit.querySelector("[data-edit-ink]").addEventListener("input", function (event) {
-        item.ink = event.target.value;
-        document.querySelectorAll('.shop-item[data-good="' + item.id + '"], .ware-item[data-id="' + item.id + '"]').forEach(function (row) {
-          row.style.color = item.ink;
+      const rarityField = edit.querySelector("[data-edit-rarity]");
+      if (rarityField) {
+        rarityField.addEventListener("change", function () {
+          item.rarity = rarityField.value || "";
+          if (window.ShirmoItems) {
+            if (item.rarity) window.ShirmoItems.applyRarity(item);
+            else item.ink = "";
+          }
+          tintRows();
+          if (onChange) onChange();
+          else dirty();
         });
-        dirty();
-      });
+      }
       edit.querySelector("[data-edit-lib]").addEventListener("change", function (event) {
         if (!event.target.value) return;
         item.icon = event.target.value;
@@ -1431,6 +1459,9 @@
               if (icon) item.icon = icon;
               if (!String(item.name || "").trim()) item.name = window.ShirmoItems.title(row);
               if (!String(item.price || "").trim() && !item.coin) window.ShirmoCoins.adopt(item, window.ShirmoItems.price(row), ctx.campaign);
+              item.rarity = window.ShirmoItems.rarityOf(row) || item.rarity || "";
+              window.ShirmoItems.applyRarity(item);
+              if (rarityField) rarityField.value = item.rarity || "";
               find.value = "";
               box.hidden = true;
               box.innerHTML = "";
@@ -1544,7 +1575,7 @@
         return rows;
       }
       function blank() {
-        return { id: crypto.randomUUID(), name: "", price: "", note: "", icon: "", qty: "", hideEmpty: false, ink: "" };
+        return { id: crypto.randomUUID(), name: "", price: "", note: "", icon: "", qty: "", hideEmpty: false, ink: "", rarity: "" };
       }
       function putNew(home) {
         const item = blank();
@@ -1580,8 +1611,9 @@
           const open = !!pop._open[item.id];
           const eye = item.off ? window.ShirmoGlyph.hide : window.ShirmoGlyph.eye;
           const eyeTitle = item.off ? "Показать товар игрокам" : "Скрыть товар от игроков";
-          return '<article class="ware-item' + (item.off ? " is-off" : "") + '" data-id="' + esc(item.id) + '"' + (item.ink ? ' style="color:' + esc(item.ink) + '"' : "") + ">" +
-            '<div class="ware-head"><button type="button" class="ware-face" data-good-edit' + mark + ' title="Иконка и цвет" aria-label="Иконка и цвет">' + face + "</button>" +
+          const tint = window.ShirmoItems ? window.ShirmoItems.inkOf(item) : (item.ink || "");
+          return '<article class="ware-item' + (item.off ? " is-off" : "") + '" data-id="' + esc(item.id) + '"' + (tint ? ' style="color:' + esc(tint) + '"' : "") + ">" +
+            '<div class="ware-head"><button type="button" class="ware-face" data-good-edit' + mark + ' title="Иконка и редкость" aria-label="Иконка и редкость">' + face + "</button>" +
             '<div class="ware-title">' +
             '<input data-good="name"' + mark + ' type="text" value="' + esc(item.name || "") + '" placeholder="Название" aria-label="Название товара">' +
             '<input data-good="note"' + mark + ' type="text" value="' + esc(item.note || "") + '" placeholder="Заметка" aria-label="Заметка">' +
@@ -2858,6 +2890,15 @@
     bag: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10h16v9H4zM4 10l2-4h12l2 4M12 10v9M9.5 14.5h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>'
   };
 
+  const RARITY_COLORS = {
+    1: "#f3ead8",
+    2: "#4ade80",
+    3: "#60a5fa",
+    4: "#c084fc",
+    5: "#fb923c",
+    6: "#f472b6"
+  };
+
   window.ShirmoItems = {
     ready: function () {
       if (window.allItems) return Promise.resolve();
@@ -2880,6 +2921,87 @@
     price: function (row) {
       const rarity = window.oRarity && row && row.en && window.oRarity[String(row.en.rarity)];
       return (rarity && rarity.coast) || "";
+    },
+    rarityOf: function (row) {
+      const n = Number(row && row.en && row.en.rarity);
+      return n >= 1 && n <= 6 ? n : 0;
+    },
+    rarityLabel: function (id) {
+      const key = String(id || "");
+      const row = window.oRarity && window.oRarity[key];
+      return (row && row.text && row.text.ru && row.text.ru.title) || "";
+    },
+    rarityColor: function (id) {
+      const n = Number(id) || 0;
+      return RARITY_COLORS[n] || "";
+    },
+    rarityId: function (value) {
+      const raw = String(value == null ? "" : value).trim().toLowerCase();
+      if (!raw) return 0;
+      if (/^[1-6]$/.test(raw)) return Number(raw);
+      const map = {
+        "обычная": 1, "обычный": 1, "обычное": 1, common: 1,
+        "необычная": 2, "необычный": 2, "необычное": 2, uncommon: 2,
+        "редкая": 3, "редкий": 3, "редкое": 3, rare: 3,
+        "очень редкая": 4, "очень редкий": 4, "очень редкое": 4, "very rare": 4, "veryrare": 4,
+        "легендарная": 5, "легендарный": 5, "легендарное": 5, legendary: 5,
+        "артефакт": 6, artifact: 6
+      };
+      if (map[raw]) return map[raw];
+      if (window.oRarity) {
+        const hit = Object.keys(window.oRarity).find(function (key) {
+          const row = window.oRarity[key];
+          const ru = row && row.text && row.text.ru && row.text.ru.title || "";
+          const en = row && row.text && row.text.en && row.text.en.title || "";
+          return ru.toLowerCase() === raw || en.toLowerCase() === raw;
+        });
+        if (hit) return Number(hit) || 0;
+      }
+      return 0;
+    },
+    rarityOptions: function (selected) {
+      const cur = Number(selected) || 0;
+      let html = '<option value="">Без редкости</option>';
+      [1, 2, 3, 4, 5, 6].forEach(function (id) {
+        const label = window.ShirmoItems.rarityLabel(id) || ("Редкость " + id);
+        html += '<option value="' + id + '"' + (cur === id ? " selected" : "") + " style=\"color:" +
+          (RARITY_COLORS[id] || "inherit") + '">' + label + "</option>";
+      });
+      return html;
+    },
+    applyRarity: function (item) {
+      if (!item) return "";
+      const id = window.ShirmoItems.rarityId(item.rarity);
+      item.rarity = id || "";
+      const color = window.ShirmoItems.rarityColor(id);
+      if (color) item.ink = color;
+      else if (!id) item.ink = item.ink || "";
+      return color;
+    },
+    inkOf: function (item) {
+      if (!item) return "";
+      const fromRarity = window.ShirmoItems.rarityColor(window.ShirmoItems.rarityId(item.rarity));
+      return fromRarity || item.ink || "";
+    },
+    findIcon: function (value) {
+      const raw = String(value || "").trim();
+      if (!raw) return "";
+      if (raw.indexOf("/catalog/") === 0 || raw.indexOf("http") === 0) return raw;
+      if (!window.allItems) return raw;
+      const lower = raw.toLowerCase();
+      const file = decodeURIComponent(raw.split("?")[0].split("/").pop() || "").toLowerCase();
+      const row = window.allItems.find(function (item) {
+        const img = item.en && item.en.img ? String(item.en.img).toLowerCase() : "";
+        const ru = item.ru && item.ru.name ? String(item.ru.name).toLowerCase() : "";
+        const en = item.en && item.en.name ? String(item.en.name).toLowerCase() : "";
+        return img === file || img === lower || ru === lower || en === lower;
+      });
+      return row ? window.ShirmoItems.icon(row) : raw;
+    },
+    catalogFile: function (icon) {
+      const text = String(icon || "");
+      if (text.indexOf("/catalog/img/items/") !== 0) return "";
+      return decodeURIComponent(text.split("?")[0].split("/").pop() || "");
     },
     find: function (q) {
       const query = String(q || "").trim().toLowerCase();
