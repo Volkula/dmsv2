@@ -482,12 +482,14 @@
         const fumble = raw <= 1;
         const hit = crit || (!fumble && total >= ac);
         if (!hit) {
-          note((actor.name || "Боец") + " промах по " + (foe.name || "цели") + " (" + total + " против КД " + ac + ")");
+          note("Не пробил · " + (actor.name || "Боец") + " → " + (foe.name || "цель") +
+            " · " + total + " против КД " + ac);
           save();
           paint();
           return;
         }
-        note((actor.name || "Боец") + (crit ? " крит" : " попадание") + " по " + (foe.name || "цели") + " (" + total + " против КД " + ac + ")");
+        note("Пробил" + (crit ? " (крит)" : "") + " · " + (actor.name || "Боец") + " → " + (foe.name || "цель") +
+          " · " + total + " против КД " + ac);
         return damage(actor, true, crit);
       });
     }
@@ -1119,6 +1121,7 @@
         '<input data-q="initBonus" data-id="' + esc(actor.id) + '" class="num init-bonus" type="number" value="' + esc(String(initBonusOf(actor))) + '" aria-label="Бонус инициативы" title="Бонус к броску к20">' +
         '<button type="button" data-act="roll-init" data-id="' + esc(actor.id) + '" title="' + esc(initRollTitle(actor)) + '">' + esc(initRollLabel(actor)) + "</button></td>" +
         '<td><input data-q="name" data-id="' + esc(actor.id) + '" type="text" value="' + esc(actor.name || "") + '" aria-label="Имя"></td>' +
+        '<td class="ac-cell"><input data-q="ac" data-id="' + esc(actor.id) + '" class="num" type="number" min="0" value="' + esc(String(Number(actor.ac) || 10)) + '" aria-label="КД" title="Класс доспеха (КД)"></td>' +
         '<td class="hp-cell"><span class="hp-stack">' + hpMeter(hp, max) +
         '<input data-q="hp" data-id="' + esc(actor.id) + '" type="range" min="0" max="' + max + '" value="' + hp + '" aria-label="Хиты"></span>' +
         '<input data-q="hp" data-id="' + esc(actor.id) + '" class="num hp-read" type="number" min="0" max="' + max + '" value="' + hp + '" aria-label="Хиты числом" title="Текущие хиты"></td>' +
@@ -1129,9 +1132,8 @@
       const squadPick = '<label title="Перенести бойца в другой отряд">Отряд<select data-move-squad="' + esc(actor.id) + '" aria-label="Отряд бойца">' +
         squadOptions(home && home.id) + "</select></label>" +
         '<button type="button" data-act="copy-fighter" data-id="' + esc(actor.id) + '" title="Скопировать бойца в этот же отряд">Копия</button>';
-      const more = '<tr class="fighter-more" data-more="' + esc(actor.id) + '"' + (open ? "" : " hidden") + '><td colspan="8"><div class="more-grid">' +
+      const more = '<tr class="fighter-more" data-more="' + esc(actor.id) + '"' + (open ? "" : " hidden") + '><td colspan="9"><div class="more-grid">' +
         '<label>Макс.<input data-q="hpMax" data-id="' + esc(actor.id) + '" class="num" type="number" min="1" value="' + max + '" aria-label="Максимум хитов"></label>' +
-        '<label>КД<input data-q="ac" data-id="' + esc(actor.id) + '" class="num" type="number" min="0" value="' + esc(String(actor.ac || 0)) + '" aria-label="Класс доспеха"></label>' +
         '<label class="check">Полоса<input data-q="boss" data-id="' + esc(actor.id) + '" type="checkbox"' + (isBoss(actor) ? " checked" : "") + (actor.side === "player" ? " disabled" : "") + ' aria-label="Полоса хитов" title="Полоса хитов на экране игроков"></label>' +
         '<label>Оружие<input data-q="weapon" data-id="' + esc(actor.id) + '" type="text" value="' + esc(actor.weapon || "") + '" aria-label="Оружие"></label>' +
         '<label>Урон<input data-q="damage" data-id="' + esc(actor.id) + '" type="text" value="' + esc(actor.damage || "") + '" aria-label="Урон"></label>' +
@@ -1144,17 +1146,17 @@
     function sheetHtml(now) {
       const rowsHtml = battle.board.map(function (group) {
         if (group.kind === "sep") {
-          return '<tr class="sep-row" data-board="' + esc(group.id) + '"><td colspan="7"><input data-sep="' + esc(group.id) + '" value="' + esc(group.text || "") + '" placeholder="Разделитель" aria-label="Разделитель"></td>' +
+          return '<tr class="sep-row" data-board="' + esc(group.id) + '"><td colspan="8"><input data-sep="' + esc(group.id) + '" value="' + esc(group.text || "") + '" placeholder="Разделитель" aria-label="Разделитель"></td>' +
             '<td><button type="button" data-act="sep-del" data-id="' + esc(group.id) + '" title="Убрать разделитель">×</button></td></tr>';
         }
         const members = (group.memberIds || []).map(function (id) {
           return battle.actors.find(function (actor) { return actor.id === id; });
         }).filter(Boolean);
-        const head = '<tr class="squad-row" data-board="' + esc(group.id) + '"><td colspan="7"><input data-squad="' + esc(group.id) + '" value="' + esc(group.name || "Отряд") + '" aria-label="Отряд"></td>' +
+        const head = '<tr class="squad-row" data-board="' + esc(group.id) + '"><td colspan="8"><input data-squad="' + esc(group.id) + '" value="' + esc(group.name || "Отряд") + '" aria-label="Отряд"></td>' +
           '<td><button type="button" data-act="squad-del" data-id="' + esc(group.id) + '" title="Убрать отряд из боя целиком">×</button></td></tr>';
         return head + members.map(function (actor) { return fighterRow(actor, now, group.id); }).join("");
       }).join("");
-      return rowsHtml || '<tr><td colspan="8">Бой пуст. Средняя кнопка мыши добавляет бойца.</td></tr>';
+      return rowsHtml || '<tr><td colspan="9">Бой пуст. Средняя кнопка мыши добавляет бойца.</td></tr>';
     }
 
     function paint() {
@@ -1163,7 +1165,7 @@
       const prev = host.querySelector(".battle-sheet");
       const scroll = prev ? prev.scrollTop : 0;
       host.innerHTML = '<div class="battle-desk"><section class="battle-sheet">' + toolsHtml(now) +
-        '<table class="cast queue-table fight-table"><thead><tr><th></th><th></th><th>Число</th><th>Имя</th><th>Хиты</th><th></th><th></th><th></th></tr></thead><tbody>' +
+        '<table class="cast queue-table fight-table"><thead><tr><th></th><th></th><th>Число</th><th>Имя</th><th title="Класс доспеха">КД</th><th>Хиты</th><th></th><th></th><th></th></tr></thead><tbody>' +
         sheetHtml(now) + "</tbody></table></section>" +
         '<aside class="battle-log-pane"><label>Лог боя<textarea id="battle-log">' + esc(logText(battle.log)) + "</textarea></label></aside></div>";
       const sheet = host.querySelector(".battle-sheet");
@@ -1319,8 +1321,9 @@
       openPop(actor.name || "Боец",
         '<button type="button" data-act="life">' + (actor.dead ? "Оживить" : "Убить") + "</button>" +
         '<div class="battle-pair"><label title="Текущие хиты">ХП<input id="pop-hp" type="number" min="0" value="' + hp + '"></label>' +
-        '<label title="Максимум хитов">Макс.<input id="pop-hp-max" type="number" min="1" value="' + max + '"></label></div>' +
-        '<button type="button" data-act="save-hp" title="Записать хиты">Сохранить ХП</button>' +
+        '<label title="Максимум хитов">Макс.<input id="pop-hp-max" type="number" min="1" value="' + max + '"></label>' +
+        '<label title="Класс доспеха">КД<input id="pop-ac" type="number" min="0" value="' + esc(String(Number(actor.ac) || 10)) + '"></label></div>' +
+        '<button type="button" data-act="save-hp" title="Записать хиты и КД">Сохранить</button>' +
         '<details class="pop-fold" open><summary>Отряд</summary>' +
         '<label title="Перенести бойца в другой отряд">Отряд<select id="pop-squad">' + squadOptions(home && home.id) + "</select></label>" +
         '<div class="row"><button type="button" data-act="move-squad" title="Перенести в выбранный отряд">Перенести</button>' +
@@ -1872,9 +1875,11 @@
       if (act === "save-hp" && actor) {
         const maxField = field("pop-hp-max");
         const hpField = field("pop-hp");
+        const acField = field("pop-ac");
         actor.hpMax = Math.max(1, Math.round(Number(maxField && maxField.value) || actor.hpMax || 1));
+        actor.ac = Math.max(0, Math.round(Number(acField && acField.value) || 10));
         setHp(actor, Number(hpField && hpField.value));
-        syncPerson(actor, ["hp", "hpMax"]);
+        syncPerson(actor, ["hp", "hpMax", "ac"]);
         save();
         paint();
         openFighter(actor);
