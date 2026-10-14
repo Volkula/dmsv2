@@ -43,7 +43,7 @@ window.ShirmoCodex = (function () {
   function hint(key) {
     return {
       name: "Имя или название записи",
-      note: "Заметка ведущего. Игрокам не уходит",
+      note: "Заметка. У товаров видна игрокам",
       weapon: "Чем вооружён",
       damage: "Урон атаки, например 1к6",
       hp: "Сколько хитов сейчас",
@@ -860,7 +860,7 @@ window.ShirmoCodex = (function () {
         const off = !!item.off;
         return '<span class="place-person' + (off ? " is-off" : "") + '">' + icon +
           '<input data-good-name data-i="' + index + '" data-item="' + itemIndex + '" type="text" value="' + esc(item.name || "") + '" aria-label="Название товара">' +
-          '<input data-good-note data-i="' + index + '" data-item="' + itemIndex + '" type="text" value="' + esc(item.note || "") + '" placeholder="Заметка" title="Заметка, игрокам не уходит" aria-label="Заметка">' +
+          '<input data-good-note data-i="' + index + '" data-item="' + itemIndex + '" type="text" value="' + esc(item.note || "") + '" placeholder="Заметка" title="Заметка для игроков" aria-label="Заметка">' +
           '<button type="button" class="icon-btn" data-good-edit data-i="' + index + '" data-item="' + itemIndex + '" title="Иконка и цвет" aria-label="Иконка и цвет">' + (window.ShirmoGlyph ? window.ShirmoGlyph.pencil : "✎") + "</button>" +
           '<button type="button" class="icon-btn eye' + (off ? " is-off" : "") + '" data-good-eye data-i="' + index + '" data-item="' + itemIndex + '" title="' + (off ? "Показать товар игрокам" : "Скрыть товар от игроков") + '" aria-label="' + (off ? "Показать товар игрокам" : "Скрыть товар от игроков") + '">' + (window.ShirmoGlyph ? (off ? window.ShirmoGlyph.hide : window.ShirmoGlyph.eye) : "●") + "</button>" +
           sheetPick +
@@ -891,7 +891,7 @@ window.ShirmoCodex = (function () {
       return '<article class="ware-item' + (item.off ? " is-off" : "") + '"' + (item.ink ? ' style="color:' + esc(item.ink) + '"' : "") + mark + ">" +
         '<div class="ware-head"><span class="ware-face">' + face + "</span>" +
         '<span class="ware-title"><input data-ware="name"' + mark + ' type="text" value="' + esc(item.name || "") + '" placeholder="Название" title="Название товара" aria-label="Название товара">' +
-        '<input data-ware="note"' + mark + ' class="ware-note" type="text" value="' + esc(item.note || "") + '" placeholder="Заметка" title="Заметка, игрокам не уходит" aria-label="Заметка"></span>' +
+        '<input data-ware="note"' + mark + ' class="ware-note" type="text" value="' + esc(item.note || "") + '" placeholder="Заметка" title="Заметка для игроков" aria-label="Заметка"></span>' +
         '<div class="ware-acts">' +
         '<button type="button" class="icon-btn" data-ware-edit' + mark + ' title="Иконка и цвет" aria-label="Иконка и цвет">' + pencil + "</button>" +
         '<button type="button" class="icon-btn ware-fold' + (open ? " is-open" : "") + '" data-ware-fold="' + esc(key) + '" title="Параметры товара" aria-label="Параметры товара" aria-expanded="' + (open ? "true" : "false") + '">' + fold + "</button>" +
@@ -934,7 +934,7 @@ window.ShirmoCodex = (function () {
           return '<article class="ware-item' + (item.off ? " is-off" : "") + '"' + (item.ink ? ' style="color:' + esc(item.ink) + '"' : "") + mark + ">" +
             '<div class="ware-head"><span class="ware-face">' + face + "</span>" +
             '<span class="ware-title"><input data-own-field="name"' + mark + ' type="text" value="' + esc(item.name || "") + '" aria-label="Название товара">' +
-            '<input data-own-field="note"' + mark + ' class="ware-note" type="text" value="' + esc(item.note || "") + '" placeholder="Заметка" title="Заметка, игрокам не уходит" aria-label="Заметка"></span>' +
+            '<input data-own-field="note"' + mark + ' class="ware-note" type="text" value="' + esc(item.note || "") + '" placeholder="Заметка" title="Заметка для игроков" aria-label="Заметка"></span>' +
             '<div class="ware-acts">' +
             '<button type="button" class="icon-btn" data-ware-edit' + mark + ' title="Иконка и цвет" aria-label="Иконка и цвет">' + (window.ShirmoGlyph ? window.ShirmoGlyph.pencil : "✎") + "</button>" +
             '<button type="button" class="icon-btn ware-fold' + (open ? " is-open" : "") + '" data-ware-fold="' + esc(key) + '" title="Параметры товара" aria-label="Параметры товара" aria-expanded="' + (open ? "true" : "false") + '">' + (window.ShirmoGlyph ? window.ShirmoGlyph.fold : "▾") + "</button>" +
@@ -1771,7 +1771,7 @@ window.ShirmoCodex = (function () {
           if (!item.hideEmpty) return true;
           return !(item.qty === 0 || item.qty === "0");
         }).map(function (item) {
-          return { name: item.name, price: window.ShirmoCoins.text(item, ctx.campaign), icon: item.icon || "" };
+          return { name: item.name, price: window.ShirmoCoins.text(item, ctx.campaign), icon: item.icon || "", note: item.note || "" };
         }));
         return;
       }

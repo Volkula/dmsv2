@@ -379,7 +379,18 @@ label.file-btn svg { width: 18px; height: 18px; display: block; }
 
 .board-card img { width: 40px; height: 40px; object-fit: contain; }
 
-.board-card em { margin-left: auto; font-style: normal; color: #e6c36a; }
+.board-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+.board-item b { font-weight: 500; }
+
+.board-note {
+  color: #cbb89a;
+  font-size: 13px;
+  line-height: 1.35;
+  white-space: pre-wrap;
+}
+
+.board-card em { margin-left: auto; font-style: normal; color: #e6c36a; flex: none; }
 
 .talk-shop-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 
@@ -1223,7 +1234,7 @@ label.check input { width: auto; }
 
 .talk-mood-list {
   position: absolute;
-  z-index: 6;
+  z-index: 80;
   left: 0;
   bottom: calc(100% + 6px);
   display: flex;

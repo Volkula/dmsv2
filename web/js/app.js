@@ -573,7 +573,10 @@
     show.className = "board-show";
     const rows = (goods || []).map(function (item) {
       const icon = item.icon ? '<img alt="" src="' + esc(item.icon) + '">' : "";
-      return "<li>" + icon + "<span>" + esc(item.name || "Предмет") + "</span><em>" + esc(item.price || "") + "</em></li>";
+      const note = String(item.note || "").trim();
+      return "<li>" + icon + '<span class="board-item"><b>' + esc(item.name || "Предмет") + "</b>" +
+        (note ? '<small class="board-note">' + esc(note) + "</small>" : "") +
+        "</span><em>" + esc(item.price || "") + "</em></li>";
     }).join("");
     show.innerHTML = '<div class="board-card" role="dialog" aria-label="' + esc(title || "Товары") + '"><h2>' + esc(title || "Товары") + "</h2><ul>" +
       (rows || '<li class="note">Пусто</li>') + "</ul></div>";
@@ -587,7 +590,12 @@
 
   function publishGoods(roomId, headers, goods) {
     const list = (goods || []).slice(0, 40).map(function (item) {
-      return { name: item.name || "", price: item.price || "", icon: item.icon || "" };
+      return {
+        name: item.name || "",
+        price: item.price || "",
+        icon: item.icon || "",
+        note: item.note || ""
+      };
     }).filter(function (item) { return String(item.name).trim(); });
     showBoard("Товары", list, function () { hidePlayerGoods(roomId, headers); });
     return api("/api/rooms/" + roomId + "/events", {
