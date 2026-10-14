@@ -479,9 +479,15 @@
         const rawDie = rolled.dice && rolled.dice[0] ? Number(rolled.dice[0].value) : NaN;
         const raw = Number.isFinite(rawDie) ? rawDie : (total - bonus);
         const crit = raw >= 20;
-        const wouldHit = crit || (raw > 1 && total >= ac);
-        note((actor.name || "Боец") + " · " + (actor.weapon || "Атака") + " по " + (foe.name || "цели") +
-          ": " + total + (wouldHit ? " ≥" : " <") + " КД " + ac + (crit ? " (крит)" : ""));
+        const fumble = raw <= 1;
+        const hit = crit || (!fumble && total >= ac);
+        if (!hit) {
+          note((actor.name || "Боец") + " промах по " + (foe.name || "цели") + " (" + total + " против КД " + ac + ")");
+          save();
+          paint();
+          return;
+        }
+        note((actor.name || "Боец") + (crit ? " крит" : " попадание") + " по " + (foe.name || "цели") + " (" + total + " против КД " + ac + ")");
         return damage(actor, true, crit);
       });
     }
@@ -1059,7 +1065,7 @@
         '<button type="button" data-act="init" title="Бросить инициативу всем на ширме, без показа кубиков">Инициатива всем</button>' +
         '<button type="button" data-act="place" title="Поставить врагов на текущую карту. Игроки их не видят, пока не снимете скрытие">На карту</button>' +
         '<button type="button" data-act="pull-hp" title="Подтянуть хиты и характеристики из справочника по имени">ХП из справочника</button></div></div>' +
-        '<p class="note">«Атаковать» — к20 по цели и сразу урон в хиты (убийство при 0). КД в логе для справки. Средняя кнопка — боец или отряд. к20 — инициатива.</p>' +
+        '<p class="note">«Атаковать» — бросок по КД цели, при попадании сразу урон и снятие хитов. Средняя кнопка — боец, черта или отряд. Правая по бойцу — статус. к20 — инициатива.</p>' +
         toneHtml();
     }
 
