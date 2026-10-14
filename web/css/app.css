@@ -704,9 +704,9 @@ label.check input { width: auto; }
 
 .map-node .map-loc { text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px 8px; }
 
-#map-tree, #map-bin-list, #map-label-box, #map-ping-box { display: flex; flex-direction: column; gap: 4px; }
+#map-tree, #map-bin-list, #map-label-box, #map-image-box, #map-ping-box { display: flex; flex-direction: column; gap: 4px; }
 
-#map-label-box[hidden], #map-ping-box[hidden], #map-bin-list[hidden] { display: none; }
+#map-label-box[hidden], #map-image-box[hidden], #map-ping-box[hidden], #map-bin-list[hidden] { display: none; }
 
 #map-bin { position: relative; }
 
@@ -921,7 +921,22 @@ label.check input { width: auto; }
 
 .map-pin:hover .tip, .map-pin:focus .tip { display: block; }
 
-.map-pin.is-hidden i, .map-label.is-hidden { box-shadow: 0 0 0 2px #e6c36a; }
+.map-pin.is-hidden i, .map-pin.image.is-hidden img, .map-label.is-hidden { box-shadow: 0 0 0 2px #e6c36a; }
+
+.map-pin.image {
+  transform: translate(-50%, -50%);
+  z-index: 1;
+}
+
+.map-pin.image img {
+  display: block;
+  width: var(--pin, 120px);
+  height: auto;
+  max-height: calc(var(--pin, 120px) * 1.4);
+  object-fit: contain;
+  pointer-events: none;
+  filter: drop-shadow(0 1px 3px #000);
+}
 
 .map-label {
   transform: translate(-50%, -50%);

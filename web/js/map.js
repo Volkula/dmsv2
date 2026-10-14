@@ -279,6 +279,12 @@
   function pinHtml(item, kind, master) {
     if (!master && item.hidden) return "";
     const tip = item.tip ? '<span class="tip">' + esc(item.tip) + "</span>" : "";
+    if (kind === "image") {
+      const url = item.url || item.icon || "";
+      if (!url) return "";
+      const size = Math.min(480, Math.max(24, Number(item.pinSize) || 120));
+      return '<button type="button" class="map-pin image' + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="image" aria-label="' + esc(item.name || "Картинка") + '" style="left:' + (item.x * 100) + "%;top:" + (item.y * 100) + "%;--pin:" + size + 'px"><img alt="" src="' + esc(url) + '">' + tip + "</button>";
+    }
     const portrait = kind === "npc" || kind === "loc" || kind === "foe" ? (item.portrait || "") : "";
     const size = Math.min(160, Math.max(12, Number(item.pinSize) || (portrait ? 56 : 14)));
     const badge = master && item.emoji ? '<em class="pin-emoji">' + esc(item.emoji) + "</em>" : "";
@@ -470,7 +476,7 @@
     const strokes = (source.strokes || []).map(strokeSvg).join("");
     const locations = (source.locations || []).map(function (item) { return pinHtml(item, "loc", master); }).join("");
     const markers = (source.markers || []).map(function (item) {
-      const kind = item.kind === "npc" ? "npc" : (item.kind === "foe" ? "foe" : "mark");
+      const kind = item.kind === "npc" ? "npc" : (item.kind === "foe" ? "foe" : (item.kind === "image" ? "image" : "mark"));
       return pinHtml(item, kind, master);
     }).join("");
     const labels = (source.labels || []).map(labelHtml).join("");
@@ -516,6 +522,7 @@
     ["loc", "Локация", icon('<path d="M12 21s6-5.2 6-10a6 6 0 1 0-12 0c0 4.8 6 10 6 10z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="11" r="1.6" fill="currentColor"/>')],
     ["mark", "Метка", icon('<path d="M12 3l7 9-7 9-7-9z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>')],
     ["npc", "НПС", icon('<circle cx="12" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 19c1.2-3 3.2-4.5 6-4.5S16.8 16 18 19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>')],
+    ["image", "Картинка", icon('<rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8.5" cy="10" r="1.4" fill="currentColor"/><path d="M3 16l5-4 4 3 3-2 6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>')],
     ["label", "Надпись", icon('<path d="M7 18h10M9 16l3-10 3 10M10 13h4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>')],
     ["brush", "Кисть", icon('<path d="M14 4l6 6-8 8H6v-6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>')],
     ["erase", "Ластик", icon('<path d="M4 14l7-7 7 7-4 4H8z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>')],
@@ -564,6 +571,11 @@
       '<label title="Шрифт новой надписи">Шрифт<select id="map-font"></select></label>' +
       '<div class="row"><button type="button" id="map-bold" title="Жирный">Ж</button><button type="button" id="map-italic" title="Курсив">К</button><button type="button" id="map-under" title="Подчёркнутый">Ч</button></div>' +
       '<label title="Размер новой надписи">Размер<input id="map-label-size" type="range" min="14" max="96" value="28"></label></div>' +
+      '<div id="map-image-box" hidden>' +
+      '<label title="Картинка из библиотеки">Из библиотеки<select id="map-image-lib"><option value="">Выберите картинку</option></select></label>' +
+      '<label class="file-btn" title="Загрузить картинку на карту">Загрузить<input type="file" id="map-image-file" accept="image/*" aria-label="Загрузить картинку"></label>' +
+      '<label title="Размер новой картинки на карте">Размер<input id="map-image-size" type="range" min="32" max="400" value="120"></label>' +
+      '<p class="note">Клик по карте ставит выбранную картинку. Потом можно скрыть или изменить размер.</p></div>' +
       '<div id="map-ping-box" hidden><label title="Как выглядит вспышка пинга">Пинг<select id="map-ping"><option value="rings">Круги</option><option value="flash">Вспышка</option><option value="lights">Огоньки</option></select></label></div>' +
       '<div class="map-tree-head"><span>Локации</span>' +
       '<button type="button" id="map-loc-add" title="Новая локация на текущей карте" aria-label="Добавить локацию">' + icon('<path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "</button>" +
@@ -678,10 +690,22 @@
       host.querySelector("#map-day").classList.toggle("is-on", sheet.mode !== "night");
       host.querySelector("#map-night").classList.toggle("is-on", sheet.mode === "night");
       host.querySelector("#map-label-box").hidden = tool !== "label";
+      host.querySelector("#map-image-box").hidden = tool !== "image";
       host.querySelector("#map-ping-box").hidden = tool !== "ping";
       host.querySelector("#map-bold").classList.toggle("is-on", styleBold);
       host.querySelector("#map-italic").classList.toggle("is-on", styleItalic);
       host.querySelector("#map-under").classList.toggle("is-on", styleUnderline);
+      if (tool === "image") fillImageLib();
+    }
+    function fillImageLib(selectedUrl) {
+      const pick = host.querySelector("#map-image-lib");
+      if (!pick) return;
+      const images = (ctx.library().images) || [];
+      const cur = selectedUrl != null ? selectedUrl : pick.value;
+      pick.innerHTML = '<option value="">Выберите картинку</option>' + images.map(function (image) {
+        return '<option value="' + esc(image.url) + '"' + (image.url === cur ? " selected" : "") + ">" + esc(image.name || "Картинка") + "</option>";
+      }).join("");
+      if (cur) pick.value = cur;
     }
     function treeHtml(parentId, depth) {
       return view().locations.filter(function (item) { return (item.parentId || "") === parentId && !item.trashed; }).map(function (item) {
@@ -2096,11 +2120,20 @@
       const fontOptions = (known ? "" : '<option value="' + esc(currentFont) + '">Текущий</option>') + fonts.map(function (font) {
         return '<option value="' + esc(font.font) + '"' + (font.font === currentFont ? " selected" : "") + ">" + esc(font.name) + "</option>";
       }).join("");
-      const pinDefault = Number(item.pinSize) || (faceOf(item) ? 56 : 14);
-      const pin = kind === "label" ? "" : '<label title="Размер точки на карте">Размер<input id="pin-size" type="range" min="12" max="140" value="' + pinDefault + '"></label>';
-      const note = kind === "mark" || kind === "npc" || kind === "loc"
-        ? '<label title="' + (kind === "loc" ? "Заметка к локации. Игроки видят её при наведении, если точка им показана" : "Текст при наведении на точку") + '">' + (kind === "loc" ? "Заметка" : "Подсказка") + '<textarea id="pin-tip">' + esc(item.tip || "") + "</textarea></label>" +
-          '<label class="check" title="Игроки эту точку не видят"><input id="pin-hide" type="checkbox"' + (item.hidden ? " checked" : "") + "> Скрыть от игроков</label>"
+      const pinDefault = Number(item.pinSize) || (kind === "image" ? 120 : (faceOf(item) ? 56 : 14));
+      const pinMax = kind === "image" ? 400 : 140;
+      const pinMin = kind === "image" ? 32 : 12;
+      const pin = kind === "label" ? "" : '<label title="' + (kind === "image" ? "Размер картинки на карте" : "Размер точки на карте") + '">Размер<input id="pin-size" type="range" min="' + pinMin + '" max="' + pinMax + '" value="' + pinDefault + '"></label>';
+      const note = kind === "mark" || kind === "npc" || kind === "loc" || kind === "image"
+        ? '<label title="' + (kind === "loc" ? "Заметка к локации. Игроки видят её при наведении, если точка им показана" : "Текст при наведении") + '">' + (kind === "loc" ? "Заметка" : "Подсказка") + '<textarea id="pin-tip">' + esc(item.tip || "") + "</textarea></label>" +
+          '<label class="check" title="Игроки это не видят"><input id="pin-hide" type="checkbox"' + (item.hidden ? " checked" : "") + "> Скрыть от игроков</label>"
+        : "";
+      const imageShot = kind === "image"
+        ? (item.url ? '<img class="loc-shot" alt="" src="' + esc(item.url) + '">' : '<p class="note">Картинки пока нет.</p>') +
+          '<label class="file-btn" title="Загрузить другую картинку">Загрузить<input type="file" id="image-pin-file" accept="image/*" aria-label="Загрузить картинку"></label>' +
+          '<label title="Картинка из библиотеки">Из библиотеки<select id="image-pin-lib"><option value="">Нет</option>' + ((ctx.library().images) || []).map(function (image) {
+            return '<option value="' + esc(image.url) + '"' + (image.url === item.url ? " selected" : "") + ">" + esc(image.name || "Картинка") + "</option>";
+          }).join("") + "</select></label>"
         : "";
       const npcFace = kind === "npc" ? linkedNpc(item) : null;
       if (npcFace) window.ShirmoNpc.apply(npcFace);
@@ -2144,10 +2177,11 @@
         '<label title="Цвет плашки под подписью">Цвет фона<input id="pin-plate" type="color" value="' + hexColor(item.plate, "#14110e") + '"></label>';
       return '<div class="pin-style">' +
         group("Портрет", "Кадр, крупность и сдвиг портрета", frame || locShot) +
+        group("Картинка", "Файл и библиотека", imageShot, true) +
         sheet +
         group("Бой", "Хиты, броня и броски от имени врага", foeBox, true) +
-        group("Точка", "Размер точки, заметка и видимость для игроков", pin + note, kind === "loc") +
-        group("Подпись", "Шрифт, размер и оформление подписи", text) +
+        group("Точка", kind === "image" ? "Размер и видимость для игроков" : "Размер точки, заметка и видимость для игроков", pin + note, kind === "loc" || kind === "image") +
+        (kind === "image" ? "" : group("Подпись", "Шрифт, размер и оформление подписи", text)) +
         "</div>";
     }
     function showMenu() {
@@ -2164,10 +2198,10 @@
       function actBtn(act, label) {
         return '<button type="button" class="pin-act" data-act="' + act + '" title="' + label + '" aria-label="' + label + '">' + ACT[act] + "</button>";
       }
-      const canHome = selected.kind === "loc" || selected.kind === "npc" || selected.kind === "mark" || selected.kind === "foe" || selected.kind === "label";
+      const canHome = selected.kind === "loc" || selected.kind === "npc" || selected.kind === "mark" || selected.kind === "foe" || selected.kind === "label" || selected.kind === "image";
       const actions = '<div class="pin-acts">' + (selected.kind === "label"
         ? actBtn("del", "Удалить надпись") + actBtn("rename", "Изменить текст") + actBtn("rehome", "Перенести в другую локацию")
-        : actBtn("del", "Удалить точку") + actBtn("copy", "Копировать точку") + actBtn("move", "Перетащить точку") + (canHome ? actBtn("rehome", "Перенести в другую локацию") : "") + actBtn("rename", "Изменить имя") + (selected.kind === "loc" ? actBtn("setup", "Имя, день и ночь, фоны") : "") + (bookBtn ? actBtn("book", "Назначить запись из справочника") : "")) + "</div>";
+        : actBtn("del", selected.kind === "image" ? "Удалить картинку" : "Удалить точку") + actBtn("copy", selected.kind === "image" ? "Копировать картинку" : "Копировать точку") + actBtn("move", "Перетащить") + (canHome ? actBtn("rehome", "Перенести в другую локацию") : "") + (selected.kind === "image" ? "" : actBtn("rename", "Изменить имя")) + (selected.kind === "loc" ? actBtn("setup", "Имя, день и ночь, фоны") : "") + (bookBtn ? actBtn("book", "Назначить запись из справочника") : "")) + "</div>";
       menu.innerHTML = styleHtml(item, selected.kind) + actions;
       menu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 256)) + "px";
       menu.style.top = Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - Math.min(520, window.innerHeight * 0.7) - 8)) + "px";
@@ -2179,31 +2213,70 @@
         const pinSize = menu.querySelector("#pin-size");
         const textSize = menu.querySelector("#pin-text-size");
         const font = menu.querySelector("#pin-font");
-        if (pinSize) row.pinSize = Number(pinSize.value) || 14;
+        if (pinSize) row.pinSize = Number(pinSize.value) || (selected.kind === "image" ? 120 : 14);
         if (textSize) row.size = Number(textSize.value) || 14;
         if (font) {
           const found = ctx.fonts().find(function (entry) { return entry.font === font.value; });
           row.font = font.value;
           row.fontUrl = found ? found.url : "";
         }
-        row.bold = menu.querySelector("#pin-bold").classList.contains("is-on");
-        row.italic = menu.querySelector("#pin-italic").classList.contains("is-on");
-        row.underline = menu.querySelector("#pin-under").classList.contains("is-on");
-        row.ink = menu.querySelector("#pin-ink").value;
-        row.stroke = menu.querySelector("#pin-stroke").value;
-        row.strokeWidth = Number(menu.querySelector("#pin-stroke-w").value) || 0;
-        row.plate = menu.querySelector("#pin-plate-on").checked ? menu.querySelector("#pin-plate").value : "";
+        const bold = menu.querySelector("#pin-bold");
+        if (bold) {
+          row.bold = bold.classList.contains("is-on");
+          row.italic = menu.querySelector("#pin-italic").classList.contains("is-on");
+          row.underline = menu.querySelector("#pin-under").classList.contains("is-on");
+          row.ink = menu.querySelector("#pin-ink").value;
+          row.stroke = menu.querySelector("#pin-stroke").value;
+          row.strokeWidth = Number(menu.querySelector("#pin-stroke-w").value) || 0;
+          row.plate = menu.querySelector("#pin-plate-on").checked ? menu.querySelector("#pin-plate").value : "";
+        }
         paintBoard();
         dirty();
       }
       menu.querySelectorAll("#pin-size, #pin-text-size, #pin-stroke-w").forEach(function (node) {
         node.addEventListener("input", applyStyle);
       });
-      menu.querySelector("#pin-font").addEventListener("change", applyStyle);
-      menu.querySelector("#pin-ink").addEventListener("input", applyStyle);
-      menu.querySelector("#pin-stroke").addEventListener("input", applyStyle);
-      menu.querySelector("#pin-plate").addEventListener("input", applyStyle);
-      menu.querySelector("#pin-plate-on").addEventListener("change", applyStyle);
+      const pinFont = menu.querySelector("#pin-font");
+      if (pinFont) pinFont.addEventListener("change", applyStyle);
+      const pinInk = menu.querySelector("#pin-ink");
+      if (pinInk) pinInk.addEventListener("input", applyStyle);
+      const pinStroke = menu.querySelector("#pin-stroke");
+      if (pinStroke) pinStroke.addEventListener("input", applyStyle);
+      const pinPlate = menu.querySelector("#pin-plate");
+      if (pinPlate) pinPlate.addEventListener("input", applyStyle);
+      const pinPlateOn = menu.querySelector("#pin-plate-on");
+      if (pinPlateOn) pinPlateOn.addEventListener("change", applyStyle);
+      const imageLib = menu.querySelector("#image-pin-lib");
+      if (imageLib) imageLib.addEventListener("change", function () {
+        const row = findItem();
+        if (!row || !imageLib.value) return;
+        row.url = imageLib.value;
+        const hit = ((ctx.library().images) || []).find(function (image) { return image.url === row.url; });
+        if (hit && hit.name) row.name = hit.name;
+        paintBoard();
+        dirty();
+      });
+      const imageFile = menu.querySelector("#image-pin-file");
+      if (imageFile) imageFile.addEventListener("change", function (event) {
+        const file = event.target.files && event.target.files[0];
+        if (!file || !ctx.upload) return;
+        ctx.upload(file).then(function (url) {
+          const row = findItem();
+          if (!row) return;
+          if (!ctx.campaign.library) ctx.campaign.library = { fonts: [], images: [], notes: [] };
+          if (window.ShirmoLib) window.ShirmoLib.keep(ctx.campaign.library, {
+            url: url,
+            name: file.name.replace(/\.[^.]+$/, ""),
+            section: "map",
+            sectionName: "Карта"
+          });
+          row.url = url;
+          row.name = file.name.replace(/\.[^.]+$/, "") || row.name || "Картинка";
+          paintBoard();
+          dirty();
+          showMenu();
+        });
+      });
       const pinTip = menu.querySelector("#pin-tip");
       if (pinTip) pinTip.addEventListener("input", function (event) {
         const row = findItem();
@@ -2307,7 +2380,9 @@
         });
       }
       ["pin-bold", "pin-italic", "pin-under"].forEach(function (id) {
-        menu.querySelector("#" + id).addEventListener("click", function (event) {
+        const node = menu.querySelector("#" + id);
+        if (!node) return;
+        node.addEventListener("click", function (event) {
           event.currentTarget.classList.toggle("is-on");
           applyStyle();
         });
@@ -2468,6 +2543,28 @@
           locId: current.focusId || ""
         });
         selected = { kind: "label", id: id };
+      } else if (kind === "image") {
+        const url = (host.querySelector("#map-image-lib") && host.querySelector("#map-image-lib").value) || "";
+        if (!url) {
+          const hint = host.querySelector("#map-hint");
+          if (hint) hint.textContent = "Сначала выберите или загрузите картинку.";
+          return;
+        }
+        const images = (ctx.library().images) || [];
+        const found = images.find(function (image) { return image.url === url; });
+        current.markers.push({
+          id: id,
+          name: (found && found.name) || "Картинка",
+          x: at.x,
+          y: at.y,
+          kind: "image",
+          url: url,
+          tip: "",
+          hidden: false,
+          pinSize: Number(host.querySelector("#map-image-size").value) || 120,
+          locId: current.focusId || ""
+        });
+        selected = { kind: "image", id: id };
       } else {
         const marker = {
           id: id,
@@ -2506,6 +2603,24 @@
       tool = button.getAttribute("data-tool");
       if (tool !== "loc") pendingParent = "";
       paintTools();
+    });
+    host.querySelector("#map-image-file").addEventListener("change", function (event) {
+      const file = event.target.files && event.target.files[0];
+      event.target.value = "";
+      if (!file || !ctx.upload) return;
+      ctx.upload(file).then(function (url) {
+        if (!ctx.campaign.library) ctx.campaign.library = { fonts: [], images: [], notes: [] };
+        if (window.ShirmoLib) window.ShirmoLib.keep(ctx.campaign.library, {
+          url: url,
+          name: file.name.replace(/\.[^.]+$/, ""),
+          section: "map",
+          sectionName: "Карта"
+        });
+        fillImageLib(url);
+        const hint = host.querySelector("#map-hint");
+        if (hint) hint.textContent = "Картинка готова. Кликните по карте, чтобы поставить её.";
+        dirty();
+      });
     });
     host.querySelector("#map-view").addEventListener("change", function (event) {
       page.activeViewId = event.target.value;
@@ -2661,7 +2776,7 @@
     }
     function pinKind(hit) {
       const kind = hit.getAttribute("data-kind");
-      return kind === "loc" || kind === "mark" || kind === "npc" || kind === "label" || kind === "foe";
+      return kind === "loc" || kind === "mark" || kind === "npc" || kind === "label" || kind === "foe" || kind === "image";
     }
     function flipFlag(item, which) {
       if (item.screen == null) item.screen = !item.hidden;
@@ -2775,7 +2890,7 @@
         return;
       }
       event.preventDefault();
-      if (tool === "loc" || tool === "mark" || tool === "npc" || tool === "label") {
+      if (tool === "loc" || tool === "mark" || tool === "npc" || tool === "label" || tool === "image") {
         addPoint(tool, at);
         return;
       }
@@ -2939,7 +3054,7 @@
       const hit = event.target.closest("[data-pin]");
       if (!hit || !board.contains(hit)) return;
       const kind = hit.getAttribute("data-kind");
-      if (kind === "loc" || kind === "npc") {
+      if (kind === "loc" || kind === "npc" || kind === "image") {
         event.preventDefault();
         return;
       }

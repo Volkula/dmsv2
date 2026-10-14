@@ -243,6 +243,20 @@ function projectMap(page, campaign) {
   const markers = (Array.isArray(view.markers) ? view.markers : []).filter(function (item) {
     return item && !item.hidden && (item.locId || "") === here;
   }).slice(0, 200).map(function (item) {
+    if (item.kind === "image") {
+      const url = clip(item.url || item.icon, 300);
+      if (!url) return null;
+      return Object.assign({
+        id: clip(item.id, 80),
+        name: clip(item.name, 80),
+        x: unit(item.x),
+        y: unit(item.y),
+        kind: "image",
+        url: url,
+        tip: clip(item.tip, 400),
+        pinSize: Math.min(480, Math.max(24, Number(item.pinSize) || 120))
+      }, textLook(item, 14));
+    }
     const npc = item.kind === "npc" ? npcs.find(function (row) { return row && row.id === item.npcId; }) : null;
     const face = activeFace(npc);
     const portrait = face.portrait ? clip(face.portrait, 300) : "";
@@ -259,7 +273,7 @@ function projectMap(page, campaign) {
       portraitY: portrait ? face.y : 50,
       portraitZoom: portrait ? face.zoom : 1
     }, textLook(item, 14));
-  });
+  }).filter(Boolean);
   const labels = (Array.isArray(view.labels) ? view.labels : []).filter(function (item) {
     return item && (item.locId || "") === here;
   }).slice(0, 100).map(function (item) {
