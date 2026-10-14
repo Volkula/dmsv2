@@ -637,7 +637,8 @@ const server = http.createServer(async function (req, res) {
           return {
             name: String(item && item.name || "").slice(0, 80),
             price: String(item && item.price || "").slice(0, 40),
-            icon: safePath(item && item.icon)
+            icon: safePath(item && item.icon),
+            note: String(item && item.note || "").slice(0, 400)
           };
         }).filter(function (item) { return item.name; });
       }

@@ -121,7 +121,8 @@ function saleRows(npc, campaign) {
     const row = {
       name: clip(item.name, 80),
       price: moneyText(item, campaign),
-      icon: item.icon ? clip(item.icon, 300) : ""
+      icon: item.icon ? clip(item.icon, 300) : "",
+      note: clip(item.note, 400)
     };
     if (qty != null) row.qty = qty;
     if (item.ink) row.ink = clip(item.ink, 20);
