@@ -2447,6 +2447,7 @@ button.ware-face-btn img { width: 100%; height: 100%; object-fit: cover; display
 .queue-tools button.is-on { background: var(--brass); color: #1a140c; border-color: var(--brass); }
 .init-cell { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
 .init-cell input { width: 52px; text-align: center; }
+.init-cell input.init-bonus { width: 40px; opacity: 0.85; }
 .init-cell button { padding: 2px 6px; }
 .queue-table { width: 100%; font-size: 13px; }
 .queue-table input { width: 100%; padding: 4px 6px; }
