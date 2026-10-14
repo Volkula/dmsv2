@@ -1271,6 +1271,7 @@ window.ShirmoCodex = (function () {
       const pencil = window.ShirmoGlyph ? window.ShirmoGlyph.pencil : "✎";
       const fold = window.ShirmoGlyph ? window.ShirmoGlyph.fold : "▾";
       const tint = window.ShirmoItems ? window.ShirmoItems.inkOf(item) : (item.ink || "");
+      const sheet = (book().wares || [])[sheetIndex];
       return '<article class="ware-item' + (item.off ? " is-off" : "") + '"' + (tint ? ' style="color:' + esc(tint) + '"' : "") + mark + ">" +
         '<div class="ware-head"><button type="button" class="ware-face" data-ware-edit' + mark + ' title="Иконка и редкость" aria-label="Иконка и редкость">' + face + "</button>" +
         '<span class="ware-title"><input data-ware="name"' + mark + ' type="text" value="' + esc(item.name || "") + '" placeholder="Название" title="Название товара" aria-label="Название товара">' +
@@ -1279,11 +1280,13 @@ window.ShirmoCodex = (function () {
         '<button type="button" class="icon-btn" data-ware-edit' + mark + ' title="Иконка и редкость" aria-label="Иконка и редкость">' + pencil + "</button>" +
         '<button type="button" class="icon-btn ware-fold' + (open ? " is-open" : "") + '" data-ware-fold="' + esc(key) + '" title="Параметры товара" aria-label="Параметры товара" aria-expanded="' + (open ? "true" : "false") + '">' + fold + "</button>" +
         '<button type="button" class="icon-btn eye' + (item.off ? " is-off" : "") + '" data-ware-eye' + mark + ' title="' + (item.off ? "Показать товар игрокам" : "Скрыть товар от игроков") + '" aria-label="' + (item.off ? "Показать товар игрокам" : "Скрыть товар от игроков") + '">' + eye + "</button>" +
+        '<button type="button" data-act="ware-copy"' + mark + ' title="Скопировать товар в этот же лист">Копия</button>' +
         '<button type="button" data-act="ware-del"' + mark + ' title="Убрать товар" aria-label="Убрать">×</button></div></div>' +
         '<div class="ware-more"' + (open ? "" : " hidden") + ">" +
         (window.ShirmoCoins ? window.ShirmoCoins.fields(item, ctx.campaign, 'data-ware="price"' + mark, 'data-ware="coin"' + mark) : "") +
         '<label title="Количество. Пустое поле — без ограничения">Количество<input data-ware="qty"' + mark + ' class="num" type="number" min="0" value="' + (item.qty == null || item.qty === "" ? "" : esc(String(item.qty))) + '" placeholder="∞" aria-label="Количество"></label>' +
         '<label class="check" title="Скрывать у игроков, когда количество станет нулём"><input data-ware-hide' + mark + ' type="checkbox"' + (item.hideEmpty ? " checked" : "") + "> Скрывать при нуле</label>" +
+        '<label title="Скопировать товар в другой лист">В лист<select data-ware-copy-to' + mark + ' aria-label="Копировать в лист">' + sheetCopyOptions(sheet && sheet.id) + "</select></label>" +
         '<select data-ware-lib' + mark + ' title="Иконка из библиотеки" aria-label="Иконка из библиотеки" hidden><option value="">Библиотека</option>' + lib + "</select>" +
         '<select data-ware-cat' + mark + ' hidden><option value="">Из предмета</option>' + catalog + "</select>" +
         "</div></article>";
@@ -1344,9 +1347,10 @@ window.ShirmoCodex = (function () {
             (window.ShirmoCoins ? window.ShirmoCoins.fields(item, ctx.campaign, 'data-own-field="price"' + mark, 'data-own-field="coin"' + mark) : "") +
             '<label title="Количество. Пустое поле — без ограничения">Количество<input data-own-field="qty"' + mark + ' class="num" type="number" min="0" value="' + (item.qty == null || item.qty === "" ? "" : esc(String(item.qty))) + '" placeholder="∞" aria-label="Количество"></label>' +
             '<label class="check" title="Скрывать у игроков, когда количество станет нулём"><input data-own-hide' + mark + ' type="checkbox"' + (item.hideEmpty ? " checked" : "") + "> Скрывать при нуле</label>" +
-            '<label title="Положить в лист этого персонажа">Лист<select data-own-sheet' + mark + ' aria-label="Лист товаров"><option value="">Свои</option>' +
+            '<label title="Перенести товар в лист (убрать из своих)">Лист<select data-own-sheet' + mark + ' aria-label="Лист товаров"><option value="">Свои</option>' +
             sheets.map(function (sheet) { return '<option value="' + esc(sheet.id) + '">' + esc(sheet.name || "Лист") + "</option>"; }).join("") +
-            '<option value="__new">Новый лист</option></select></label></div></article>';
+            '<option value="__new">Новый лист</option></select></label>' +
+            '<label title="Скопировать товар в любой лист">Копия в лист<select data-own-copy-to' + mark + ' aria-label="Копировать в лист">' + sheetCopyOptions("") + "</select></label></div></article>";
         }).join("");
         if (!goods) return "";
         const key = "own:" + npcIndex;
@@ -1549,6 +1553,38 @@ window.ShirmoCodex = (function () {
       if (damage) squadDamage = damage.value;
       if (place) squadPlace = place.value;
     }
+    function cloneWareItem(item) {
+      const copy = JSON.parse(JSON.stringify(item || {}));
+      copy.id = crypto.randomUUID();
+      return copy;
+    }
+    function sheetCopyOptions(excludeId) {
+      return '<option value="">Копировать в лист…</option>' + (book().wares || []).map(function (sheet) {
+        if (!sheet) return "";
+        const mark = sheet.id === excludeId ? " · этот" : "";
+        return '<option value="' + esc(sheet.id) + '">' + esc((sheet.name || "Лист") + mark) + "</option>";
+      }).join("") + '<option value="__new">Новый лист</option>';
+    }
+    function copyWareToSheet(item, sheetId, nameHint) {
+      if (!item || !sheetId) return null;
+      book().wares = book().wares || [];
+      let sheet = null;
+      if (sheetId === "__new") {
+        sheet = {
+          id: crypto.randomUUID(),
+          name: nameHint || item.name || "Лист",
+          npcId: "",
+          items: []
+        };
+        book().wares.push(sheet);
+      } else {
+        sheet = book().wares.find(function (row) { return row && row.id === sheetId; });
+      }
+      if (!sheet) return null;
+      sheet.items = sheet.items || [];
+      sheet.items.push(cloneWareItem(item));
+      return sheet;
+    }
     function claimSheet(npc, id) {
       if (!npc) return null;
       if (!book().wares) book().wares = [];
@@ -1655,6 +1691,28 @@ window.ShirmoCodex = (function () {
         const sheet = claimSheet(person, event.target.value);
         if (sheet) sheet.items.push(item);
         else goods.push(item);
+        paint();
+        saveSoon();
+        return;
+      }
+      if (event.target.hasAttribute("data-ware-copy-to")) {
+        if (event.type !== "change") return;
+        const sheet = book().wares[Number(event.target.getAttribute("data-stock"))];
+        const item = sheet && sheet.items && sheet.items[Number(event.target.getAttribute("data-item"))];
+        const to = event.target.value;
+        if (!item || !to) return;
+        copyWareToSheet(item, to, sheet && sheet.name);
+        paint();
+        saveSoon();
+        return;
+      }
+      if (event.target.hasAttribute("data-own-copy-to")) {
+        if (event.type !== "change") return;
+        const person = book().npcs[Number(event.target.getAttribute("data-own"))];
+        const item = person && person.goods && person.goods[Number(event.target.getAttribute("data-item"))];
+        const to = event.target.value;
+        if (!item || !to) return;
+        copyWareToSheet(item, to, person && person.name);
         paint();
         saveSoon();
         return;
@@ -2380,6 +2438,16 @@ window.ShirmoCodex = (function () {
         const sheet = book().wares[Number(button.getAttribute("data-stock"))];
         if (!sheet || !sheet.items) return;
         sheet.items.splice(Number(button.getAttribute("data-item")), 1);
+        paint();
+        saveSoon();
+        return;
+      }
+      if (act === "ware-copy") {
+        const sheet = book().wares[Number(button.getAttribute("data-stock"))];
+        const item = sheet && sheet.items && sheet.items[Number(button.getAttribute("data-item"))];
+        if (!sheet || !item) return;
+        sheet.items = sheet.items || [];
+        sheet.items.splice(Number(button.getAttribute("data-item")) + 1, 0, cloneWareItem(item));
         paint();
         saveSoon();
         return;
