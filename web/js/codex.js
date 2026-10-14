@@ -915,14 +915,14 @@ window.ShirmoCodex = (function () {
         return '<option value="' + esc(sheet.id) + '"' + (sheet.id === row.wareId ? " selected" : "") + ">" + esc(sheet.name || "Лист") + "</option>";
       }).join("");
       const own = (row.goods || []).map(function (item, itemIndex) {
-        const icon = item.icon ? '<img class="cat-thumb" alt="" src="' + esc(item.icon) + '">' : "";
+        const face = item.icon ? '<img alt="" src="' + esc(item.icon) + '">' : (window.ShirmoGlyph ? window.ShirmoGlyph.bag : "");
         const qty = item.qty == null || item.qty === "" ? "" : esc(String(item.qty));
         const sheets = (book().wares || []).filter(function (sheet) { return sheet && (sheet.npcId === row.id || sheet.id === row.wareId); });
         const sheetPick = '<select data-good-sheet data-i="' + index + '" data-item="' + itemIndex + '" title="Положить товар в лист этого персонажа" aria-label="Лист товаров"><option value="">Свои</option>' +
           sheets.map(function (sheet) { return '<option value="' + esc(sheet.id) + '">' + esc(sheet.name || "Лист") + "</option>"; }).join("") +
           '<option value="__new">Новый лист</option></select>';
         const off = !!item.off;
-        return '<span class="place-person' + (off ? " is-off" : "") + '">' + icon +
+        return '<span class="place-person' + (off ? " is-off" : "") + '"><button type="button" class="ware-face" data-good-edit data-i="' + index + '" data-item="' + itemIndex + '" title="Иконка и цвет" aria-label="Иконка и цвет">' + face + "</button>" +
           '<input data-good-name data-i="' + index + '" data-item="' + itemIndex + '" type="text" value="' + esc(item.name || "") + '" aria-label="Название товара">' +
           '<input data-good-note data-i="' + index + '" data-item="' + itemIndex + '" type="text" value="' + esc(item.note || "") + '" placeholder="Заметка" title="Заметка для игроков" aria-label="Заметка">' +
           '<button type="button" class="icon-btn" data-good-edit data-i="' + index + '" data-item="' + itemIndex + '" title="Иконка и цвет" aria-label="Иконка и цвет">' + (window.ShirmoGlyph ? window.ShirmoGlyph.pencil : "✎") + "</button>" +
@@ -953,7 +953,7 @@ window.ShirmoCodex = (function () {
       const pencil = window.ShirmoGlyph ? window.ShirmoGlyph.pencil : "✎";
       const fold = window.ShirmoGlyph ? window.ShirmoGlyph.fold : "▾";
       return '<article class="ware-item' + (item.off ? " is-off" : "") + '"' + (item.ink ? ' style="color:' + esc(item.ink) + '"' : "") + mark + ">" +
-        '<div class="ware-head"><span class="ware-face">' + face + "</span>" +
+        '<div class="ware-head"><button type="button" class="ware-face" data-ware-edit' + mark + ' title="Иконка и цвет" aria-label="Иконка и цвет">' + face + "</button>" +
         '<span class="ware-title"><input data-ware="name"' + mark + ' type="text" value="' + esc(item.name || "") + '" placeholder="Название" title="Название товара" aria-label="Название товара">' +
         '<input data-ware="note"' + mark + ' class="ware-note" type="text" value="' + esc(item.note || "") + '" placeholder="Заметка" title="Заметка для игроков" aria-label="Заметка"></span>' +
         '<div class="ware-acts">' +
@@ -1012,7 +1012,7 @@ window.ShirmoCodex = (function () {
           const open = !!wareOpen[key];
           const eye = window.ShirmoGlyph ? (item.off ? window.ShirmoGlyph.hide : window.ShirmoGlyph.eye) : (item.off ? "○" : "●");
           return '<article class="ware-item' + (item.off ? " is-off" : "") + '"' + (item.ink ? ' style="color:' + esc(item.ink) + '"' : "") + mark + ">" +
-            '<div class="ware-head"><span class="ware-face">' + face + "</span>" +
+            '<div class="ware-head"><button type="button" class="ware-face" data-ware-edit' + mark + ' title="Иконка и цвет" aria-label="Иконка и цвет">' + face + "</button>" +
             '<span class="ware-title"><input data-own-field="name"' + mark + ' type="text" value="' + esc(item.name || "") + '" aria-label="Название товара">' +
             '<input data-own-field="note"' + mark + ' class="ware-note" type="text" value="' + esc(item.note || "") + '" placeholder="Заметка" title="Заметка для игроков" aria-label="Заметка"></span>' +
             '<div class="ware-acts">' +
@@ -1673,13 +1673,16 @@ window.ShirmoCodex = (function () {
       const pop = document.createElement("div");
       pop.id = "good-edit";
       pop.className = "pop";
-      pop.innerHTML = '<div class="pop-card ware-edit" role="dialog" aria-label="Иконка и цвет">' +
+      const upload = window.ShirmoGlyph && window.ShirmoGlyph.upload ? window.ShirmoGlyph.upload : "↑";
+      pop.innerHTML = '<div class="pop-card ware-edit-card" role="dialog" aria-label="Иконка и цвет">' +
         '<div class="pop-head"><h2>Иконка и цвет</h2><button type="button" data-pop-close title="Закрыть" aria-label="Закрыть">×</button></div>' +
+        '<div class="ware-edit">' +
         '<div class="ware-edit-face">' + face + "</div>" +
-        '<label title="Цвет строки товара">Цвет<input data-edit-ink type="color" value="' + esc(item.ink || "#f3ead8") + '"></label>' +
-        '<label class="file-btn" title="Своя иконка. Попадёт в библиотеку, в раздел «Иконки товаров»">Загрузить<input data-edit-file type="file" accept="image/*" aria-label="Загрузить иконку"></label>' +
-        '<label title="Иконка из библиотеки">Библиотека<select data-edit-lib><option value="">Нет</option>' + lib + "</select></label>" +
-        '<div class="ware-find"><input data-edit-find type="text" placeholder="Поиск предмета" aria-label="Поиск предмета для иконки" title="Иконка из общего списка предметов"><div class="ware-hits" hidden></div></div></div>';
+        '<label class="ware-ink" title="Цвет строки товара">Цвет<input data-edit-ink type="color" value="' + esc(item.ink || "#f3ead8") + '" aria-label="Цвет строки"></label>' +
+        '<label class="file-btn" title="Своя иконка. Попадёт в библиотеку, в раздел «Иконки товаров»">' + upload + '<input data-edit-file type="file" accept="image/*" aria-label="Загрузить иконку"></label>' +
+        '<select data-edit-lib title="Иконка из библиотеки" aria-label="Иконка из библиотеки"><option value="">Библиотека</option>' + lib + "</select>" +
+        '<div class="ware-find"><input data-edit-find type="text" placeholder="Поиск предмета" aria-label="Поиск предмета для иконки" title="Иконка из общего списка предметов"><div class="ware-hits" hidden></div></div>' +
+        "</div></div>";
       document.body.appendChild(pop);
       function shut() { if (pop.parentNode) pop.remove(); }
       pop.addEventListener("click", function (event) { if (event.target === pop) shut(); });

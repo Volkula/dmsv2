@@ -1697,6 +1697,7 @@ button.npc-portrait { padding: 0; cursor: pointer; }
   min-width: 36px;
   min-height: 36px;
   max-height: 36px;
+  padding: 0;
   border-radius: 4px;
   background: #1a1612;
   border: 1px solid var(--line);
@@ -1704,7 +1705,13 @@ button.npc-portrait { padding: 0; cursor: pointer; }
   place-items: center;
   overflow: hidden;
   align-self: start;
+  cursor: pointer;
+  color: inherit;
+  flex: none;
 }
+
+button.ware-face:hover { border-color: var(--brass); color: var(--brass); }
+
 .ware-face img, .ware-face svg {
   width: 36px;
   height: 36px;
@@ -1712,6 +1719,7 @@ button.npc-portrait { padding: 0; cursor: pointer; }
   max-height: 36px;
   object-fit: cover;
   display: block;
+  pointer-events: none;
 }
 .ware-face svg { padding: 6px; box-sizing: border-box; }
 
@@ -1778,7 +1786,19 @@ button.icon-btn[data-good-eye].is-off { color: #e07a6a; }
 
 .ware-more select { flex: 1 1 160px; min-width: 0; }
 
-.ware-edit { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pop-card.ware-edit-card {
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ware-edit {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
 
 .ware-edit-face {
   width: 64px;
@@ -1792,9 +1812,32 @@ button.icon-btn[data-good-eye].is-off { color: #e07a6a; }
 
 .ware-edit-face img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
-.ware-ink { display: flex; align-items: center; gap: 6px; }
+.ware-ink {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  flex: none;
+}
 
-.ware-edit .ware-find { flex: 1 1 180px; }
+.ware-edit input[type="color"],
+.ware-ink input[type="color"] {
+  width: 42px;
+  height: 32px;
+  padding: 2px;
+  flex: 0 0 42px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #120f0c;
+  cursor: pointer;
+}
+
+.ware-edit > select {
+  flex: 1 1 140px;
+  min-width: 120px;
+}
+
+.ware-edit .ware-find { flex: 1 1 180px; min-width: 140px; }
 
 .ware-find { position: relative; flex: 1 1 160px; }
 

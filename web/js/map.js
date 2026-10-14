@@ -390,8 +390,8 @@
         (master ? '<button type="button" class="icon-btn" data-talk="show-goods" title="Показать игрокам" aria-label="Показать игрокам">' + (window.ShirmoGlyph ? window.ShirmoGlyph.cast : "") + "</button>" : "") +
         "</div><ul>" + ((talk.goods && talk.goods.length)
         ? talk.goods.map(function (item) {
-            const icon = item.icon ? '<img class="shop-icon" alt="" src="' + esc(item.icon) + '">' : (master ? '<span class="ware-face shop-icon"></span>' : "");
             if (!master) {
+              const icon = item.icon ? '<img class="shop-icon" alt="" src="' + esc(item.icon) + '">' : "";
               const count = item.qty == null ? "" : '<i class="shop-qty">×' + esc(String(item.qty)) + "</i>";
               const ink = item.ink ? ' style="color:' + esc(item.ink) + '"' : "";
               const note = String(item.note || "").trim();
@@ -405,8 +405,9 @@
             const eyeTitle = item.off ? "Показать товар игрокам" : "Скрыть товар от игроков";
             const mark = ' data-id="' + esc(item.id || "") + '"';
             const ink = item.ink ? ' style="color:' + esc(item.ink) + '"' : "";
+            const face = item.icon ? '<img alt="" src="' + esc(item.icon) + '">' : (g.bag || "");
             return '<li class="shop-item' + (item.off ? " is-off" : "") + (item.hidden ? " is-gone" : "") + '"' + ink + ' data-good="' + esc(item.id || "") + '">' +
-              '<div class="shop-head">' + icon +
+              '<div class="shop-head"><button type="button" class="ware-face shop-icon" data-shop-edit' + mark + ' title="Иконка и цвет" aria-label="Иконка и цвет">' + face + "</button>" +
               '<div class="shop-title"><span>' + esc(item.name || "Предмет") + "</span>" +
               '<input data-shop="note"' + mark + ' type="text" value="' + esc(item.note || "") + '" placeholder="Заметка" aria-label="Заметка"></div>' +
               '<div class="shop-acts">' +
@@ -1349,7 +1350,7 @@
           return '<option value="' + esc(image.url) + '">' + esc(label) + "</option>";
         }).join("");
       }
-      edit.innerHTML = '<div class="pop-card" role="dialog" aria-label="Иконка и цвет"><div class="pop-head"><h2>Иконка и цвет</h2><button type="button" data-pop-close title="Закрыть">×</button></div>' +
+      edit.innerHTML = '<div class="pop-card ware-edit-card" role="dialog" aria-label="Иконка и цвет"><div class="pop-head"><h2>Иконка и цвет</h2><button type="button" data-pop-close title="Закрыть">×</button></div>' +
         '<div class="ware-edit"><div class="ware-edit-face">' + face() + "</div>" +
         '<label class="ware-ink">Цвет<input data-edit-ink type="color" value="' + esc(ink) + '" aria-label="Цвет строки"></label>' +
         '<label class="file-btn" title="Своя иконка. Попадёт в библиотеку, в раздел «Иконки товаров»">' + window.ShirmoGlyph.upload + '<input type="file" accept="image/*" data-edit-file aria-label="Загрузить иконку"></label>' +
@@ -1562,12 +1563,12 @@
           const item = entry.item;
           if (!item.id) item.id = crypto.randomUUID();
           const mark = ' data-home="' + esc(entry.home) + '" data-i="' + entry.index + '"';
-          const icon = item.icon ? '<img class="cat-thumb ware-face" alt="" src="' + esc(item.icon) + '">' : '<span class="ware-face"></span>';
+          const face = item.icon ? '<img alt="" src="' + esc(item.icon) + '">' : (window.ShirmoGlyph ? window.ShirmoGlyph.bag : "");
           const open = !!pop._open[item.id];
           const eye = item.off ? window.ShirmoGlyph.hide : window.ShirmoGlyph.eye;
           const eyeTitle = item.off ? "Показать товар игрокам" : "Скрыть товар от игроков";
           return '<article class="ware-item' + (item.off ? " is-off" : "") + '" data-id="' + esc(item.id) + '"' + (item.ink ? ' style="color:' + esc(item.ink) + '"' : "") + ">" +
-            '<div class="ware-head">' + icon +
+            '<div class="ware-head"><button type="button" class="ware-face" data-good-edit' + mark + ' title="Иконка и цвет" aria-label="Иконка и цвет">' + face + "</button>" +
             '<div class="ware-title">' +
             '<input data-good="name"' + mark + ' type="text" value="' + esc(item.name || "") + '" placeholder="Название" aria-label="Название товара">' +
             '<input data-good="note"' + mark + ' type="text" value="' + esc(item.note || "") + '" placeholder="Заметка" aria-label="Заметка">' +
