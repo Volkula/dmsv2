@@ -297,6 +297,10 @@ window.ShirmoCodex = (function () {
     if (host._codexOff) host._codexOff();
     let tab = "places";
     const wareOpen = {};
+    const sheetOpen = {};
+    function isSheetOpen(key) {
+      return sheetOpen[key] !== false;
+    }
     let timer = 0;
     let dirty = false;
     let draftName = "";
@@ -978,12 +982,23 @@ window.ShirmoCodex = (function () {
       return head + sheets.map(function (sheet, index) {
         const owners = book().npcs.filter(function (npc) { return npc.wareId === sheet.id; }).map(function (npc) { return npc.name || "Без имени"; });
         const items = (sheet.items || []).map(function (item, itemIndex) { return wareItemHtml(index, item, itemIndex); }).join("");
-        return '<article class="place-card"><div class="codex-row"><input data-field="name" data-i="' + index + '" type="text" value="' + esc(sheet.name || "") + '" title="Название листа" aria-label="Название листа"><button type="button" class="icon-btn" data-act="show-sheet" data-i="' + index + '" title="Показать этот лист игрокам" aria-label="Показать игрокам">' + (window.ShirmoGlyph ? window.ShirmoGlyph.cast : "↗") + '</button><button type="button" data-act="ware-export" data-i="' + index + '" title="Экспорт этого листа в CSV">CSV</button><button type="button" data-act="del" data-i="' + index + '" title="Удалить лист" aria-label="Удалить">×</button></div>' +
+        const key = "sheet:" + index;
+        const open = isSheetOpen(key);
+        const count = (sheet.items || []).filter(function (item) { return item && String(item.name || "").trim(); }).length;
+        const fold = window.ShirmoGlyph ? window.ShirmoGlyph.fold : "▾";
+        return '<article class="place-card ware-sheet' + (open ? "" : " is-folded") + '"><div class="codex-row ware-sheet-head">' +
+          '<button type="button" class="icon-btn ware-fold' + (open ? " is-open" : "") + '" data-ware-sheet-fold="' + esc(key) + '" title="' + (open ? "Свернуть лист" : "Развернуть лист") + '" aria-label="' + (open ? "Свернуть лист" : "Развернуть лист") + '" aria-expanded="' + (open ? "true" : "false") + '">' + fold + "</button>" +
+          '<input data-field="name" data-i="' + index + '" type="text" value="' + esc(sheet.name || "") + '" title="Название листа" aria-label="Название листа">' +
+          '<span class="ware-sheet-count" title="Товаров в листе">' + count + "</span>" +
+          '<button type="button" class="icon-btn" data-act="show-sheet" data-i="' + index + '" title="Показать этот лист игрокам" aria-label="Показать игрокам">' + (window.ShirmoGlyph ? window.ShirmoGlyph.cast : "↗") + '</button>' +
+          '<button type="button" data-act="ware-export" data-i="' + index + '" title="Экспорт этого листа в CSV">CSV</button>' +
+          '<button type="button" data-act="del" data-i="' + index + '" title="Удалить лист" aria-label="Удалить">×</button></div>' +
+          '<div class="ware-sheet-body"' + (open ? "" : " hidden") + ">" +
           '<div class="codex-row"><select data-ware-owner data-i="' + index + '" title="Отдать этот лист персонажу" aria-label="Кому отдать лист">' + npcOptions("Отдать НПС") + "</select>" +
           '<label class="text-file" title="Добавить товары из CSV в этот лист">Импорт<input type="file" accept=".csv,text/csv" data-ware-csv data-i="' + index + '" aria-label="Импорт в этот лист"></label></div>' +
           (owners.length ? '<p class="note">Лист у: ' + esc(owners.join(", ")) + "</p>" : "") +
           items +
-          '<button type="button" data-act="ware-add" data-i="' + index + '" title="Добавить строку в этот лист">Добавить товар</button></article>';
+          '<button type="button" data-act="ware-add" data-i="' + index + '" title="Добавить строку в этот лист">Добавить товар</button></div></article>';
       }).join("") + ownGoodsHtml();
     }
     function ownGoodsHtml() {
@@ -1014,7 +1029,16 @@ window.ShirmoCodex = (function () {
             '<option value="__new">Новый лист</option></select></label></div></article>';
         }).join("");
         if (!goods) return "";
-        return '<article class="place-card"><div class="codex-row"><p class="note">Свои товары: ' + esc(npc.name || "НПС") + '</p><button type="button" class="icon-btn" data-act="show-own" data-i="' + npcIndex + '" title="Показать эти товары игрокам" aria-label="Показать игрокам">' + (window.ShirmoGlyph ? window.ShirmoGlyph.cast : "↗") + "</button></div>" + goods + "</article>";
+        const key = "own:" + npcIndex;
+        const open = isSheetOpen(key);
+        const count = (npc.goods || []).filter(function (item) { return item && String(item.name || "").trim(); }).length;
+        const fold = window.ShirmoGlyph ? window.ShirmoGlyph.fold : "▾";
+        return '<article class="place-card ware-sheet' + (open ? "" : " is-folded") + '"><div class="codex-row ware-sheet-head">' +
+          '<button type="button" class="icon-btn ware-fold' + (open ? " is-open" : "") + '" data-ware-sheet-fold="' + esc(key) + '" title="' + (open ? "Свернуть" : "Развернуть") + '" aria-label="' + (open ? "Свернуть" : "Развернуть") + '" aria-expanded="' + (open ? "true" : "false") + '">' + fold + "</button>" +
+          '<p class="note ware-sheet-label">Свои товары: ' + esc(npc.name || "НПС") + "</p>" +
+          '<span class="ware-sheet-count" title="Товаров">' + count + "</span>" +
+          '<button type="button" class="icon-btn" data-act="show-own" data-i="' + npcIndex + '" title="Показать эти товары игрокам" aria-label="Показать игрокам">' + (window.ShirmoGlyph ? window.ShirmoGlyph.cast : "↗") + "</button></div>" +
+          '<div class="ware-sheet-body"' + (open ? "" : " hidden") + ">" + goods + "</div></article>";
       }).join("");
     }
     function peopleHtml() {
@@ -1718,6 +1742,13 @@ window.ShirmoCodex = (function () {
       });
     }
     function onClick(event) {
+      const sheetFold = event.target.closest("[data-ware-sheet-fold]");
+      if (sheetFold && host.contains(sheetFold)) {
+        const key = sheetFold.getAttribute("data-ware-sheet-fold");
+        sheetOpen[key] = !isSheetOpen(key);
+        paint();
+        return;
+      }
       const fold = event.target.closest("[data-ware-fold]");
       if (fold && host.contains(fold)) {
         const key = fold.getAttribute("data-ware-fold");
