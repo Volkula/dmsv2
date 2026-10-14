@@ -384,6 +384,7 @@ label.text-file:hover { border-color: var(--brass); color: var(--brass); }
 }
 
 .board-card {
+  --board-font: 16px;
   width: min(480px, 88vw);
   max-height: min(78vh, 720px);
   overflow: auto;
@@ -392,13 +393,37 @@ label.text-file:hover { border-color: var(--brass); color: var(--brass); }
   background: #14110e;
   border: 2px solid #c4a574;
   box-shadow: 0 0 0 7px #1a1612, 0 0 0 9px #8a6a3a;
+  font-size: var(--board-font);
 }
 
 .board-card.board-cols-2 { width: min(740px, 92vw); }
 .board-card.board-cols-3 { width: min(980px, 94vw); }
 .board-card.board-cols-4 { width: min(1180px, 96vw); }
 
-.board-card h2 { margin: 0 0 10px; font-weight: 500; }
+.board-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.board-card h2 { margin: 0; font-weight: 500; font-size: 1.35em; }
+
+.board-font {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  flex: none;
+  color: #cbb89a;
+  font-size: 13px;
+}
+
+.board-font input[type="range"] {
+  width: 100px;
+  flex: none;
+}
 
 .board-card ul,
 .board-card ul.board-grid {
@@ -406,7 +431,7 @@ label.text-file:hover { border-color: var(--brass); color: var(--brass); }
   margin: 0;
   padding: 0;
   display: grid;
-  gap: 10px 18px;
+  gap: 0.6em 1.1em;
   grid-template-columns: minmax(0, 1fr);
 }
 
@@ -414,9 +439,14 @@ label.text-file:hover { border-color: var(--brass); color: var(--brass); }
 .board-cols-3 ul.board-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .board-cols-4 ul.board-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 
-.board-card li { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.board-card li { display: flex; align-items: center; gap: 0.6em; min-width: 0; }
 
-.board-card img { width: 40px; height: 40px; object-fit: contain; flex: none; }
+.board-card img {
+  width: 2.5em;
+  height: 2.5em;
+  object-fit: contain;
+  flex: none;
+}
 
 @media (max-width: 720px) {
   .board-card.board-cols-2,
@@ -439,18 +469,24 @@ label.text-file:hover { border-color: var(--brass); color: var(--brass); }
   .board-cols-4 ul.board-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
-.board-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.board-item { display: flex; flex-direction: column; gap: 0.15em; min-width: 0; }
 
-.board-item b { font-weight: 500; }
+.board-item b { font-weight: 500; font-size: 1em; line-height: 1.25; }
 
 .board-note {
   color: #cbb89a;
-  font-size: 13px;
+  font-size: 0.82em;
   line-height: 1.35;
   white-space: pre-wrap;
 }
 
-.board-card em { margin-left: auto; font-style: normal; color: #e6c36a; flex: none; }
+.board-card em {
+  margin-left: auto;
+  font-style: normal;
+  color: #e6c36a;
+  flex: none;
+  font-size: 1em;
+}
 
 .talk-shop-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 

@@ -641,6 +641,8 @@ const server = http.createServer(async function (req, res) {
             note: String(item && item.note || "").slice(0, 400)
           };
         }).filter(function (item) { return item.name; });
+        const fontSize = Math.round(Number(body.fontSize) || 0);
+        if (fontSize >= 12 && fontSize <= 28) event.fontSize = fontSize;
       }
       if (event.type === "die") {
         const roll = body.roll && typeof body.roll === "object" ? body.roll : {};

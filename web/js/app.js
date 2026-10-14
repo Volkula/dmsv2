@@ -566,7 +566,12 @@
     });
   }
 
-  function showBoard(title, goods, onClose) {
+  function boardFontSize(value) {
+    const n = Math.round(Number(value) || 0);
+    return Math.min(28, Math.max(12, n || 16));
+  }
+
+  function showBoard(title, goods, onClose, opts) {
     const old = document.querySelector(".board-show");
     if (old) old.remove();
     const show = document.createElement("div");
@@ -574,6 +579,8 @@
     const list = goods || [];
     const count = list.length;
     const cols = count > 24 ? 4 : (count > 14 ? 3 : (count > 7 ? 2 : 1));
+    const stored = Number(sessionStorage.getItem("shirmo-board-font")) || 0;
+    const font = boardFontSize((opts && opts.fontSize) || stored || 16);
     const rows = list.map(function (item) {
       const icon = item.icon ? '<img alt="" src="' + esc(item.icon) + '">' : "";
       const note = String(item.note || "").trim();
@@ -581,9 +588,23 @@
         (note ? '<small class="board-note">' + esc(note) + "</small>" : "") +
         "</span><em>" + esc(item.price || "") + "</em></li>";
     }).join("");
-    show.innerHTML = '<div class="board-card board-cols-' + cols + '" role="dialog" aria-label="' + esc(title || "Товары") + '"><h2>' + esc(title || "Товары") + '</h2><ul class="board-grid">' +
-      (rows || '<li class="note">Пусто</li>') + "</ul></div>";
+    show.innerHTML = '<div class="board-card board-cols-' + cols + '" role="dialog" aria-label="' + esc(title || "Товары") + '" style="--board-font:' + font + 'px">' +
+      '<div class="board-head"><h2>' + esc(title || "Товары") + '</h2>' +
+      '<label class="board-font" title="Размер шрифта списка">Aa<input data-board-font type="range" min="12" max="28" step="1" value="' + font + '" aria-label="Размер шрифта"></label></div>' +
+      '<ul class="board-grid">' + (rows || '<li class="note">Пусто</li>') + "</ul></div>";
     document.body.appendChild(show);
+    const card = show.querySelector(".board-card");
+    const fontInput = show.querySelector("[data-board-font]");
+    if (fontInput && card) {
+      fontInput.addEventListener("input", function () {
+        const next = boardFontSize(fontInput.value);
+        card.style.setProperty("--board-font", next + "px");
+        sessionStorage.setItem("shirmo-board-font", String(next));
+        if (opts && typeof opts.onFont === "function") opts.onFont(next);
+      });
+      fontInput.addEventListener("click", function (event) { event.stopPropagation(); });
+      fontInput.addEventListener("pointerdown", function (event) { event.stopPropagation(); });
+    }
     show.addEventListener("click", function (event) {
       if (event.target.closest(".board-card")) return;
       show.remove();
@@ -600,12 +621,22 @@
         note: item.note || ""
       };
     }).filter(function (item) { return String(item.name).trim(); });
-    showBoard("Товары", list, function () { hidePlayerGoods(roomId, headers); });
-    return api("/api/rooms/" + roomId + "/events", {
-      method: "POST",
-      headers: headers,
-      body: JSON.stringify({ type: "wares", text: "Товары", goods: list })
+    let fontSize = boardFontSize(sessionStorage.getItem("shirmo-board-font") || 16);
+    function send(size) {
+      return api("/api/rooms/" + roomId + "/events", {
+        method: "POST",
+        headers: headers,
+        body: JSON.stringify({ type: "wares", text: "Товары", goods: list, fontSize: size })
+      });
+    }
+    showBoard("Товары", list, function () { hidePlayerGoods(roomId, headers); }, {
+      fontSize: fontSize,
+      onFont: function (size) {
+        fontSize = size;
+        send(size);
+      }
     });
+    return send(fontSize);
   }
 
   function hidePlayerGoods(roomId, headers) {
@@ -643,7 +674,7 @@
         return;
       }
       if (event && event.type === "wares") {
-        showBoard(event.text || "Товары", event.goods || []);
+        showBoard(event.text || "Товары", event.goods || [], null, { fontSize: event.fontSize });
         return;
       }
       const look = textLook(frame && frame.page);
