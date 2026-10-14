@@ -882,6 +882,15 @@ window.ShirmoCodex = (function () {
         return [item.name || "", warePriceText(item), item.note || ""];
       }));
     }
+    function csvFlatItems(parsed) {
+      if (!parsed || !parsed.length) return [];
+      if (parsed[0] && Array.isArray(parsed[0].items)) {
+        return parsed.reduce(function (all, sheet) {
+          return all.concat(sheet.items || []);
+        }, []);
+      }
+      return parsed;
+    }
     function keepImage(npc, url, name) {
       if (!window.ShirmoLib || !url) return;
       if (!ctx.campaign.library) ctx.campaign.library = { fonts: [], images: [], notes: [] };
@@ -970,7 +979,8 @@ window.ShirmoCodex = (function () {
         const owners = book().npcs.filter(function (npc) { return npc.wareId === sheet.id; }).map(function (npc) { return npc.name || "Без имени"; });
         const items = (sheet.items || []).map(function (item, itemIndex) { return wareItemHtml(index, item, itemIndex); }).join("");
         return '<article class="place-card"><div class="codex-row"><input data-field="name" data-i="' + index + '" type="text" value="' + esc(sheet.name || "") + '" title="Название листа" aria-label="Название листа"><button type="button" class="icon-btn" data-act="show-sheet" data-i="' + index + '" title="Показать этот лист игрокам" aria-label="Показать игрокам">' + (window.ShirmoGlyph ? window.ShirmoGlyph.cast : "↗") + '</button><button type="button" data-act="ware-export" data-i="' + index + '" title="Экспорт этого листа в CSV">CSV</button><button type="button" data-act="del" data-i="' + index + '" title="Удалить лист" aria-label="Удалить">×</button></div>' +
-          '<div class="codex-row"><select data-ware-owner data-i="' + index + '" title="Отдать этот лист персонажу" aria-label="Кому отдать лист">' + npcOptions("Отдать НПС") + "</select></div>" +
+          '<div class="codex-row"><select data-ware-owner data-i="' + index + '" title="Отдать этот лист персонажу" aria-label="Кому отдать лист">' + npcOptions("Отдать НПС") + "</select>" +
+          '<label class="text-file" title="Добавить товары из CSV в этот лист">Импорт<input type="file" accept=".csv,text/csv" data-ware-csv data-i="' + index + '" aria-label="Импорт в этот лист"></label></div>' +
           (owners.length ? '<p class="note">Лист у: ' + esc(owners.join(", ")) + "</p>" : "") +
           items +
           '<button type="button" data-act="ware-add" data-i="' + index + '" title="Добавить строку в этот лист">Добавить товар</button></article>';
@@ -1382,6 +1392,7 @@ window.ShirmoCodex = (function () {
       }
       if (event.target.type === "file" && event.target.hasAttribute("data-ware-csv")) {
         const file = event.target.files && event.target.files[0];
+        const into = event.target.hasAttribute("data-i") ? Number(event.target.getAttribute("data-i")) : NaN;
         event.target.value = "";
         if (!file) return;
         const reader = new FileReader();
@@ -1393,7 +1404,16 @@ window.ShirmoCodex = (function () {
             if (fail) fail.textContent = "В файле нет строк с названием.";
             return;
           }
-          if (parsed[0] && Array.isArray(parsed[0].items)) {
+          if (Number.isFinite(into)) {
+            const sheet = book().wares[into];
+            if (!sheet) return;
+            const items = csvFlatItems(parsed);
+            if (!items.length) {
+              if (fail) fail.textContent = "В файле нет строк с названием.";
+              return;
+            }
+            sheet.items = (sheet.items || []).concat(items);
+          } else if (parsed[0] && Array.isArray(parsed[0].items)) {
             parsed.forEach(function (sheet) {
               if (!sheet.items || !sheet.items.length) return;
               book().wares.push({
