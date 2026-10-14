@@ -385,10 +385,12 @@
           return '<button type="button" data-talk="line" data-i="' + index + '" class="' + on + '" style="' + look + '" title="' + esc(rep.text || rep.label) + '">' + esc(rep.label) + "</button>";
         }).join("") + "</div>"
       : "";
+    const shopCount = talk.goods && talk.goods.length ? talk.goods.length : 0;
+    const shopCols = shopCount > 24 ? 4 : (shopCount > 14 ? 3 : (shopCount > 7 ? 2 : 1));
     const goods = talk.shop
-      ? '<aside class="talk-shop"><div class="talk-shop-head"><b>Товары</b>' +
+      ? '<aside class="talk-shop talk-shop-cols-' + shopCols + '"><div class="talk-shop-head"><b>Товары</b>' +
         (master ? '<button type="button" class="icon-btn" data-talk="show-goods" title="Показать игрокам" aria-label="Показать игрокам">' + (window.ShirmoGlyph ? window.ShirmoGlyph.cast : "") + "</button>" : "") +
-        "</div><ul>" + ((talk.goods && talk.goods.length)
+        '</div><ul class="talk-shop-grid">' + ((talk.goods && talk.goods.length)
         ? talk.goods.map(function (item) {
             if (!master) {
               const icon = item.icon ? '<img class="shop-icon" alt="" src="' + esc(item.icon) + '">' : "";

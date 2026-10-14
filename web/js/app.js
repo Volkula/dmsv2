@@ -571,14 +571,17 @@
     if (old) old.remove();
     const show = document.createElement("div");
     show.className = "board-show";
-    const rows = (goods || []).map(function (item) {
+    const list = goods || [];
+    const count = list.length;
+    const cols = count > 24 ? 4 : (count > 14 ? 3 : (count > 7 ? 2 : 1));
+    const rows = list.map(function (item) {
       const icon = item.icon ? '<img alt="" src="' + esc(item.icon) + '">' : "";
       const note = String(item.note || "").trim();
       return "<li>" + icon + '<span class="board-item"><b>' + esc(item.name || "Предмет") + "</b>" +
         (note ? '<small class="board-note">' + esc(note) + "</small>" : "") +
         "</span><em>" + esc(item.price || "") + "</em></li>";
     }).join("");
-    show.innerHTML = '<div class="board-card" role="dialog" aria-label="' + esc(title || "Товары") + '"><h2>' + esc(title || "Товары") + "</h2><ul>" +
+    show.innerHTML = '<div class="board-card board-cols-' + cols + '" role="dialog" aria-label="' + esc(title || "Товары") + '"><h2>' + esc(title || "Товары") + '</h2><ul class="board-grid">' +
       (rows || '<li class="note">Пусто</li>') + "</ul></div>";
     document.body.appendChild(show);
     show.addEventListener("click", function (event) {

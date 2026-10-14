@@ -385,7 +385,7 @@ label.text-file:hover { border-color: var(--brass); color: var(--brass); }
 
 .board-card {
   width: min(480px, 88vw);
-  max-height: min(72vh, 640px);
+  max-height: min(78vh, 720px);
   overflow: auto;
   padding: 16px 18px 18px;
   color: #f3ead8;
@@ -394,13 +394,50 @@ label.text-file:hover { border-color: var(--brass); color: var(--brass); }
   box-shadow: 0 0 0 7px #1a1612, 0 0 0 9px #8a6a3a;
 }
 
+.board-card.board-cols-2 { width: min(740px, 92vw); }
+.board-card.board-cols-3 { width: min(980px, 94vw); }
+.board-card.board-cols-4 { width: min(1180px, 96vw); }
+
 .board-card h2 { margin: 0 0 10px; font-weight: 500; }
 
-.board-card ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.board-card ul,
+.board-card ul.board-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px 18px;
+  grid-template-columns: minmax(0, 1fr);
+}
 
-.board-card li { display: flex; align-items: center; gap: 10px; }
+.board-cols-2 ul.board-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.board-cols-3 ul.board-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.board-cols-4 ul.board-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 
-.board-card img { width: 40px; height: 40px; object-fit: contain; }
+.board-card li { display: flex; align-items: center; gap: 10px; min-width: 0; }
+
+.board-card img { width: 40px; height: 40px; object-fit: contain; flex: none; }
+
+@media (max-width: 720px) {
+  .board-card.board-cols-2,
+  .board-card.board-cols-3,
+  .board-card.board-cols-4 { width: min(480px, 92vw); }
+  .board-cols-2 ul.board-grid,
+  .board-cols-3 ul.board-grid,
+  .board-cols-4 ul.board-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (min-width: 721px) and (max-width: 980px) {
+  .board-card.board-cols-3,
+  .board-card.board-cols-4 { width: min(740px, 94vw); }
+  .board-cols-3 ul.board-grid,
+  .board-cols-4 ul.board-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (min-width: 981px) and (max-width: 1200px) {
+  .board-card.board-cols-4 { width: min(980px, 94vw); }
+  .board-cols-4 ul.board-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 
 .board-item { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 
@@ -1059,6 +1096,7 @@ label.check input { width: auto; }
   top: 28px;
   right: 28px;
   width: 380px;
+  max-width: calc(100% - 56px);
   max-height: calc(100% - 180px);
   overflow: auto;
   padding: 16px 18px;
@@ -1068,9 +1106,34 @@ label.check input { width: auto; }
   cursor: default;
 }
 
+.talk-shop.talk-shop-cols-2 { width: min(720px, calc(100% - 56px)); }
+.talk-shop.talk-shop-cols-3 { width: min(960px, calc(100% - 56px)); }
+.talk-shop.talk-shop-cols-4 { width: min(1120px, calc(100% - 56px)); }
+
 .talk-shop b { color: var(--brass); font-size: 22px; font-weight: 500; }
 
-.talk-shop ul { list-style: none; margin: 10px 0 0; padding: 0; }
+.talk-shop ul,
+.talk-shop ul.talk-shop-grid {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px 16px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.talk-shop-cols-2 ul.talk-shop-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.talk-shop-cols-3 ul.talk-shop-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.talk-shop-cols-4 ul.talk-shop-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+
+@media (max-width: 900px) {
+  .talk-shop.talk-shop-cols-2,
+  .talk-shop.talk-shop-cols-3,
+  .talk-shop.talk-shop-cols-4 { width: min(480px, calc(100% - 56px)); }
+  .talk-shop-cols-2 ul.talk-shop-grid,
+  .talk-shop-cols-3 ul.talk-shop-grid,
+  .talk-shop-cols-4 ul.talk-shop-grid { grid-template-columns: minmax(0, 1fr); }
+}
 
 .talk-shop li {
   display: flex;
