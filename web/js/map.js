@@ -1890,9 +1890,46 @@
       menu.style.top = Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - 280)) + "px";
       document.body.appendChild(menu);
       menu.addEventListener("pointerdown", function (event) { event.stopPropagation(); });
+      function npcStillUsed(id, exceptMarkerId) {
+        if (!id) return false;
+        let used = false;
+        (ctx.campaign.pages || []).forEach(function (one) {
+          (one.views || []).forEach(function (oneView) {
+            (oneView.markers || []).forEach(function (marker) {
+              if (!marker || marker.id === exceptMarkerId) return;
+              if (marker.npcId === id || marker.codexId === id) used = true;
+            });
+          });
+        });
+        const actors = ctx.campaign.battle && ctx.campaign.battle.actors || [];
+        actors.forEach(function (actor) {
+          if (actor && actor.codexId === id) used = true;
+        });
+        return used;
+      }
+      function dropUnusedNpc(oldId, keepId) {
+        if (!oldId || oldId === keepId) return;
+        (book().places || []).forEach(function (place) {
+          if (!place || !Array.isArray(place.people)) return;
+          const at = place.people.indexOf(oldId);
+          if (at < 0) return;
+          place.people.splice(at, 1);
+          if (keepId && place.people.indexOf(keepId) < 0) place.people.push(keepId);
+        });
+        (book().squads || []).forEach(function (squad) {
+          if (!squad || !Array.isArray(squad.memberIds)) return;
+          const at = squad.memberIds.indexOf(oldId);
+          if (at < 0) return;
+          squad.memberIds.splice(at, 1);
+          if (keepId && squad.memberIds.indexOf(keepId) < 0) squad.memberIds.push(keepId);
+        });
+        if (npcStillUsed(oldId, item.id)) return;
+        book().npcs = (book().npcs || []).filter(function (row) { return !row || row.id !== oldId; });
+      }
       function take(entry) {
         item.name = entry.name || item.name;
         if (selected.kind === "loc") {
+          const oldPlaceId = item.placeId || "";
           item.placeId = entry.id;
           if (entry.portrait) {
             item.portrait = entry.portrait;
@@ -1904,7 +1941,25 @@
             if (!item.day) item.day = entry.backdrop;
             if (!item.night) item.night = entry.backdrop;
           }
-        } else item.npcId = entry.id;
+          if (oldPlaceId && oldPlaceId !== entry.id) {
+            const places = book().places || [];
+            const oldPlace = places.find(function (row) { return row && row.id === oldPlaceId; });
+            const stillOnMap = (ctx.campaign.pages || []).some(function (one) {
+              return (one.views || []).some(function (oneView) {
+                return (oneView.locations || []).some(function (loc) {
+                  return loc && loc.id !== item.id && loc.placeId === oldPlaceId && !loc.trashed;
+                });
+              });
+            });
+            if (oldPlace && !stillOnMap && !(oldPlace.people && oldPlace.people.length) && !oldPlace.portrait && !oldPlace.backdrop) {
+              book().places = places.filter(function (row) { return !row || row.id !== oldPlaceId; });
+            }
+          }
+        } else {
+          const oldId = item.npcId || "";
+          item.npcId = entry.id;
+          dropUnusedNpc(oldId, entry.id);
+        }
         closeMenu();
         paintBoard();
         paintTree();
