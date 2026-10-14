@@ -462,6 +462,7 @@ window.ShirmoCodex = (function () {
       const pop = document.createElement("div");
       pop.id = "squad-pop";
       pop.className = "pop";
+      pop.style.zIndex = "10000";
       pop.innerHTML = '<div class="pop-card" role="dialog" aria-label="Новый отряд">' +
         '<div class="pop-head"><h2>Новый отряд</h2><button type="button" data-pop-close title="Закрыть" aria-label="Закрыть">×</button></div>' +
         '<label title="Название отряда">Имя<input id="squad-pop-name" type="text" value="' + esc(draft) + '" placeholder="Отряд" aria-label="Имя отряда"></label>' +
@@ -474,22 +475,29 @@ window.ShirmoCodex = (function () {
         nameField.focus();
         nameField.select();
       }
-      function close() { pop.remove(); }
+      function close() { if (pop.parentNode) pop.remove(); }
       pop.addEventListener("click", function (event) { if (event.target === pop) close(); });
-      pop.querySelector("[data-pop-close]").addEventListener("click", close);
-      pop.querySelector("[data-squad-create]").addEventListener("click", function () {
+      pop.querySelector("[data-pop-close]").addEventListener("click", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        close();
+      });
+      pop.querySelector("[data-squad-create]").addEventListener("click", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
         const name = ((pop.querySelector("#squad-pop-name") && pop.querySelector("#squad-pop-name").value) || "").trim() || "Отряд";
         const placeId = (pop.querySelector("#squad-pop-place") && pop.querySelector("#squad-pop-place").value) || "";
         const squad = {
           id: crypto.randomUUID(),
           name: name,
           placeId: "",
-          memberIds: []
+          memberIds: npcId ? [npcId] : []
         };
+        if (npcId) leaveNpcSquads(npcId, "");
         book().squads = book().squads || [];
         book().squads.push(squad);
         if (placeId) moveSquadToPlace(squad, placeId);
-        if (npcId) moveNpcToSquad(npcId, squad.id);
+        if (npcId) syncBattleSquadMove(npcId, squad);
         close();
         paint();
         saveSoon();
@@ -1373,6 +1381,7 @@ window.ShirmoCodex = (function () {
         const squadLine = isPerson(tab)
           ? '<div class="codex-row"><label title="Перенести в отряд">Отряд<select data-move-enemy="' + esc(row.id) + '" aria-label="Отряд">' +
             squadPickOptions(pack && pack.id) + "</select></label>" +
+            '<button type="button" data-act="squad-new" data-npc="' + esc(row.id) + '" title="Создать новый отряд">Новый</button>' +
             (pack ? '<button type="button" data-act="squad-copy" data-npc="' + esc(row.id) + '" title="Скопировать в этот же отряд">Копия</button>' : "") +
             "</div>"
           : "";
@@ -1576,6 +1585,7 @@ window.ShirmoCodex = (function () {
         return;
       }
       if (event.target.hasAttribute("data-move-enemy")) {
+        if (event.type !== "change") return;
         const npcId = event.target.getAttribute("data-move-enemy");
         const value = event.target.value;
         if (value === "__new__") {
@@ -2413,6 +2423,12 @@ window.ShirmoCodex = (function () {
         saveSoon();
         return;
       }
+      if (act === "squad-new") {
+        const npcId = button.getAttribute("data-npc");
+        if (!npcId) return;
+        openNewSquadDialog(npcId);
+        return;
+      }
       if (act === "squad-add") {
         const squadId = button.getAttribute("data-squad");
         const pick = host.querySelector('[data-squad-add="' + squadId + '"]');
@@ -2634,6 +2650,8 @@ window.ShirmoCodex = (function () {
       closeHomeMenu();
       const facePop = document.getElementById("face-pop");
       if (facePop) facePop.remove();
+      const squadPop = document.getElementById("squad-pop");
+      if (squadPop) squadPop.remove();
       host.removeEventListener("input", onInput);
       host.removeEventListener("change", onInput);
       host.removeEventListener("click", onClick);
