@@ -397,6 +397,41 @@
       if (marker.screen == null) marker.screen = false;
     }
 
+    function dropMarkers(ids) {
+      const kill = {};
+      (ids || []).forEach(function (id) { if (id) kill[id] = true; });
+      if (!Object.keys(kill).length) return;
+      (ctx.campaign.pages || []).forEach(function (page) {
+        (page.views || []).forEach(function (view) {
+          view.markers = (view.markers || []).filter(function (row) { return !(row && kill[row.id]); });
+          (view.locations || []).forEach(function (loc) {
+            if (!loc || !loc.markers) return;
+            loc.markers = loc.markers.filter(function (row) { return !(row && kill[row.id]); });
+          });
+        });
+      });
+    }
+
+    function dropSquadFromBattle(groupId) {
+      const group = (battle.board || []).find(function (row) { return row && row.id === groupId && row.kind !== "sep"; });
+      if (!group) return;
+      const memberIds = {};
+      (group.memberIds || []).forEach(function (id) { memberIds[id] = true; });
+      const markerIds = [];
+      (battle.actors || []).forEach(function (actor) {
+        if (!actor || !memberIds[actor.id]) return;
+        if (actor.markerId) markerIds.push(actor.markerId);
+      });
+      dropMarkers(markerIds);
+      battle.actors = (battle.actors || []).filter(function (actor) { return !(actor && memberIds[actor.id]); });
+      battle.board = (battle.board || []).filter(function (row) { return row && row.id !== groupId; });
+      const list = rows();
+      if (list.length) battle.turn = Math.min(Number(battle.turn) || 0, list.length - 1);
+      else battle.turn = 0;
+      save();
+      paint();
+    }
+
     function note(text) {
       battle.log.unshift(text);
       battle.log = battle.log.slice(0, 24);
@@ -928,7 +963,8 @@
         const members = (group.memberIds || []).map(function (id) {
           return battle.actors.find(function (actor) { return actor.id === id; });
         }).filter(Boolean);
-        const head = '<tr class="squad-row" data-board="' + esc(group.id) + '"><td colspan="8"><input data-squad="' + esc(group.id) + '" value="' + esc(group.name || "Отряд") + '" aria-label="Отряд"></td></tr>';
+        const head = '<tr class="squad-row" data-board="' + esc(group.id) + '"><td colspan="7"><input data-squad="' + esc(group.id) + '" value="' + esc(group.name || "Отряд") + '" aria-label="Отряд"></td>' +
+          '<td><button type="button" data-act="squad-del" data-id="' + esc(group.id) + '" title="Убрать отряд из боя целиком">×</button></td></tr>';
         return head + members.map(function (actor) { return fighterRow(actor, now, group.id); }).join("");
       }).join("");
       return rowsHtml || '<tr><td colspan="8">Бой пуст. Средняя кнопка мыши добавляет бойца.</td></tr>';
@@ -1532,6 +1568,9 @@
         battle.board = battle.board.filter(function (row) { return row.id !== id; });
         save();
         paint();
+      }
+      if (act === "squad-del") {
+        dropSquadFromBattle(button.getAttribute("data-id"));
       }
       if (act === "life") {
         const actor = battle.actors.find(function (row) { return row.id === button.getAttribute("data-id"); });
