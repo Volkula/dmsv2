@@ -315,7 +315,7 @@
       weapon: side === "player" ? "Атака" : "Скимитар",
       damage: side === "player" ? "1d8+3" : "1d6+1",
       bonus: side === "player" ? 6 : 3,
-      initBonus: side === "player" ? 2 : 1,
+      initBonus: 0,
       portrait: "",
       note: "",
       marks: [],
@@ -923,6 +923,22 @@
         '<input type="file" accept="image/*" data-face="' + esc(actor.id) + '" aria-label="Портрет ' + esc(actor.name || "") + '"></label>';
     }
 
+    function initBonusOf(actor) {
+      return Math.round(Number(actor && actor.initBonus) || 0);
+    }
+
+    function initRollLabel(actor) {
+      const bonus = initBonusOf(actor);
+      if (!bonus) return "к20";
+      return "к20" + (bonus > 0 ? "+" : "") + bonus;
+    }
+
+    function initRollTitle(actor) {
+      const bonus = initBonusOf(actor);
+      if (!bonus) return "Бросок инициативы к20. Игроки видят кубик";
+      return "Бросок инициативы к20" + (bonus > 0 ? "+" : "") + bonus + ". Игроки видят кубик";
+    }
+
     function fighterRow(actor, now, groupId) {
       const max = Math.max(1, Math.round(Number(actor.hpMax) || 1));
       const hp = Math.max(0, Math.min(max, Math.round(Number(actor.hp) || 0)));
@@ -931,7 +947,7 @@
         '<td><button type="button" data-act="row-attack" data-id="' + esc(actor.id) + '" title="Атака этого бойца">Атака</button></td>' +
         "<td>" + faceBox(actor) + "</td>" +
         '<td class="init-cell"><input data-q="init" data-id="' + esc(actor.id) + '" class="num" type="number" value="' + esc(String(actor.init || 0)) + '" aria-label="Инициатива">' +
-        '<button type="button" data-act="roll-init" data-id="' + esc(actor.id) + '" title="Бросок инициативы. Игроки видят кубик">к20</button></td>' +
+        '<button type="button" data-act="roll-init" data-id="' + esc(actor.id) + '" title="' + esc(initRollTitle(actor)) + '">' + esc(initRollLabel(actor)) + "</button></td>" +
         '<td><input data-q="name" data-id="' + esc(actor.id) + '" type="text" value="' + esc(actor.name || "") + '" aria-label="Имя"></td>' +
         '<td class="hp-cell"><span class="hp-stack">' + hpMeter(hp, max) +
         '<input data-q="hp" data-id="' + esc(actor.id) + '" type="range" min="0" max="' + max + '" value="' + hp + '" aria-label="Хиты"></span><b class="hp-read">' + hp + "</b></td>" +
@@ -945,6 +961,7 @@
       const more = '<tr class="fighter-more" data-more="' + esc(actor.id) + '"' + (open ? "" : " hidden") + '><td colspan="8"><div class="more-grid">' +
         '<label>Макс.<input data-q="hpMax" data-id="' + esc(actor.id) + '" class="num" type="number" min="1" value="' + max + '" aria-label="Максимум хитов"></label>' +
         '<label>КД<input data-q="ac" data-id="' + esc(actor.id) + '" class="num" type="number" min="0" value="' + esc(String(actor.ac || 0)) + '" aria-label="Класс доспеха"></label>' +
+        '<label title="Модификатор к броску инициативы (к20 + бонус)">Иниц.<input data-q="initBonus" data-id="' + esc(actor.id) + '" class="num" type="number" value="' + esc(String(Number(actor.initBonus) || 0)) + '" aria-label="Бонус инициативы"></label>' +
         '<label class="check">Полоса<input data-q="boss" data-id="' + esc(actor.id) + '" type="checkbox"' + (isBoss(actor) ? " checked" : "") + (actor.side === "player" ? " disabled" : "") + ' aria-label="Полоса хитов" title="Полоса хитов на экране игроков"></label>' +
         '<label>Оружие<input data-q="weapon" data-id="' + esc(actor.id) + '" type="text" value="' + esc(actor.weapon || "") + '" aria-label="Оружие"></label>' +
         '<label>Урон<input data-q="damage" data-id="' + esc(actor.id) + '" type="text" value="' + esc(actor.damage || "") + '" aria-label="Урон"></label>' +
