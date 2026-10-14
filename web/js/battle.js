@@ -441,6 +441,7 @@
       actor.hp = Math.max(0, Math.min(actor.hpMax || 999, Math.round(value)));
       actor.dead = actor.hp <= 0;
       pushMarker(actor);
+      syncPerson(actor, ["hp", "hpMax"]);
     }
 
     function roll(spec) {
@@ -456,30 +457,59 @@
 
     function attack(actor) {
       const foe = currentFoe(actor);
+      if (!foe) {
+        note((actor.name || "Боец") + " — нет цели для атаки");
+        save();
+        paint();
+        return;
+      }
+      actor.targetId = foe.id;
+      const bonus = Number(actor.bonus) || 0;
+      const ac = Math.max(0, Math.round(Number(foe.ac) || 10));
       roll({
         name: actor.name || "Боец",
-        label: (actor.weapon || "Атака") + (foe ? " по " + (foe.name || "цели") : ""),
+        label: (actor.weapon || "Атака") + " по " + (foe.name || "цели"),
         count: 1,
         sides: 20,
-        bonus: Number(actor.bonus) || 0
+        bonus: bonus
+      }).then(function (data) {
+        const rolled = data && data.event && data.event.roll ? data.event.roll : null;
+        const total = rolled ? Number(rolled.total) : null;
+        if (total == null) return;
+        const rawDie = rolled.dice && rolled.dice[0] ? Number(rolled.dice[0].value) : NaN;
+        const raw = Number.isFinite(rawDie) ? rawDie : (total - bonus);
+        const crit = raw >= 20;
+        const fumble = raw <= 1;
+        const hit = crit || (!fumble && total >= ac);
+        if (!hit) {
+          note((actor.name || "Боец") + " промах по " + (foe.name || "цели") + " (" + total + " против КД " + ac + ")");
+          save();
+          paint();
+          return;
+        }
+        note((actor.name || "Боец") + (crit ? " крит" : " попадание") + " по " + (foe.name || "цели") + " (" + total + " против КД " + ac + ")");
+        return damage(actor, true, crit);
       });
     }
 
-    function damage(actor, apply) {
+    function damage(actor, apply, crit) {
       const foe = apply ? currentFoe(actor) : null;
       const spec = formula(actor.damage || "1d6");
+      const count = crit ? Math.min(12, Math.max(1, spec.count) * 2) : spec.count;
       roll({
         name: actor.name || "Боец",
-        label: "урон" + (foe ? " по " + (foe.name || "цели") : ""),
-        count: spec.count,
+        label: (crit ? "крит. урон" : "урон") + (foe ? " по " + (foe.name || "цели") : ""),
+        count: count,
         sides: spec.sides,
         bonus: spec.bonus
       }).then(function (data) {
         const total = data && data.event && data.event.roll ? Number(data.event.roll.total) : 0;
         actor.lastDamage = total;
-        if (apply && total && foe) {
-          setHp(foe, (Number(foe.hp) || 0) - total);
-          note((actor.name || "Боец") + " бьёт " + (foe.name || "цель") + " на " + total);
+        if (apply && total > 0 && foe) {
+          const before = Number(foe.hp) || 0;
+          setHp(foe, before - total);
+          note((actor.name || "Боец") + " бьёт " + (foe.name || "цель") + " на " + total +
+            (foe.dead ? " — убит" : " (" + foe.hp + "/" + (foe.hpMax || foe.hp) + ")"));
         }
         save();
         paint();
@@ -1035,7 +1065,7 @@
         '<button type="button" data-act="init" title="Бросить инициативу всем на ширме, без показа кубиков">Инициатива всем</button>' +
         '<button type="button" data-act="place" title="Поставить врагов на текущую карту. Игроки их не видят, пока не снимете скрытие">На карту</button>' +
         '<button type="button" data-act="pull-hp" title="Подтянуть хиты и характеристики из справочника по имени">ХП из справочника</button></div></div>' +
-        '<p class="note">«Атаковать» — кто бьёт и чем. Средняя кнопка — боец, черта или отряд. Правая по бойцу — статус и убить. к20 — инициатива этого бойца.</p>' +
+        '<p class="note">«Атаковать» — бросок по КД цели, при попадании сразу урон и снятие хитов. Средняя кнопка — боец, черта или отряд. Правая по бойцу — статус. к20 — инициатива.</p>' +
         toneHtml();
     }
 
@@ -1811,13 +1841,8 @@
         if (!actor) return;
         const foe = currentFoe(actor);
         closePop();
-        roll({
-          name: actor.name || "Боец",
-          label: "атака" + (foe ? " по " + (foe.name || "цели") : ""),
-          count: 1,
-          sides: sides,
-          bonus: 0
-        });
+        if (!actor.damage) actor.damage = "1d" + sides;
+        attack(actor);
         return;
       }
       const markBtn = event.target.closest("[data-mark]");
