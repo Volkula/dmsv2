@@ -72,6 +72,22 @@
     return data;
   }
 
+  async function downloadBackup(url, headers) {
+    const response = await fetch(url, { headers: headers });
+    if (!response.ok) {
+      const data = await response.json().catch(function () { return {}; });
+      throw new Error(data.error || "ошибка выгрузки");
+    }
+    const blob = await response.blob();
+    const cd = response.headers.get("content-disposition") || "";
+    const match = /filename="([^"]+)"/.exec(cd);
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = match ? match[1] : "room.shirmo.json";
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
   function fontStack(name) {
     return "'" + String(name || "Шрифт").replace(/'/g, "") + "', sans-serif";
   }
@@ -431,13 +447,7 @@
         button.getAttribute("data-purge");
       try {
         if (dump) {
-          const pack = await api("/api/admin/rooms/" + id + "/backup", { headers: adminHeaders() });
-          const blob = new Blob([JSON.stringify(pack)], { type: "application/json" });
-          const link = document.createElement("a");
-          link.href = URL.createObjectURL(blob);
-          link.download = (pack.title || "room") + ".shirmo.json";
-          link.click();
-          URL.revokeObjectURL(link.href);
+          await downloadBackup("/api/admin/rooms/" + id + "/backup", adminHeaders());
           return;
         }
         if (reset) {
@@ -1393,13 +1403,7 @@
     });
     app.querySelector("#backup").addEventListener("click", async function () {
       try {
-        const pack = await api("/api/rooms/" + id + "/backup", { headers: { authorization: headers.authorization } });
-        const blob = new Blob([JSON.stringify(pack)], { type: "application/json" });
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);
-        link.download = (pack.title || "room") + ".shirmo.json";
-        link.click();
-        URL.revokeObjectURL(link.href);
+        await downloadBackup("/api/rooms/" + id + "/backup", { authorization: headers.authorization });
       } catch (fail) {
         err.textContent = fail.message;
       }

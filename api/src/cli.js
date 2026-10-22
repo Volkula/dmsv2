@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { openDb, rowToRoom } from "./db.js";
 import { hashSecret, newSecret } from "./auth.js";
 import { campaignOk, projectFrame } from "./frame.js";
-import { packFiles, unpackFiles, wipeRoomFiles, ROOM_FILES_MAX } from "./files.js";
+import { unpackFiles, wipeRoomFiles, writePackedFiles, ROOM_FILES_MAX } from "./files.js";
 import { openSettings } from "./settings.js";
 
 const dataDir = process.env.DATA_DIR || path.join(process.cwd(), "data");
@@ -32,17 +32,22 @@ function stamp() {
   return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + "-" + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
 }
 
-function roomPack(row) {
+function writeRoomPack(row, filePath) {
   const room = rowToRoom(row);
-  return {
-    roomId: room.id,
-    title: room.title,
-    campaign: room.campaign,
-    rolls: room.rolls,
-    pins: room.pins,
-    files: packFiles(filesDir, room.id),
-    deletedAt: row.deleted_at || 0
-  };
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const fd = fs.openSync(filePath, "w");
+  try {
+    fs.writeSync(fd, '{"roomId":' + JSON.stringify(room.id));
+    fs.writeSync(fd, ',"title":' + JSON.stringify(room.title));
+    fs.writeSync(fd, ',"campaign":' + JSON.stringify(room.campaign));
+    fs.writeSync(fd, ',"rolls":' + JSON.stringify(room.rolls));
+    fs.writeSync(fd, ',"pins":' + JSON.stringify(room.pins));
+    fs.writeSync(fd, ',"files":');
+    writePackedFiles(fd, filesDir, room.id);
+    fs.writeSync(fd, ',"deletedAt":' + Number(row.deleted_at || 0) + "}");
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 function setPassword(id, password) {
@@ -93,9 +98,8 @@ function cmdBackupAll(outDir) {
   fs.mkdirSync(dir, { recursive: true });
   const index = [];
   listRooms.all().forEach(function (row) {
-    const pack = roomPack(row);
     const name = row.id + ".shirmo.json";
-    fs.writeFileSync(path.join(dir, name), JSON.stringify(pack));
+    writeRoomPack(row, path.join(dir, name));
     index.push({ id: row.id, title: row.title, file: name, deletedAt: row.deleted_at || 0 });
   });
   fs.copyFileSync(path.join(dataDir, "shirmo.sqlite"), path.join(dir, "shirmo.sqlite"));
@@ -108,10 +112,8 @@ function cmdBackupRoom(id, outFile) {
   if (!id) throw new Error("нужен id комнаты");
   const row = selectRoom.get(id);
   if (!row) throw new Error("комната не найдена: " + id);
-  const pack = roomPack(row);
   const file = outFile || path.join(backupRoot, "room-" + id.slice(0, 8) + "-" + stamp() + ".shirmo.json");
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(pack));
+  writeRoomPack(row, file);
   console.log(file);
   console.log("пароль мастера (текущий): " + (row.master_key || "(не сохранён)"));
 }

@@ -20,20 +20,43 @@ export function roomFilesSize(filesDir, roomId) {
   return total;
 }
 
-export function packFiles(filesDir, roomId) {
+export function listRoomFileNames(filesDir, roomId) {
   const dir = roomDir(filesDir, roomId);
   if (!fs.existsSync(dir)) return [];
   return fs.readdirSync(dir).filter(function (name) {
     return !name.endsWith(".type");
-  }).map(function (name) {
+  });
+}
+
+export function packFiles(filesDir, roomId) {
+  return listRoomFileNames(filesDir, roomId).map(function (name) {
     let type = "application/octet-stream";
-    try { type = fs.readFileSync(path.join(dir, name + ".type"), "utf8").trim() || type; } catch (err) { /* нет типа */ }
+    try {
+      type = fs.readFileSync(path.join(roomDir(filesDir, roomId), name + ".type"), "utf8").trim() || type;
+    } catch (err) { /* нет типа */ }
     return {
       id: name,
       type: type.slice(0, 80),
-      data: fs.readFileSync(path.join(dir, name)).toString("base64")
+      data: fs.readFileSync(path.join(roomDir(filesDir, roomId), name)).toString("base64")
     };
   });
+}
+
+/** Пишет массив files в открытый fd по одному файлу — без удержания всей выгрузки в RAM. */
+export function writePackedFiles(fd, filesDir, roomId) {
+  const dir = roomDir(filesDir, roomId);
+  const names = listRoomFileNames(filesDir, roomId);
+  fs.writeSync(fd, "[");
+  names.forEach(function (name, index) {
+    if (index) fs.writeSync(fd, ",");
+    let type = "application/octet-stream";
+    try {
+      type = fs.readFileSync(path.join(dir, name + ".type"), "utf8").trim() || type;
+    } catch (err) { /* нет типа */ }
+    const data = fs.readFileSync(path.join(dir, name)).toString("base64");
+    fs.writeSync(fd, JSON.stringify({ id: name, type: type.slice(0, 80), data: data }));
+  });
+  fs.writeSync(fd, "]");
 }
 
 export function unpackFiles(filesDir, roomId, files, maxBytes) {

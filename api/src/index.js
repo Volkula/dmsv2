@@ -7,7 +7,7 @@ import { bearer, hashSecret, isAdmin, newSecret, secretMatches } from "./auth.js
 import { publish, subscribe } from "./hub.js";
 import { blankCampaign, campaignOk, projectFrame } from "./frame.js";
 import { openSettings } from "./settings.js";
-import { packFiles, ROOM_FILES_MAX, roomFilesSize, unpackFiles, wipeRoomFiles } from "./files.js";
+import { ROOM_FILES_MAX, roomFilesSize, unpackFiles, wipeRoomFiles, writePackedFiles } from "./files.js";
 
 const dataDir = process.env.DATA_DIR || path.join(process.cwd(), "data");
 const port = Number(process.env.PORT || 8080);
@@ -188,34 +188,81 @@ function createRoom(title, key) {
   return { id: id, title: title, masterKey: key };
 }
 
-function roomBackup(id) {
-  const room = roomById(id);
-  if (!room) return null;
-  const row = selectRoom.get(id);
-  return {
-    roomId: id,
-    title: room.title,
-    campaign: room.campaign,
-    rolls: room.rolls,
-    pins: room.pins,
-    files: packFiles(filesDir, id),
-    deletedAt: row && row.deleted_at || 0
-  };
-}
-
 function stamp() {
   const d = new Date();
   const p = function (n) { return String(n).padStart(2, "0"); };
   return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + "-" + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
 }
 
+function backupFileName(title, id) {
+  const base = String(title || "room").replace(/[^\w.\-а-яА-ЯёЁ ]+/gi, "_").trim() || "room";
+  return base.slice(0, 80) + "-" + String(id || "").slice(0, 8) + ".shirmo.json";
+}
+
+/** Пишет выгрузку на диск по частям — иначе base64 всех файлов комнаты убивает Node на ~1 ГБ RAM. */
+function writeRoomBackupFile(id, filePath) {
+  const room = roomById(id);
+  if (!room) return null;
+  const row = selectRoom.get(id);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  const fd = fs.openSync(filePath, "w");
+  try {
+    fs.writeSync(fd, '{"roomId":' + JSON.stringify(id));
+    fs.writeSync(fd, ',"title":' + JSON.stringify(room.title));
+    fs.writeSync(fd, ',"campaign":' + JSON.stringify(room.campaign));
+    fs.writeSync(fd, ',"rolls":' + JSON.stringify(room.rolls));
+    fs.writeSync(fd, ',"pins":' + JSON.stringify(room.pins));
+    fs.writeSync(fd, ',"files":');
+    writePackedFiles(fd, filesDir, id);
+    fs.writeSync(fd, ',"deletedAt":' + Number(row && row.deleted_at || 0) + "}");
+  } finally {
+    fs.closeSync(fd);
+  }
+  return filePath;
+}
+
+function sendBackupDownload(res, id) {
+  const room = roomById(id);
+  if (!room) {
+    send(res, 404, { error: "not found" });
+    return;
+  }
+  const filePath = path.join(backupRoot, "tmp-" + id.slice(0, 8) + "-" + stamp() + ".shirmo.json");
+  try {
+    writeRoomBackupFile(id, filePath);
+  } catch (err) {
+    try { fs.unlinkSync(filePath); } catch (drop) { /* нет */ }
+    throw err;
+  }
+  const name = backupFileName(room.title, id);
+  let cleaned = false;
+  const cleanup = function () {
+    if (cleaned) return;
+    cleaned = true;
+    try { fs.unlinkSync(filePath); } catch (drop) { /* нет */ }
+  };
+  const stream = fs.createReadStream(filePath);
+  stream.on("error", function () {
+    cleanup();
+    if (!res.headersSent) send(res, 500, { error: "backup read failed" });
+    else res.destroy();
+  });
+  stream.on("close", cleanup);
+  res.on("close", cleanup);
+  res.writeHead(200, {
+    "content-type": "application/json; charset=utf-8",
+    "content-disposition": 'attachment; filename="' + name.replace(/"/g, "") + '"',
+    "cache-control": "no-store"
+  });
+  stream.pipe(res);
+}
+
 function writeFullBackup(dir) {
   fs.mkdirSync(dir, { recursive: true });
   const index = [];
   listRooms.all().forEach(function (row) {
-    const pack = roomBackup(row.id);
     const name = row.id + ".shirmo.json";
-    fs.writeFileSync(path.join(dir, name), JSON.stringify(pack));
+    writeRoomBackupFile(row.id, path.join(dir, name));
     index.push({ id: row.id, title: row.title, file: name, deletedAt: row.deleted_at || 0 });
   });
   fs.copyFileSync(path.join(dataDir, "shirmo.sqlite"), path.join(dir, "shirmo.sqlite"));
@@ -345,12 +392,7 @@ const server = http.createServer(async function (req, res) {
       }
 
       if (req.method === "GET" && parts[2] === "rooms" && parts[3] && parts[4] === "backup") {
-        const pack = roomBackup(parts[3]);
-        if (!pack) {
-          send(res, 404, { error: "not found" });
-          return;
-        }
-        send(res, 200, pack);
+        sendBackupDownload(res, parts[3]);
         return;
       }
 
@@ -565,7 +607,7 @@ const server = http.createServer(async function (req, res) {
     }
 
     if (req.method === "GET" && tail === "backup") {
-      send(res, 200, roomBackup(id));
+      sendBackupDownload(res, id);
       return;
     }
 
