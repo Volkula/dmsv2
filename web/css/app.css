@@ -2705,3 +2705,26 @@ button.ware-face-btn img { width: 100%; height: 100%; object-fit: cover; display
   .battle-desk { grid-template-columns: 1fr; }
   .battle-queue, .battle-log-pane { max-height: 46vh; }
 }
+
+.backup-toast {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 80;
+  max-width: min(360px, calc(100vw - 32px));
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #1a1612;
+  color: var(--ink);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  font-size: 14px;
+}
+
+.backup-toast[hidden] { display: none; }
+
+.backup-toast.is-busy { border-color: var(--brass); color: var(--brass); }
+
+.backup-toast.is-ok { border-color: #5d8f5a; color: #9ecf9a; }
+
+.backup-toast.is-err { border-color: #8f4a4a; color: #e2a0a0; }

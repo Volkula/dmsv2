@@ -7,7 +7,7 @@ import { bearer, hashSecret, isAdmin, newSecret, secretMatches } from "./auth.js
 import { publish, subscribe } from "./hub.js";
 import { blankCampaign, campaignOk, projectFrame } from "./frame.js";
 import { openSettings } from "./settings.js";
-import { ROOM_FILES_MAX, roomFilesSize, unpackFiles, wipeRoomFiles, writePackedFiles } from "./files.js";
+import { ROOM_FILES_MAX, roomFilesSize, unpackFiles, wipeRoomFiles, writePackedFiles, pipePackedFiles } from "./files.js";
 
 const dataDir = process.env.DATA_DIR || path.join(process.cwd(), "data");
 const port = Number(process.env.PORT || 8080);
@@ -221,40 +221,49 @@ function writeRoomBackupFile(id, filePath) {
   return filePath;
 }
 
-function sendBackupDownload(res, id) {
+function writeHttpChunk(res, chunk) {
+  return new Promise(function (resolve, reject) {
+    if (res.writableEnded || res.destroyed) {
+      reject(new Error("closed"));
+      return;
+    }
+    if (res.write(chunk)) {
+      resolve();
+      return;
+    }
+    res.once("drain", resolve);
+    res.once("error", reject);
+  });
+}
+
+/** Стримит выгрузку сразу в ответ — иначе минуты тишины, пока файл собирается на диске. */
+async function sendBackupDownload(res, id) {
   const room = roomById(id);
   if (!room) {
     send(res, 404, { error: "not found" });
     return;
   }
-  const filePath = path.join(backupRoot, "tmp-" + id.slice(0, 8) + "-" + stamp() + ".shirmo.json");
-  try {
-    writeRoomBackupFile(id, filePath);
-  } catch (err) {
-    try { fs.unlinkSync(filePath); } catch (drop) { /* нет */ }
-    throw err;
-  }
+  const row = selectRoom.get(id);
   const name = backupFileName(room.title, id);
-  let cleaned = false;
-  const cleanup = function () {
-    if (cleaned) return;
-    cleaned = true;
-    try { fs.unlinkSync(filePath); } catch (drop) { /* нет */ }
-  };
-  const stream = fs.createReadStream(filePath);
-  stream.on("error", function () {
-    cleanup();
-    if (!res.headersSent) send(res, 500, { error: "backup read failed" });
-    else res.destroy();
-  });
-  stream.on("close", cleanup);
-  res.on("close", cleanup);
   res.writeHead(200, {
     "content-type": "application/json; charset=utf-8",
     "content-disposition": 'attachment; filename="' + name.replace(/"/g, "") + '"',
     "cache-control": "no-store"
   });
-  stream.pipe(res);
+  const write = function (chunk) { return writeHttpChunk(res, chunk); };
+  try {
+    await write('{"roomId":' + JSON.stringify(id));
+    await write(',"title":' + JSON.stringify(room.title));
+    await write(',"campaign":' + JSON.stringify(room.campaign));
+    await write(',"rolls":' + JSON.stringify(room.rolls));
+    await write(',"pins":' + JSON.stringify(room.pins));
+    await write(',"files":');
+    await pipePackedFiles(write, filesDir, id);
+    await write(',"deletedAt":' + Number(row && row.deleted_at || 0) + "}");
+    res.end();
+  } catch (err) {
+    if (!res.writableEnded) res.destroy();
+  }
 }
 
 function writeFullBackup(dir) {
@@ -392,7 +401,7 @@ const server = http.createServer(async function (req, res) {
       }
 
       if (req.method === "GET" && parts[2] === "rooms" && parts[3] && parts[4] === "backup") {
-        sendBackupDownload(res, parts[3]);
+        await sendBackupDownload(res, parts[3]);
         return;
       }
 
@@ -607,7 +616,7 @@ const server = http.createServer(async function (req, res) {
     }
 
     if (req.method === "GET" && tail === "backup") {
-      sendBackupDownload(res, id);
+      await sendBackupDownload(res, id);
       return;
     }
 

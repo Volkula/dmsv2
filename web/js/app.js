@@ -72,13 +72,59 @@
     return data;
   }
 
+  function formatBytes(n) {
+    const v = Number(n) || 0;
+    if (v < 1024) return v + " B";
+    if (v < 1048576) return (v / 1024).toFixed(1) + " KB";
+    if (v < 1073741824) return (v / 1048576).toFixed(1) + " MB";
+    return (v / 1073741824).toFixed(2) + " GB";
+  }
+
+  function backupToast(text, kind) {
+    let el = document.getElementById("backup-toast");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "backup-toast";
+      el.className = "backup-toast";
+      el.setAttribute("role", "status");
+      document.body.appendChild(el);
+    }
+    el.className = "backup-toast" + (kind ? " is-" + kind : "");
+    el.textContent = text || "";
+    el.hidden = !text;
+  }
+
   async function downloadBackup(url, headers) {
+    backupToast("Собираю выгрузку…", "busy");
     const response = await fetch(url, { headers: headers });
     if (!response.ok) {
       const data = await response.json().catch(function () { return {}; });
       throw new Error(data.error || "ошибка выгрузки");
     }
-    const blob = await response.blob();
+    const total = Number(response.headers.get("content-length")) || 0;
+    const reader = response.body && response.body.getReader ? response.body.getReader() : null;
+    let blob;
+    if (!reader) {
+      backupToast("Скачиваю…", "busy");
+      blob = await response.blob();
+    } else {
+      const chunks = [];
+      let received = 0;
+      let lastPaint = 0;
+      while (true) {
+        const step = await reader.read();
+        if (step.done) break;
+        chunks.push(step.value);
+        received += step.value.byteLength;
+        if (received - lastPaint > 256 * 1024 || !chunks.length) {
+          lastPaint = received;
+          backupToast(total
+            ? "Выгрузка: " + formatBytes(received) + " / " + formatBytes(total)
+            : "Выгрузка: " + formatBytes(received) + "…", "busy");
+        }
+      }
+      blob = new Blob(chunks, { type: "application/json" });
+    }
     const cd = response.headers.get("content-disposition") || "";
     const match = /filename="([^"]+)"/.exec(cd);
     const link = document.createElement("a");
@@ -86,6 +132,8 @@
     link.download = match ? match[1] : "room.shirmo.json";
     link.click();
     URL.revokeObjectURL(link.href);
+    backupToast("Готово: " + formatBytes(blob.size), "ok");
+    setTimeout(function () { backupToast(""); }, 2800);
   }
 
   function fontStack(name) {
@@ -447,7 +495,20 @@
         button.getAttribute("data-purge");
       try {
         if (dump) {
-          await downloadBackup("/api/admin/rooms/" + id + "/backup", adminHeaders());
+          if (dump.disabled) return;
+          dump.disabled = true;
+          const label = dump.textContent;
+          dump.textContent = "…";
+          try {
+            await downloadBackup("/api/admin/rooms/" + id + "/backup", adminHeaders());
+          } catch (fail) {
+            backupToast(fail.message || "ошибка выгрузки", "err");
+            setTimeout(function () { backupToast(""); }, 4000);
+            throw fail;
+          } finally {
+            dump.disabled = false;
+            dump.textContent = label;
+          }
           return;
         }
         if (reset) {
@@ -1402,10 +1463,21 @@
       openRollLook(state, err, save, app.querySelector("#roll-look"));
     });
     app.querySelector("#backup").addEventListener("click", async function () {
+      const btn = app.querySelector("#backup");
+      if (btn.disabled) return;
+      btn.disabled = true;
+      const label = btn.textContent;
+      btn.textContent = "Выгрузка…";
       try {
+        err.textContent = "";
         await downloadBackup("/api/rooms/" + id + "/backup", { authorization: headers.authorization });
       } catch (fail) {
+        backupToast(fail.message || "ошибка выгрузки", "err");
         err.textContent = fail.message;
+        setTimeout(function () { backupToast(""); }, 4000);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = label;
       }
     });
     app.querySelector("#pass").addEventListener("click", async function () {

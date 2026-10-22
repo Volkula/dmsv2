@@ -42,6 +42,14 @@ export function packFiles(filesDir, roomId) {
   });
 }
 
+function fileType(dir, name) {
+  let type = "application/octet-stream";
+  try {
+    type = fs.readFileSync(path.join(dir, name + ".type"), "utf8").trim() || type;
+  } catch (err) { /* нет типа */ }
+  return type.slice(0, 80);
+}
+
 /** Пишет массив files в открытый fd по одному файлу — без удержания всей выгрузки в RAM. */
 export function writePackedFiles(fd, filesDir, roomId) {
   const dir = roomDir(filesDir, roomId);
@@ -49,14 +57,24 @@ export function writePackedFiles(fd, filesDir, roomId) {
   fs.writeSync(fd, "[");
   names.forEach(function (name, index) {
     if (index) fs.writeSync(fd, ",");
-    let type = "application/octet-stream";
-    try {
-      type = fs.readFileSync(path.join(dir, name + ".type"), "utf8").trim() || type;
-    } catch (err) { /* нет типа */ }
     const data = fs.readFileSync(path.join(dir, name)).toString("base64");
-    fs.writeSync(fd, JSON.stringify({ id: name, type: type.slice(0, 80), data: data }));
+    fs.writeSync(fd, JSON.stringify({ id: name, type: fileType(dir, name), data: data }));
   });
   fs.writeSync(fd, "]");
+}
+
+/** То же в HTTP/stream: write(chunk) → Promise, с backpressure. */
+export async function pipePackedFiles(write, filesDir, roomId) {
+  const dir = roomDir(filesDir, roomId);
+  const names = listRoomFileNames(filesDir, roomId);
+  await write("[");
+  for (let index = 0; index < names.length; index += 1) {
+    if (index) await write(",");
+    const name = names[index];
+    const data = fs.readFileSync(path.join(dir, name)).toString("base64");
+    await write(JSON.stringify({ id: name, type: fileType(dir, name), data: data }));
+  }
+  await write("]");
 }
 
 export function unpackFiles(filesDir, roomId, files, maxBytes) {
