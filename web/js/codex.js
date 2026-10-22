@@ -248,6 +248,13 @@ window.ShirmoCodex = (function () {
     return { name: text, level: null };
   }
 
+  function unsmash(text) {
+    return String(text || "")
+      .replace(/([а-яёa-z0-9])([А-ЯЁA-Z])/g, "$1 $2")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
   function docLines(block) {
     const root = block && block.value && block.value.data;
     if (!root || !Array.isArray(root.content)) return [];
@@ -255,11 +262,25 @@ window.ShirmoCodex = (function () {
       const bits = [];
       (function walk(node) {
         if (!node || node.type === "resource") return;
-        if (node.type === "text" && node.text) bits.push(node.text);
+        if (node.type === "text" && node.text) bits.push(String(node.text));
         (node.content || []).forEach(walk);
       })(para);
-      return bits.join("").replace(/\s+/g, " ").trim();
+      return unsmash(bits.join(" "));
     }).filter(Boolean);
+  }
+
+  function splitAbility(line) {
+    const text = unsmash(line);
+    if (!text) return null;
+    const cut = text.search(/[.!?](?:\s|$)/);
+    if (cut > 0 && cut < 80 && cut < text.length - 1) {
+      return { name: text.slice(0, cut + 1).trim(), text: text.slice(cut + 1).trim(), note: "" };
+    }
+    const words = text.split(" ");
+    if (words.length > 4) {
+      return { name: words.slice(0, 3).join(" "), text: words.slice(3).join(" "), note: "" };
+    }
+    return { name: text, text: "", note: "" };
   }
 
   function readLss(raw) {
@@ -272,17 +293,15 @@ window.ShirmoCodex = (function () {
     else if (doc.data && doc.data.stats) data = doc.data;
     if (!data || !data.stats) throw new Error("В файле нет листа Long Story Short.");
     const info = data.info || {};
-    const stats = ["str", "dex", "con", "int", "wis", "cha"].map(function (key) {
-      const score = Number(data.stats[key] && data.stats[key].score) || 10;
-      return { id: key, name: STAT_RU[key], score: score, mod: abilityMod(score) };
-    });
-    const env = { PROF: 0, LVL: 1 };
-    stats.forEach(function (stat) { env[stat.id.toUpperCase()] = stat.mod; });
     const level = Number(lssVal(info.level)) || 1;
-    env.LVL = level;
     const profRaw = data.proficiencyCustom || data.proficiency;
     const prof = Math.round(Number(typeof profRaw === "object" ? lssVal(profRaw) : profRaw) || 0);
-    env.PROF = prof;
+    const stats = ["str", "dex", "con", "int", "wis", "cha"].map(function (key) {
+      const score = Number(data.stats[key] && data.stats[key].score) || 10;
+      return { id: key, name: STAT_RU[key], score: score, mod: abilityMod(score), save: 0 };
+    });
+    const env = { PROF: prof, LVL: level };
+    stats.forEach(function (stat) { env[stat.id.toUpperCase()] = stat.mod; });
     function bonusSum(target) {
       return (data.bonuses || []).reduce(function (sum, bonus) {
         if (!bonus || bonus.target !== target || (bonus.mode && bonus.mode !== "add")) return sum;
@@ -313,14 +332,25 @@ window.ShirmoCodex = (function () {
     const skills = Object.keys(data.skills || {}).map(function (key) {
       const skill = data.skills[key] || {};
       const expert = !!(skill.isExpertise || skill.expertise);
-      if (!skill.isProf && !expert) return null;
+      const trained = !!(skill.isProf || expert);
       const stat = String(skill.baseStat || "str").toLowerCase();
-      const bonus = (env[stat.toUpperCase()] || 0) + prof * (expert ? 2 : 1) + bonusSum("skill." + key);
-      return { name: SKILL_RU[key] || key, bonus: Math.round(bonus) };
-    }).filter(Boolean);
-    const saves = ["str", "dex", "con", "int", "wis", "cha"].filter(function (key) {
-      return data.saves && data.saves[key] && data.saves[key].isProf;
-    }).map(function (key) { return STAT_RU[key]; });
+      const bonus = (env[stat.toUpperCase()] || 0) + (trained ? prof * (expert ? 2 : 1) : 0) + bonusSum("skill." + key);
+      return {
+        id: key,
+        name: SKILL_RU[key] || key,
+        bonus: Math.round(bonus),
+        trained: trained,
+        expert: expert,
+        stat: stat
+      };
+    });
+    stats.forEach(function (stat) {
+      const save = data.saves && data.saves[stat.id];
+      const trained = !!(save && save.isProf);
+      stat.save = Math.round(stat.mod + (trained ? prof : 0) + bonusSum("save." + stat.id));
+      stat.saveProf = trained;
+    });
+    const saves = stats.filter(function (stat) { return stat.saveProf; }).map(function (stat) { return stat.name; });
     const attacks = (data.weaponsList || []).map(function (weapon) {
       const name = String(lssVal(weapon && weapon.name) || "").trim();
       if (!name) return null;
@@ -345,16 +375,26 @@ window.ShirmoCodex = (function () {
       if (!res || !res.name) return;
       const cur = res.current == null ? "" : res.current;
       const max = res.max == null ? "" : res.max;
-      abilities.push({ name: String(res.name), note: cur === "" && max === "" ? "" : cur + "/" + max });
+      abilities.push({ name: unsmash(res.name), text: "", note: cur === "" && max === "" ? "" : cur + "/" + max });
     });
     const text = data.text || {};
     Object.keys(text).forEach(function (key) {
       if (!/trait|feature|action|attack/i.test(key)) return;
       docLines(text[key]).forEach(function (line) {
-        if (abilities.length >= 10) return;
-        abilities.push({ name: line.length > 160 ? line.slice(0, 157) + "…" : line, note: "" });
+        if (abilities.length >= 16) return;
+        const row = splitAbility(line);
+        if (row) abilities.push(row);
       });
     });
+    const profBits = [];
+    if (data.prof && typeof data.prof === "object") {
+      Object.keys(data.prof).forEach(function (key) {
+        const node = data.prof[key];
+        const label = unsmash(lssVal(node) || (node && node.label) || "");
+        if (label) profBits.push({ name: unsmash(key), text: label, note: "" });
+      });
+    }
+    abilities.push.apply(abilities, profBits.slice(0, 6));
     const avatar = data.avatar;
     const portrait = typeof avatar === "string"
       ? avatar
@@ -586,6 +626,7 @@ window.ShirmoCodex = (function () {
     } catch (err) { /* нет хранилища */ }
     const wareOpen = {};
     const sheetOpen = {};
+    const heroOpen = {};
     function isSheetOpen(key) {
       return sheetOpen[key] !== false;
     }
@@ -1936,41 +1977,97 @@ window.ShirmoCodex = (function () {
       const battle = ctx.campaign.battle;
       return !!(battle && (battle.actors || []).some(function (actor) { return actor && actor.heroId === id; }));
     }
+    function heroFix(hero) {
+      if (!hero) return hero;
+      (hero.abilities || []).forEach(function (item) {
+        if (!item) return;
+        item.name = unsmash(item.name);
+        item.text = unsmash(item.text || "");
+        if (!item.text && item.name && /[а-яёa-z][А-ЯЁA-Z]/.test(item.name)) {
+          const next = splitAbility(item.name);
+          if (next) {
+            item.name = next.name;
+            item.text = next.text;
+          }
+        }
+      });
+      (hero.skills || []).forEach(function (skill) {
+        if (!skill) return;
+        skill.name = unsmash(skill.name);
+        if (skill.trained == null) skill.trained = true;
+      });
+      (hero.stats || []).forEach(function (stat) {
+        if (!stat) return;
+        if (stat.save == null) {
+          stat.save = Math.round((Number(stat.mod) || 0) + (stat.saveProf ? (Number(hero.prof) || 0) : 0));
+        }
+      });
+      return hero;
+    }
     function heroesHtml() {
       const heroes = book().heroes || [];
       if (!heroes.length) return '<p class="note">Пока пусто. Загрузите JSON листа Long Story Short.</p>';
-      return heroes.map(function (hero, index) {
+      const images = (ctx.campaign.library && ctx.campaign.library.images) || [];
+      const lib = images.map(function (image) {
+        const section = window.ShirmoLib ? window.ShirmoLib.title(image) : "";
+        const label = section && section !== "Общее" ? section + " — " + (image.name || "Картинка") : (image.name || "Картинка");
+        return '<option value="' + esc(image.url) + '">' + esc(label) + "</option>";
+      }).join("");
+      return heroes.map(function (raw, index) {
+        const hero = heroFix(raw);
+        const open = !!heroOpen[hero.id];
         const face = hero.portrait
-          ? '<img class="hero-face" alt="" src="' + esc(hero.portrait) + '">'
-          : '<span class="hero-face hero-face-empty" aria-hidden="true"></span>';
-        const stats = (hero.stats || []).map(function (stat) {
-          return "<span>" + esc(stat.name) + " " + esc(stat.score) + " (" + signed(stat.mod) + ")</span>";
+          ? '<button type="button" class="npc-portrait hero-face" data-act="face" data-i="' + index + '" title="Настроить кадр портрета"><img alt="" src="' + esc(hero.portrait) + '" style="' + faceStyle(hero) + '"></button>'
+          : '<span class="npc-portrait hero-face hero-face-empty" data-i="' + index + '" aria-hidden="true"></span>';
+        const stats = (hero.stats || []).map(function (stat, s) {
+          return '<button type="button" class="hero-stat' + (stat.saveProf ? " is-prof" : "") + '" data-act="hero-save" data-i="' + index + '" data-s="' + s + '" title="Спасбросок ' + esc(stat.name) + ' ' + signed(stat.save) + '">' +
+            "<em>" + esc(stat.name) + "</em><b>" + signed(stat.mod) + "</b><span>" + esc(stat.score) + "</span></button>";
         }).join("");
-        const skills = (hero.skills || []).map(function (skill) {
-          return "<span>" + esc(skill.name) + " " + signed(skill.bonus) + "</span>";
+        const skillRows = (hero.skills || []).filter(function (skill) { return open || skill.trained; });
+        const skills = skillRows.map(function (skill, s) {
+          const at = (hero.skills || []).indexOf(skill);
+          return '<button type="button" class="hero-skill' + (skill.trained ? " is-prof" : "") + (skill.expert ? " is-expert" : "") + '" data-act="hero-skill" data-i="' + index + '" data-s="' + at + '" title="' + esc(skill.name) + ' ' + signed(skill.bonus) + '">' +
+            "<span>" + esc(skill.name) + "</span><b>" + signed(skill.bonus) + "</b></button>";
         }).join("");
+        const vitals = [
+          '<span class="hero-pill" title="Класс доспеха"><em>КД</em><b>' + esc(hero.ac || 0) + "</b></span>",
+          '<span class="hero-pill" title="Хиты"><em>ХП</em><b>' + esc((hero.hp || 0) + "/" + (hero.hpMax || 0)) + "</b></span>",
+          hero.speed ? '<span class="hero-pill" title="Скорость"><em>Ск</em><b>' + esc(hero.speed) + "</b></span>" : "",
+          '<span class="hero-pill" title="Бонус мастерства"><em>БМ</em><b>' + signed(hero.prof || 0) + "</b></span>"
+        ].filter(Boolean).join("");
         const attacks = (hero.attacks || []).map(function (arm) {
-          return "<li>" + esc(arm.name) + " " + signed(arm.bonus) + " · " + esc(arm.damage || "") + "</li>";
+          return "<li><b>" + esc(arm.name) + "</b> " + signed(arm.bonus) + " · " + esc(arm.damage || "") + "</li>";
         }).join("");
         const spells = (hero.spells || []).map(function (spell) {
           const level = spell.level === 0 || spell.level === "0" ? "заговор" : (spell.level ? spell.level + " круг" : "");
-          return "<li>" + (level ? "<b>" + esc(level) + "</b> " : "") + esc(spell.name) + "</li>";
+          return "<li>" + (level ? "<em>" + esc(level) + "</em> " : "") + esc(spell.name) + "</li>";
         }).join("");
         const abilities = (hero.abilities || []).map(function (item) {
-          return "<li>" + esc(item.name) + (item.note ? " <b>" + esc(item.note) + "</b>" : "") + "</li>";
+          return "<li><b>" + esc(item.name || "") + "</b>" +
+            (item.note ? ' <em class="hero-charge">' + esc(item.note) + "</em>" : "") +
+            (item.text ? '<p>' + esc(item.text) + "</p>" : "") + "</li>";
         }).join("");
-        const line = [hero.title, hero.player ? "игрок " + hero.player : "", "КД " + (hero.ac || 0), "ХП " + (hero.hp || 0) + "/" + (hero.hpMax || 0), hero.speed ? hero.speed + " фт" : "", (hero.saves || []).length ? "спас " + hero.saves.join(", ") : ""].filter(Boolean).join(" · ");
-        return '<article class="hero-card">' + face +
-          '<div><div class="hero-head"><b>' + esc(hero.name || "Герой") + "</b>" +
-          '<button type="button" data-act="hero-fight" data-i="' + index + '" title="Поставить героя на экран боя">' + (heroInFight(hero.id) ? "Обновить в бою" : "На бой") + "</button>" +
-          '<button type="button" data-act="hero-del" data-i="' + index + '" title="Убрать героя из справочника" aria-label="Удалить">×</button></div>' +
-          '<p class="note">' + esc(line) + "</p>" +
-          (stats ? '<div class="hero-stats">' + stats + "</div>" : "") +
-          (skills ? '<div class="hero-skills">' + skills + "</div>" : "") +
-          (attacks ? "<p class=\"hero-label\">Атаки</p><ul class=\"hero-list\">" + attacks + "</ul>" : "") +
-          (spells ? "<p class=\"hero-label\">Заклинания</p><ul class=\"hero-list\">" + spells + "</ul>" : "") +
-          (abilities ? "<p class=\"hero-label\">Умения</p><ul class=\"hero-list\">" + abilities + "</ul>" : "") +
-          "</div></article>";
+        return '<article class="hero-card' + (open ? " is-open" : "") + '" data-hero="' + esc(hero.id) + '" data-i="' + index + '">' +
+          '<div class="hero-portrait">' + face +
+          '<div class="place-tools hero-pics">' +
+          '<span class="place-pair"><label class="file-btn" title="Загрузить портрет">' + FACE + '<input type="file" accept="image/*" data-pic="portrait" data-i="' + index + '" aria-label="Портрет"></label>' +
+          '<button type="button" class="icon-btn" data-act="clear-pic" data-pic="portrait" data-i="' + index + '"' + (hero.portrait ? "" : " disabled") + ' title="Убрать портрет" aria-label="Убрать портрет">' + CROSS + "</button></span>" +
+          '<select data-hero-lib="' + index + '" title="Портрет из библиотеки" aria-label="Из библиотеки"><option value="">Библиотека</option>' + lib + "</select>" +
+          "</div></div>" +
+          '<div class="hero-body">' +
+          '<div class="hero-head"><button type="button" class="hero-name" data-act="hero-toggle" data-i="' + index + '" title="' + (open ? "Свернуть" : "Полный лист") + '">' + esc(hero.name || "Герой") + "</button>" +
+          '<button type="button" data-act="hero-fight" data-i="' + index + '" title="Поставить героя на экран боя">' + (heroInFight(hero.id) ? "В бою" : "На бой") + "</button>" +
+          '<button type="button" data-act="hero-del" data-i="' + index + '" title="Убрать героя" aria-label="Удалить">×</button></div>' +
+          '<p class="hero-sub">' + esc([hero.title, hero.player ? "игрок " + hero.player : ""].filter(Boolean).join(" · ")) + "</p>" +
+          '<div class="hero-vitals">' + vitals + "</div>" +
+          '<div class="hero-stats" title="Клик — спасбросок">' + stats + "</div>" +
+          (skills ? '<div class="hero-skills" title="Клик — проверка навыка">' + skills + "</div>" : "") +
+          '<div class="hero-full"' + (open ? "" : " hidden") + ">" +
+          (attacks ? '<section class="hero-block"><h4>Атаки</h4><ul class="hero-list">' + attacks + "</ul></section>" : "") +
+          (spells ? '<section class="hero-block"><h4>Заклинания</h4><ul class="hero-list">' + spells + "</ul></section>" : "") +
+          (abilities ? '<section class="hero-block"><h4>Умения</h4><ul class="hero-list hero-feats">' + abilities + "</ul></section>" : "") +
+          (!open ? "" : '<p class="note">Ещё раз по имени — свернуть.</p>') +
+          "</div></div></article>";
       }).join("");
     }
     function paint() {
@@ -2473,6 +2570,10 @@ window.ShirmoCodex = (function () {
           }
           if (tab === "places") syncPlaceMedia(row);
           keepImage(row, url, file.name.replace(/\.[^.]+$/, ""));
+          if (tab === "heroes" && window.ShirmoLib) {
+            if (!ctx.campaign.library) ctx.campaign.library = { fonts: [], images: [], notes: [] };
+            window.ShirmoLib.keep(ctx.campaign.library, { url: url, name: (row.name || "Герой") + " — портрет", section: "Герои" });
+          }
           paint();
           saveSoon();
           refreshMap();
@@ -2480,6 +2581,14 @@ window.ShirmoCodex = (function () {
           const node = host.querySelector("#codex-err");
           if (node) node.textContent = error.message || "Не удалось загрузить.";
         });
+        return;
+      }
+      if (event.target.hasAttribute("data-hero-lib")) {
+        const hero = book().heroes[Number(event.target.getAttribute("data-hero-lib"))];
+        if (!hero || !event.target.value) return;
+        hero.portrait = event.target.value;
+        paint();
+        saveSoon();
         return;
       }
       if (event.target.id === "cat-q") {
@@ -2513,8 +2622,10 @@ window.ShirmoCodex = (function () {
       function refresh() {
         const img = pop.querySelector("#face-pick img");
         if (img) img.setAttribute("style", faceStyle(row));
-        const card = host.querySelector('.npc-portrait[data-i="' + index + '"] img');
-        if (card) card.setAttribute("style", faceStyle(row));
+        host.querySelectorAll('.npc-portrait[data-i="' + index + '"] img, .hero-card[data-i="' + index + '"] .hero-face img').forEach(function (card) {
+          card.setAttribute("style", faceStyle(row));
+          if (row.portrait) card.src = row.portrait;
+        });
         const face = focusNums(row);
         const shiftX = pop.querySelector("#face-x");
         const shiftY = pop.querySelector("#face-y");
@@ -3070,9 +3181,35 @@ window.ShirmoCodex = (function () {
         return;
       }
       if (act === "hero-del") {
+        const gone = book().heroes[Number(button.getAttribute("data-i"))];
+        if (gone) delete heroOpen[gone.id];
         book().heroes.splice(Number(button.getAttribute("data-i")), 1);
         paint();
         saveSoon();
+        return;
+      }
+      if (act === "hero-toggle") {
+        const hero = book().heroes[Number(button.getAttribute("data-i"))];
+        if (!hero) return;
+        heroOpen[hero.id] = !heroOpen[hero.id];
+        paint();
+        return;
+      }
+      if (act === "hero-save" || act === "hero-skill") {
+        const hero = book().heroes[Number(button.getAttribute("data-i"))];
+        if (!hero || !ctx.roll) return;
+        const at = Number(button.getAttribute("data-s"));
+        const row = act === "hero-save" ? (hero.stats || [])[at] : (hero.skills || [])[at];
+        if (!row) return;
+        const bonus = act === "hero-save" ? (row.save != null ? row.save : row.mod) : row.bonus;
+        const label = act === "hero-save" ? ("Спас " + (row.name || "")) : (row.name || "Навык");
+        ctx.roll({
+          name: hero.name || "Герой",
+          label: label,
+          sides: 20,
+          count: 1,
+          mod: Math.round(Number(bonus) || 0)
+        });
         return;
       }
       if (act === "hero-fight") {

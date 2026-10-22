@@ -1388,7 +1388,8 @@
           campaign: state.campaign,
           save: save,
           upload: function (file) { return uploadFile(id, key, file); },
-          showGoods: function (goods) { return publishGoods(id, headers, goods, state.campaign); }
+          showGoods: function (goods) { return publishGoods(id, headers, goods, state.campaign); },
+          roll: publishRoll
         });
         save();
         return;
