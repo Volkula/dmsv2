@@ -2231,10 +2231,75 @@ label.check input { width: auto; }
   font-size: 14px;
 }
 
+.hero-link {
+  display: block;
+  width: 100%;
+  padding: 4px 0;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.hero-link:hover { color: var(--brass); }
+
+.hero-link em {
+  color: var(--muted);
+  font-style: normal;
+  margin-right: 6px;
+}
+
+.hero-preview {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .hero-charge {
   color: var(--brass);
   font-style: normal;
   white-space: nowrap;
+}
+
+.hero-note-card,
+.hero-edit-card {
+  width: min(560px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
+  overflow: auto;
+}
+
+.hero-note-body { padding: 0 4px 8px; line-height: 1.45; }
+
+.hero-note-body p { margin: 0 0 10px; white-space: pre-wrap; }
+
+.hero-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.hero-edit-stats,
+.hero-edit-skills {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0 0 10px;
+}
+
+.hero-edit-card textarea { width: 100%; min-height: 88px; }
+
+.hero-edit-card label .note { margin-left: 6px; font-size: 12px; }
+
+@media (max-width: 720px) {
+  .hero-edit-grid,
+  .hero-edit-stats,
+  .hero-edit-skills { grid-template-columns: 1fr 1fr; }
 }
 
 @media (max-width: 860px) {

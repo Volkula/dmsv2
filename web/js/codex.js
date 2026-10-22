@@ -274,9 +274,36 @@ window.ShirmoCodex = (function () {
     if (!text) return null;
     const dotted = text.match(/^(.{2,80}?[.!?])\s+(.+)$/);
     if (dotted) return { name: dotted[1].trim(), text: dotted[2].trim(), note: "" };
-    const titled = text.match(/^((?:[А-ЯЁA-Z][а-яёa-z0-9:'-]*)(?:\s+[а-яёa-z0-9:'-]+){0,4})\s+([А-ЯЁA-Z].{8,})$/);
-    if (titled) return { name: titled[1].trim(), text: titled[2].trim(), note: "" };
+    const titled = text.match(/^((?:[А-ЯЁA-Z][а-яёa-z0-9:'-]*)(?:\s+[а-яёa-z0-9:'-]*){0,5})\s+([А-ЯЁA-Z].{6,})$/);
+    if (titled && titled[1].length <= 48) return { name: titled[1].trim(), text: titled[2].trim(), note: "" };
+    const short = text.match(/^([А-ЯЁA-Z][а-яёa-z]+(?:\s+[а-яёa-z]+){0,2})\s+([А-ЯЁA-Z].{6,})$/);
+    if (short) return { name: short[1].trim(), text: short[2].trim(), note: "" };
     return { name: text, text: "", note: "" };
+  }
+
+  function abilityOf(item) {
+    if (!item) return { name: "", text: "", note: "" };
+    const note = item.note || "";
+    let name = unsmash(item.name || "");
+    let text = unsmash(item.text || "");
+    if (name.length > 18) {
+      const next = splitAbility(name);
+      if (next && next.text && next.name && next.name.length < name.length) {
+        if (!text || text === name) text = next.text;
+        name = next.name;
+      }
+    }
+    return { name: name, text: text, note: note };
+  }
+
+  function findSpellRow(name) {
+    const key = String(name || "").trim().toLowerCase();
+    if (!key || !window.allSpells) return null;
+    return window.allSpells.find(function (row) {
+      const ru = row && row.ru && row.ru.name ? String(row.ru.name).toLowerCase() : "";
+      const en = row && row.en && row.en.name ? String(row.en.name).toLowerCase() : "";
+      return ru === key || en === key;
+    }) || null;
   }
 
   function readLss(raw) {
@@ -1977,20 +2004,19 @@ window.ShirmoCodex = (function () {
       if (!hero) return hero;
       (hero.abilities || []).forEach(function (item) {
         if (!item) return;
-        item.name = unsmash(item.name);
-        item.text = unsmash(item.text || "");
-        if (!item.text && item.name && /[а-яёa-z][А-ЯЁA-Z]/.test(item.name)) {
-          const next = splitAbility(item.name);
-          if (next) {
-            item.name = next.name;
-            item.text = next.text;
-          }
-        }
+        const next = abilityOf(item);
+        item.name = next.name;
+        item.text = next.text;
+        item.note = next.note;
       });
       (hero.skills || []).forEach(function (skill) {
         if (!skill) return;
         skill.name = unsmash(skill.name);
         if (skill.trained == null) skill.trained = true;
+      });
+      (hero.spells || []).forEach(function (spell) {
+        if (!spell) return;
+        spell.name = unsmash(spell.name);
       });
       (hero.stats || []).forEach(function (stat) {
         if (!stat) return;
@@ -2036,14 +2062,18 @@ window.ShirmoCodex = (function () {
         const attacks = (hero.attacks || []).map(function (arm) {
           return "<li><b>" + esc(arm.name) + "</b> " + signed(arm.bonus) + " · " + esc(arm.damage || "") + "</li>";
         }).join("");
-        const spells = (hero.spells || []).map(function (spell) {
+        const spells = (hero.spells || []).map(function (spell, s) {
           const level = spell.level === 0 || spell.level === "0" ? "заговор" : (spell.level ? spell.level + " круг" : "");
-          return "<li>" + (level ? "<em>" + esc(level) + "</em> " : "") + esc(spell.name) + "</li>";
+          return '<li><button type="button" class="hero-link" data-act="hero-spell" data-i="' + index + '" data-s="' + s + '" title="Открыть заклинание">' +
+            (level ? "<em>" + esc(level) + "</em> " : "") + esc(spell.name || "Заклинание") + "</button></li>";
         }).join("");
-        const abilities = (hero.abilities || []).map(function (item) {
-          return "<li><b>" + esc(item.name || "") + "</b>" +
-            (item.note ? ' <em class="hero-charge">' + esc(item.note) + "</em>" : "") +
-            (item.text ? '<p>' + esc(item.text) + "</p>" : "") + "</li>";
+        const abilities = (hero.abilities || []).map(function (item, s) {
+          const row = abilityOf(item);
+          return '<li><button type="button" class="hero-link" data-act="hero-feat" data-i="' + index + '" data-s="' + s + '" title="Открыть умение">' +
+            "<b>" + esc(row.name || "Умение") + "</b>" +
+            (row.note ? ' <em class="hero-charge">' + esc(row.note) + "</em>" : "") +
+            (row.text ? '<span class="hero-preview">' + esc(row.text) + "</span>" : "") +
+            "</button></li>";
         }).join("");
         return '<article class="hero-card' + (open ? " is-open" : "") + '" data-hero="' + esc(hero.id) + '" data-i="' + index + '">' +
           '<div class="hero-portrait">' + face +
@@ -2054,6 +2084,8 @@ window.ShirmoCodex = (function () {
           "</div></div>" +
           '<div class="hero-body">' +
           '<div class="hero-head"><button type="button" class="hero-name" data-act="hero-toggle" data-i="' + index + '" title="' + (open ? "Свернуть" : "Полный лист") + '">' + esc(hero.name || "Герой") + "</button>" +
+          '<button type="button" data-act="hero-edit" data-i="' + index + '" title="Редактировать лист">Правка</button>' +
+          '<button type="button" data-act="hero-spells" data-i="' + index + '" title="Заклинания">Магия' + (spellCount ? " (" + spellCount + ")" : "") + "</button>" +
           '<button type="button" data-act="hero-fight" data-i="' + index + '" title="' + (heroInFight(hero.id) ? "Убрать героя с экрана боя" : "Поставить героя на экран боя") + '">' + (heroInFight(hero.id) ? "Снять с боя" : "На бой") + "</button>" +
           '<button type="button" data-act="hero-del" data-i="' + index + '" title="Убрать героя" aria-label="Удалить">×</button></div>' +
           '<p class="hero-sub">' + esc([hero.title, hero.player ? "игрок " + hero.player : ""].filter(Boolean).join(" · ")) + "</p>" +
@@ -2062,9 +2094,9 @@ window.ShirmoCodex = (function () {
           (skills ? '<div class="hero-skills" title="Клик — проверка навыка">' + skills + "</div>" : "") +
           '<div class="hero-full"' + (open ? "" : " hidden") + ">" +
           (attacks ? '<section class="hero-block"><h4>Атаки</h4><ul class="hero-list">' + attacks + "</ul></section>" : "") +
-          (spells ? '<section class="hero-block"><h4>Заклинания</h4><ul class="hero-list">' + spells + "</ul></section>" : "") +
+          (spells ? '<section class="hero-block"><h4>Заклинания</h4><ul class="hero-list hero-spells">' + spells + "</ul></section>" : '<section class="hero-block"><h4>Заклинания</h4><p class="note">Пока пусто. Добавьте в «Правка».</p></section>') +
           (abilities ? '<section class="hero-block"><h4>Умения</h4><ul class="hero-list hero-feats">' + abilities + "</ul></section>" : "") +
-          (!open ? "" : '<p class="note">Ещё раз по имени — свернуть.</p>') +
+          (!open ? "" : '<p class="note">Клик по умению или заклинанию открывает текст. Ещё раз по имени — свернуть.</p>') +
           "</div></div></article>";
       }).join("");
     }
@@ -2595,6 +2627,174 @@ window.ShirmoCodex = (function () {
         return;
       }
       if (host.contains(event.target)) readGenerators();
+    }
+    function openHeroNote(title, body) {
+      const old = document.getElementById("hero-note-pop");
+      if (old) old.remove();
+      const pop = document.createElement("div");
+      pop.id = "hero-note-pop";
+      pop.className = "pop";
+      pop.innerHTML = '<div class="pop-card hero-note-card" role="dialog" aria-label="' + esc(title) + '">' +
+        '<div class="pop-head"><h2>' + esc(title) + '</h2><button type="button" data-pop-close title="Закрыть" aria-label="Закрыть">×</button></div>' +
+        '<div class="hero-note-body">' + body + "</div></div>";
+      document.body.appendChild(pop);
+      function close() { pop.remove(); }
+      pop.addEventListener("click", function (event) { if (event.target === pop) close(); });
+      pop.querySelector("[data-pop-close]").addEventListener("click", close);
+      return pop;
+    }
+    function openHeroFeat(index, at) {
+      const hero = book().heroes[index];
+      const item = hero && (hero.abilities || [])[at];
+      if (!item) return;
+      const row = abilityOf(item);
+      openHeroNote(row.name || "Умение",
+        (row.note ? '<p class="hero-charge">Заряды: ' + esc(row.note) + "</p>" : "") +
+        '<p>' + esc(row.text || "Описания нет.") + "</p>");
+    }
+    function openHeroSpell(index, at) {
+      const hero = book().heroes[index];
+      const spell = hero && (hero.spells || [])[at];
+      if (!spell) return;
+      function show(body, title, level) {
+        const head = level === 0 || level === "0" ? "заговор" : (level ? level + " круг" : "");
+        openHeroNote(title || "Заклинание",
+          (head ? '<p class="note">' + esc(head) + "</p>" : "") +
+          '<p>' + esc(body || "Текст заклинания не найден.") + "</p>");
+      }
+      const own = unsmash(spell.text || "");
+      if (own) {
+        show(own, spell.name, spell.level);
+        return;
+      }
+      function fromCatalog() {
+        const row = findSpellRow(spell.name);
+        const ru = row && row.ru;
+        show(plain(ru && ru.text), spell.name || (ru && ru.name), spell.level != null ? spell.level : (ru && ru.level));
+      }
+      if (window.allSpells) fromCatalog();
+      else loadCatalog().then(fromCatalog, function () { show("", spell.name, spell.level); });
+    }
+    function openHeroSpells(index) {
+      const hero = book().heroes[index];
+      if (!hero) return;
+      const list = hero.spells || [];
+      if (!list.length) {
+        openHeroNote("Заклинания", '<p class="note">Пока пусто. Откройте «Правка» и добавьте строки.</p>');
+        return;
+      }
+      const body = '<ul class="hero-list hero-spells">' + list.map(function (spell, s) {
+        const level = spell.level === 0 || spell.level === "0" ? "заговор" : (spell.level ? spell.level + " круг" : "");
+        return '<li><button type="button" class="hero-link" data-act="hero-spell" data-i="' + index + '" data-s="' + s + '">' +
+          (level ? "<em>" + esc(level) + "</em> " : "") + esc(spell.name || "Заклинание") + "</button></li>";
+      }).join("") + "</ul>";
+      const pop = openHeroNote((hero.name || "Герой") + " · магия", body);
+      pop.addEventListener("click", function (event) {
+        const button = event.target.closest("[data-act=hero-spell]");
+        if (!button || !pop.contains(button)) return;
+        openHeroSpell(Number(button.getAttribute("data-i")), Number(button.getAttribute("data-s")));
+      });
+    }
+    function openHeroEdit(index) {
+      const hero = book().heroes[index];
+      if (!hero) return;
+      heroFix(hero);
+      const old = document.getElementById("hero-edit-pop");
+      if (old) old.remove();
+      const stats = (hero.stats || []).map(function (stat, s) {
+        return '<label>' + esc(stat.name || STAT_RU[stat.id] || "Хар") +
+          '<input data-edit-stat="' + s + '" type="number" min="1" max="30" value="' + esc(stat.score || 10) + '"></label>';
+      }).join("");
+      const skills = (hero.skills || []).map(function (skill, s) {
+        return '<label class="hero-edit-skill">' + esc(skill.name || "Навык") +
+          '<input data-edit-skill="' + s + '" type="number" value="' + esc(skill.bonus || 0) + '"></label>';
+      }).join("");
+      const attacks = (hero.attacks || []).map(function (arm) {
+        return [arm.name || "", signed(arm.bonus).replace("+", "+") || "0", arm.damage || ""].join(" | ");
+      }).join("\n");
+      const spells = (hero.spells || []).map(function (spell) {
+        const level = spell.level == null || spell.level === "" ? "" : String(spell.level);
+        return [spell.name || "", level, spell.text || ""].join(" | ");
+      }).join("\n");
+      const feats = (hero.abilities || []).map(function (item) {
+        const row = abilityOf(item);
+        return [row.name || "", row.note || "", row.text || ""].join(" | ");
+      }).join("\n");
+      const pop = document.createElement("div");
+      pop.id = "hero-edit-pop";
+      pop.className = "pop";
+      pop.innerHTML = '<div class="pop-card hero-edit-card" role="dialog" aria-label="Правка героя">' +
+        '<div class="pop-head"><h2>' + esc(hero.name || "Герой") + '</h2><button type="button" data-pop-close title="Закрыть" aria-label="Закрыть">×</button></div>' +
+        '<div class="hero-edit-grid">' +
+        '<label>Имя<input id="hero-edit-name" type="text" value="' + esc(hero.name || "") + '"></label>' +
+        '<label>Класс / раса<input id="hero-edit-title" type="text" value="' + esc(hero.title || "") + '"></label>' +
+        '<label>Игрок<input id="hero-edit-player" type="text" value="' + esc(hero.player || "") + '"></label>' +
+        '<label>КД<input id="hero-edit-ac" type="number" value="' + esc(hero.ac || 10) + '"></label>' +
+        '<label>ХП<input id="hero-edit-hp" type="number" value="' + esc(hero.hp || 0) + '"></label>' +
+        '<label>Макс. ХП<input id="hero-edit-hpmax" type="number" value="' + esc(hero.hpMax || 0) + '"></label>' +
+        '<label>Скорость<input id="hero-edit-speed" type="text" value="' + esc(hero.speed || "") + '"></label>' +
+        '<label>БМ<input id="hero-edit-prof" type="number" value="' + esc(hero.prof || 0) + '"></label>' +
+        '<label>Иниц.<input id="hero-edit-init" type="number" value="' + esc(hero.init || 0) + '"></label>' +
+        "</div>" +
+        '<p class="hero-label">Характеристики</p><div class="hero-edit-stats">' + stats + "</div>" +
+        (skills ? '<p class="hero-label">Навыки</p><div class="hero-edit-skills">' + skills + "</div>" : "") +
+        '<label>Атаки <span class="note">имя | бонус | урон</span><textarea id="hero-edit-attacks" rows="4">' + esc(attacks) + "</textarea></label>" +
+        '<label>Заклинания <span class="note">имя | круг | текст</span><textarea id="hero-edit-spells" rows="5">' + esc(spells) + "</textarea></label>" +
+        '<label>Умения <span class="note">название | заряды | текст</span><textarea id="hero-edit-feats" rows="6">' + esc(feats) + "</textarea></label>" +
+        '<div class="row"><button type="button" class="primary" data-hero-save>Сохранить</button><button type="button" data-pop-close>Отмена</button></div></div>';
+      document.body.appendChild(pop);
+      function close() { pop.remove(); }
+      function linesOf(text) {
+        return String(text || "").split(/\r?\n/).map(function (line) { return line.trim(); }).filter(Boolean);
+      }
+      function parsePipe(line, count) {
+        const parts = String(line || "").split("|").map(function (part) { return part.trim(); });
+        while (parts.length < count) parts.push("");
+        return parts;
+      }
+      pop.addEventListener("click", function (event) { if (event.target === pop) close(); });
+      pop.querySelectorAll("[data-pop-close]").forEach(function (node) {
+        node.addEventListener("click", close);
+      });
+      pop.querySelector("[data-hero-save]").addEventListener("click", function () {
+        hero.name = (pop.querySelector("#hero-edit-name").value || "").trim() || "Герой";
+        hero.title = (pop.querySelector("#hero-edit-title").value || "").trim();
+        hero.player = (pop.querySelector("#hero-edit-player").value || "").trim();
+        hero.ac = Math.round(Number(pop.querySelector("#hero-edit-ac").value) || 10);
+        hero.hp = Math.round(Number(pop.querySelector("#hero-edit-hp").value) || 0);
+        hero.hpMax = Math.max(1, Math.round(Number(pop.querySelector("#hero-edit-hpmax").value) || hero.hp || 1));
+        hero.speed = (pop.querySelector("#hero-edit-speed").value || "").trim();
+        hero.prof = Math.round(Number(pop.querySelector("#hero-edit-prof").value) || 0);
+        hero.init = Math.round(Number(pop.querySelector("#hero-edit-init").value) || 0);
+        pop.querySelectorAll("[data-edit-stat]").forEach(function (node) {
+          const stat = (hero.stats || [])[Number(node.getAttribute("data-edit-stat"))];
+          if (!stat) return;
+          stat.score = Math.max(1, Math.min(30, Math.round(Number(node.value) || 10)));
+          stat.mod = abilityMod(stat.score);
+          stat.save = Math.round(stat.mod + (stat.saveProf ? hero.prof : 0));
+        });
+        pop.querySelectorAll("[data-edit-skill]").forEach(function (node) {
+          const skill = (hero.skills || [])[Number(node.getAttribute("data-edit-skill"))];
+          if (!skill) return;
+          skill.bonus = Math.round(Number(node.value) || 0);
+        });
+        hero.attacks = linesOf(pop.querySelector("#hero-edit-attacks").value).map(function (line) {
+          const parts = parsePipe(line, 3);
+          return { name: parts[0] || "Атака", bonus: Math.round(Number(parts[1]) || 0), damage: parts[2] || "1d6" };
+        });
+        hero.spells = linesOf(pop.querySelector("#hero-edit-spells").value).map(function (line) {
+          const parts = parsePipe(line, 3);
+          const level = parts[1] === "" ? null : (/заговор/i.test(parts[1]) ? 0 : Number(parts[1]));
+          return { name: parts[0] || "Заклинание", level: Number.isFinite(level) ? level : null, text: parts[2] || "" };
+        });
+        hero.abilities = linesOf(pop.querySelector("#hero-edit-feats").value).map(function (line) {
+          const parts = parsePipe(line, 3);
+          return { name: parts[0] || "Умение", note: parts[1] || "", text: parts[2] || "" };
+        });
+        close();
+        paint();
+        saveSoon();
+      });
     }
     function openFace(index) {
       const row = list()[index];
@@ -3191,6 +3391,22 @@ window.ShirmoCodex = (function () {
         if (!hero) return;
         heroOpen[hero.id] = !heroOpen[hero.id];
         paint();
+        return;
+      }
+      if (act === "hero-feat") {
+        openHeroFeat(Number(button.getAttribute("data-i")), Number(button.getAttribute("data-s")));
+        return;
+      }
+      if (act === "hero-spell") {
+        openHeroSpell(Number(button.getAttribute("data-i")), Number(button.getAttribute("data-s")));
+        return;
+      }
+      if (act === "hero-spells") {
+        openHeroSpells(Number(button.getAttribute("data-i")));
+        return;
+      }
+      if (act === "hero-edit") {
+        openHeroEdit(Number(button.getAttribute("data-i")));
         return;
       }
       if (act === "hero-save" || act === "hero-skill") {
