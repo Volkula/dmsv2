@@ -74,6 +74,12 @@ function publicRoll(roll) {
   };
 }
 
+function modOf(value) {
+  const mod = Math.round(Number(value));
+  if (!Number.isFinite(mod)) return 0;
+  return Math.min(99, Math.max(-99, mod));
+}
+
 function pinFrom(body) {
   const mode = body.mode === "advantage" || body.mode === "disadvantage" ? body.mode : "normal";
   const sides = DIE_SIDES.indexOf(Number(body.sides)) >= 0 ? Number(body.sides) : 20;
@@ -89,7 +95,8 @@ function pinFrom(body) {
     source: source,
     sourceName: String(body.sourceName || "").slice(0, 80),
     color: hexColor(body.color),
-    texture: safePath(body.texture)
+    texture: safePath(body.texture),
+    mod: modOf(body.mod)
   };
 }
 

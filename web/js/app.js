@@ -835,12 +835,26 @@
     window.addEventListener("resize", function () { fit(view); });
   }
 
+  function modOf(value) {
+    const mod = Math.round(Number(value));
+    if (!Number.isFinite(mod)) return 0;
+    return Math.min(99, Math.max(-99, mod));
+  }
+
+  function modSign(mod) {
+    if (!mod) return "";
+    return mod > 0 ? "+" + mod : String(mod);
+  }
+
   function rollFormula(spec) {
     const mode = spec.mode === "advantage" || spec.mode === "disadvantage" ? spec.mode : "normal";
+    const mod = modOf(spec.mod);
+    const sign = modSign(mod);
     if (mode !== "normal") {
       const a = 1 + Math.floor(Math.random() * 20);
       const b = 1 + Math.floor(Math.random() * 20);
-      const total = mode === "advantage" ? Math.max(a, b) : Math.min(a, b);
+      const kept = mode === "advantage" ? Math.max(a, b) : Math.min(a, b);
+      const total = kept + mod;
       const other = mode === "advantage" ? "disadvantage" : "advantage";
       const aKeep = a === b ? "" : (mode === "advantage" ? a > b : a < b) ? mode : other;
       const bKeep = a === b ? "" : aKeep === mode ? other : mode;
@@ -849,13 +863,14 @@
         count: 2,
         sides: 20,
         mode: mode,
+        mod: mod,
         total: total,
         dice: [
           { sides: 20, value: a, tint: aKeep },
           { sides: 20, value: b, tint: bKeep }
         ],
-        log: a + " · " + b + " → " + total,
-        label: mode === "advantage" ? "Преимущество" : "Помеха"
+        log: a + " · " + b + " → " + (mod ? kept + sign + "=" + total : total),
+        label: (mode === "advantage" ? "Преимущество" : "Помеха") + (sign ? " " + sign : "")
       };
     }
     const sides = [4, 6, 8, 10, 12, 20, 100].indexOf(Number(spec.sides)) >= 0 ? Number(spec.sides) : 20;
@@ -867,15 +882,18 @@
       dice.push(value);
       total += value;
     }
+    const shown = total + mod;
+    const body = count === 1 ? String(dice[0]) : dice.join("+");
     return {
       name: spec.name || "",
       count: count,
       sides: sides,
       mode: "normal",
-      total: total,
+      mod: mod,
+      total: shown,
       dice: dice.map(function (value) { return { sides: sides, value: value }; }),
-      log: count === 1 ? String(total) : dice.join("+") + "=" + total,
-      label: count + "d" + sides
+      log: mod ? body + sign + "=" + shown : (count === 1 ? String(shown) : body + "=" + shown),
+      label: count + "d" + sides + sign
     };
   }
 
@@ -912,7 +930,8 @@
     function pinButtons() {
       if (!state.pins.length) return '<p class="note">Пока нет закреплённых.</p>';
       return state.pins.map(function (pin) {
-        const formula = pin.mode === "advantage" ? "преимущество" : pin.mode === "disadvantage" ? "помеха" : (pin.count || 1) + "d" + (pin.sides || 20);
+        const sign = modSign(modOf(pin.mod));
+        const formula = pin.mode === "advantage" ? "преимущество" + (sign ? " " + sign : "") : pin.mode === "disadvantage" ? "помеха" + (sign ? " " + sign : "") : (pin.count || 1) + "d" + (pin.sides || 20) + sign;
         return '<div class="pin-line"><button type="button" data-pin="' + esc(pin.id) + '">' + esc(pin.name || "Бросок") + " — " + esc(formula) + "</button>" +
           '<button type="button" data-unpin="' + esc(pin.id) + '" title="Убрать из закреплённых">×</button></div>';
       }).join("");
@@ -923,6 +942,7 @@
       }).join("");
       return '<div class="roll-setup"><label title="Имя закреплённой формулы">Название <input id="die-name" type="text" placeholder="Атака мечом"></label>' +
         '<label title="Сколько костей">Сколько <input id="die-count" type="number" min="1" max="12" value="1"></label>' +
+        '<label title="Плюс или минус к сумме костей, например 3 или −2">Модификатор <input id="die-mod" type="number" value="0"></label>' +
         '<div class="die-sides">' + dice + "</div>" +
         '<label class="check" title="Два броска, берётся больший"><input id="die-adv" type="checkbox"> С преимуществом</label>' +
         '<label class="check" title="Два броска, берётся меньший"><input id="die-dis" type="checkbox"> С помехой</label>' +
@@ -978,7 +998,8 @@
         name: (menu.querySelector("#die-name").value || "").trim(),
         count: Number(menu.querySelector("#die-count").value) || 1,
         sides: sides,
-        mode: mode
+        mode: mode,
+        mod: modOf(menu.querySelector("#die-mod").value)
       };
     }
     const advBox = menu.querySelector("#die-adv");

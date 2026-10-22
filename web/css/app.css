@@ -499,6 +499,8 @@ label.text-file:hover { border-color: var(--brass); color: var(--brass); }
 
 .roll-setup input[type="text"] { flex: 1; min-width: 0; }
 
+.roll-setup input[type="number"] { width: 88px; text-align: center; }
+
 .roll-menu button {
   text-align: left;
 }
