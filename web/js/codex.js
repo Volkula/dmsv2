@@ -332,6 +332,11 @@ window.ShirmoCodex = (function () {
   function mount(host, ctx) {
     if (host._codexOff) host._codexOff();
     let tab = "places";
+    let placeCols = 2;
+    try {
+      const savedCols = Number(sessionStorage.getItem("shirmo-place-cols"));
+      if (savedCols >= 1 && savedCols <= 4) placeCols = savedCols;
+    } catch (err) { /* нет хранилища */ }
     const wareOpen = {};
     const sheetOpen = {};
     function isSheetOpen(key) {
@@ -1041,7 +1046,7 @@ window.ShirmoCodex = (function () {
         saveSoon();
       });
     }
-    function placeCardHtml(place, index, depth) {
+    function placeCardHtml(place, index) {
       const npcs = book().npcs;
       const people = (place.people || []).map(function (id) {
         const npc = npcs.find(function (row) { return row.id === id; });
@@ -1059,7 +1064,7 @@ window.ShirmoCodex = (function () {
       const face = place.portrait
         ? '<button type="button" class="npc-portrait" data-act="face" data-i="' + index + '" title="Настроить, какая часть изображения видна"><img alt="" src="' + esc(place.portrait) + '" style="' + faceStyle(place) + '"></button>'
         : '<span class="npc-portrait npc-portrait-empty" aria-hidden="true"></span>';
-      return '<article class="place-card" data-place="' + esc(place.id) + '" style="margin-left:' + (depth * 16) + 'px" title="ПКМ — перенести место">' +
+      return '<article class="place-card" data-place="' + esc(place.id) + '" title="ПКМ — перенести место">' +
         '<div class="npc-scene"' + scene + ">" + face +
         '<div class="npc-pics">' +
         '<label class="file-btn" title="Загрузить изображение места, как портрет у НПС">' + FACE + '<input type="file" accept="image/*" data-pic="portrait" data-i="' + index + '" aria-label="Изображение места"></label>' +
@@ -1090,10 +1095,10 @@ window.ShirmoCodex = (function () {
           if (seen[place.id]) return "";
           seen[place.id] = true;
           const index = placeIndex(place.id);
-          return placeCardHtml(place, index, depth) + walk(place.id, depth + 1);
+          return placeCardHtml(place, index) + walk(place.id, depth + 1);
         }).join("");
       }
-      return walk("", 0);
+      return '<div class="place-grid place-cols-' + placeCols + '">' + walk("", 0) + "</div>";
     }
     function takenHtml() {
       const rows = list();
@@ -1563,7 +1568,10 @@ window.ShirmoCodex = (function () {
       host.innerHTML = '<aside class="side codex-nav">' + nav + "</aside>" +
         '<div class="codex-main"><div class="codex-head"><b class="codex-tab-name">' + esc(current[1]) + "</b>" +
         (catalogKind() || tab === "squads" || tab === "names" || tab === "wares" || tab === "coins" ? "" : '<button type="button" data-act="add" title="Новая запись на этой вкладке">Добавить</button>') + "</div>" +
-        (tab === "places" ? '<p class="note">Места с карты попадают сюда сами. Сюда же ставятся персонажи.</p>' : "") +
+        (tab === "places" ? '<div class="place-bar"><p class="note">Места с карты попадают сюда сами. Сюда же ставятся персонажи.</p><div class="place-cols" title="Сколько карточек в ряд">' +
+          [1, 2, 3, 4].map(function (count) {
+            return '<button type="button" data-place-cols="' + count + '" class="' + (placeCols === count ? "is-on" : "") + '" title="' + count + ' в ряд" aria-label="' + count + ' в ряд">' + count + "</button>";
+          }).join("") + "</div></div>" : "") +
         (tab === "squads" ? '<div class="codex-tools">' + squad + "</div>" : "") +
         body +
         '<p class="error" id="codex-err"></p></div><footer class="codex-foot">Использованы материалы с сайта <a href="https://tentaculus.ru/">tentaculus.ru</a>, CC BY-NC-SA 3.0.</footer>';
@@ -2342,6 +2350,13 @@ window.ShirmoCodex = (function () {
           paint();
           saveSoon();
         }
+        return;
+      }
+      const cols = event.target.closest("[data-place-cols]");
+      if (cols && host.contains(cols)) {
+        placeCols = Math.min(4, Math.max(1, Number(cols.getAttribute("data-place-cols")) || 2));
+        try { sessionStorage.setItem("shirmo-place-cols", String(placeCols)); } catch (err) { /* нет хранилища */ }
+        paint();
         return;
       }
       const button = event.target.closest("[data-tab], [data-act]");
