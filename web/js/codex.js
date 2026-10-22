@@ -1068,10 +1068,10 @@ window.ShirmoCodex = (function () {
       return '<article class="place-card" data-place="' + esc(place.id) + '" title="ПКМ — перенести место">' +
         '<div class="npc-scene"' + scene + ">" + face + "</div>" +
         '<div class="place-tools">' +
-        '<label class="file-btn" title="Загрузить изображение места, как портрет у НПС">' + FACE + '<input type="file" accept="image/*" data-pic="portrait" data-i="' + index + '" aria-label="Изображение места"></label>' +
-        '<label class="file-btn" title="Загрузить фон карточки места">' + SCENE + '<input type="file" accept="image/*" data-pic="backdrop" data-i="' + index + '" aria-label="Фон места"></label>' +
-        (place.portrait ? '<button type="button" class="icon-btn" data-act="clear-pic" data-pic="portrait" data-i="' + index + '" title="Убрать изображение" aria-label="Убрать изображение">' + CROSS + "</button>" : "") +
-        (place.backdrop ? '<button type="button" class="icon-btn" data-act="clear-pic" data-pic="backdrop" data-i="' + index + '" title="Убрать фон" aria-label="Убрать фон">' + CROSS + "</button>" : "") +
+        '<span class="place-pair"><label class="file-btn" title="Загрузить изображение места">' + FACE + '<input type="file" accept="image/*" data-pic="portrait" data-i="' + index + '" aria-label="Изображение места"></label>' +
+        '<button type="button" class="icon-btn" data-act="clear-pic" data-pic="portrait" data-i="' + index + '"' + (place.portrait ? "" : " disabled") + ' title="Убрать изображение" aria-label="Убрать изображение">' + CROSS + "</button></span>" +
+        '<span class="place-pair"><label class="file-btn" title="Загрузить фон карточки">' + SCENE + '<input type="file" accept="image/*" data-pic="backdrop" data-i="' + index + '" aria-label="Фон места"></label>' +
+        '<button type="button" class="icon-btn" data-act="clear-pic" data-pic="backdrop" data-i="' + index + '"' + (place.backdrop ? "" : " disabled") + ' title="Убрать фон" aria-label="Убрать фон">' + CROSS + "</button></span>" +
         "</div>" +
         '<div class="codex-row place-name"><input data-field="name" data-i="' + index + '" type="text" value="' + esc(place.name || "") + '" title="Название места" aria-label="Название места"><button type="button" data-act="rehome" data-kind="place" data-id="' + esc(place.id) + '" title="Перенести в другое место">Перенести</button><button type="button" data-act="del" data-i="' + index + '" title="Удалить место" aria-label="Удалить">×</button></div>' +
         parentLine + squadLine +
@@ -1485,10 +1485,10 @@ window.ShirmoCodex = (function () {
           : "";
         return '<article class="npc-card" data-npc="' + esc(row.id) + '" title="ПКМ — перенести на место"><div class="npc-scene"' + scene + ">" + face + badge +
           '<div class="npc-pics">' +
-          '<label class="file-btn" title="Загрузить свой портрет">' + FACE + '<input type="file" accept="image/*" data-pic="portrait" data-i="' + index + '" aria-label="Портрет"></label>' +
-          '<label class="file-btn" title="Загрузить свой фон карточки">' + SCENE + '<input type="file" accept="image/*" data-pic="backdrop" data-i="' + index + '" aria-label="Фон"></label>' +
-          (row.portrait ? '<button type="button" data-act="clear-pic" data-pic="portrait" data-i="' + index + '" title="Убрать портрет" aria-label="Убрать портрет">×</button>' : "") +
-          (row.backdrop ? '<button type="button" data-act="clear-pic" data-pic="backdrop" data-i="' + index + '" title="Убрать фон" aria-label="Убрать фон">×</button>' : "") +
+          '<span class="place-pair"><label class="file-btn" title="Загрузить свой портрет">' + FACE + '<input type="file" accept="image/*" data-pic="portrait" data-i="' + index + '" aria-label="Портрет"></label>' +
+          '<button type="button" class="icon-btn" data-act="clear-pic" data-pic="portrait" data-i="' + index + '"' + (row.portrait ? "" : " disabled") + ' title="Убрать портрет" aria-label="Убрать портрет">' + CROSS + "</button></span>" +
+          '<span class="place-pair"><label class="file-btn" title="Загрузить свой фон карточки">' + SCENE + '<input type="file" accept="image/*" data-pic="backdrop" data-i="' + index + '" aria-label="Фон"></label>' +
+          '<button type="button" class="icon-btn" data-act="clear-pic" data-pic="backdrop" data-i="' + index + '"' + (row.backdrop ? "" : " disabled") + ' title="Убрать фон" aria-label="Убрать фон">' + CROSS + "</button></span>" +
           "</div></div>" +
           '<div class="npc-fields"><div class="codex-row"><input data-field="name" data-i="' + index + '" type="text" value="' + esc(row.name || "") + '" title="Имя в справочнике и на карте" aria-label="Имя"><button type="button" data-act="rehome" data-kind="npc" data-id="' + esc(row.id) + '" title="Перенести на другое место">Перенести</button><button type="button" data-act="del" data-i="' + index + '" title="Удалить запись" aria-label="Удалить">×</button></div>' +
           homeLine + squadLine +
