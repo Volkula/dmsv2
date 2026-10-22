@@ -272,14 +272,10 @@ window.ShirmoCodex = (function () {
   function splitAbility(line) {
     const text = unsmash(line);
     if (!text) return null;
-    const cut = text.search(/[.!?](?:\s|$)/);
-    if (cut > 0 && cut < 80 && cut < text.length - 1) {
-      return { name: text.slice(0, cut + 1).trim(), text: text.slice(cut + 1).trim(), note: "" };
-    }
-    const words = text.split(" ");
-    if (words.length > 4) {
-      return { name: words.slice(0, 3).join(" "), text: words.slice(3).join(" "), note: "" };
-    }
+    const dotted = text.match(/^(.{2,80}?[.!?])\s+(.+)$/);
+    if (dotted) return { name: dotted[1].trim(), text: dotted[2].trim(), note: "" };
+    const titled = text.match(/^((?:[А-ЯЁA-Z][а-яёa-z0-9:'-]*)(?:\s+[а-яёa-z0-9:'-]+){0,4})\s+([А-ЯЁA-Z].{8,})$/);
+    if (titled) return { name: titled[1].trim(), text: titled[2].trim(), note: "" };
     return { name: text, text: "", note: "" };
   }
 
@@ -386,15 +382,15 @@ window.ShirmoCodex = (function () {
         if (row) abilities.push(row);
       });
     });
-    const profBits = [];
     if (data.prof && typeof data.prof === "object") {
+      const labels = { armor: "Доспехи", weapon: "Оружие", tool: "Инструменты", language: "Языки" };
       Object.keys(data.prof).forEach(function (key) {
         const node = data.prof[key];
-        const label = unsmash(lssVal(node) || (node && node.label) || "");
-        if (label) profBits.push({ name: unsmash(key), text: label, note: "" });
+        const label = unsmash(lssVal(node) || (node && (node.label || node.name)) || "");
+        if (!label || label === "true" || label === "false") return;
+        abilities.push({ name: labels[key] || unsmash(key), text: label, note: "" });
       });
     }
-    abilities.push.apply(abilities, profBits.slice(0, 6));
     const avatar = data.avatar;
     const portrait = typeof avatar === "string"
       ? avatar
