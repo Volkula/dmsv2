@@ -1408,7 +1408,13 @@ label.check input { width: auto; }
 .talk-stage.is-shop .talk-box {
   left: 28px;
   right: 28px;
-  max-height: 180px;
+  max-height: none;
+  overflow: visible;
+  z-index: 6;
+}
+
+.talk-stage.is-shop .talk-box > p {
+  max-height: 72px;
   overflow: auto;
 }
 
@@ -1460,7 +1466,7 @@ label.check input { width: auto; }
 
 .talk-mood-list {
   position: absolute;
-  z-index: 6;
+  z-index: 30;
   left: 0;
   bottom: calc(100% + 6px);
   display: flex;

@@ -565,7 +565,8 @@
     rehome: icon('<path d="M4 11l8-7 8 7M6 10.5V19h4v-5h4v5h4v-8.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M15 4h4v4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>'),
     rename: icon('<path d="M4 20l4-1 11-11-3-3L5 16z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>'),
     book: icon('<path d="M5 5.5h5.5A2.5 2.5 0 0113 8v11H8a3 3 0 00-3 3zM19 5.5h-5.5A2.5 2.5 0 0011 8v11h5a3 3 0 013 3z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>'),
-    setup: icon('<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 3.5v2M12 18.5v2M3.5 12h2M18.5 12h2M5.8 5.8l1.4 1.4M16.8 16.8l1.4 1.4M18.2 5.8l-1.4 1.4M7.2 16.8l-1.4 1.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>')
+    setup: icon('<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 3.5v2M12 18.5v2M3.5 12h2M18.5 12h2M5.8 5.8l1.4 1.4M16.8 16.8l1.4 1.4M18.2 5.8l-1.4 1.4M7.2 16.8l-1.4 1.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>'),
+    unsquad: icon('<circle cx="8" cy="9" r="2" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="15" cy="9" r="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4 18c.6-2 2-3 4-3M12 18c.6-2 2-3 4-3M16 15l5 5M21 15l-5 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>')
   };
 
   const TOOLS = [
@@ -585,6 +586,7 @@
 
   function mount(host, ctx) {
     if (host._mapOff) host._mapOff();
+    if (window.ShirmoCodex && window.ShirmoCodex.adopt && window.ShirmoCodex.adopt(ctx.campaign) && ctx.save) ctx.save();
     const page = ctx.page;
     let tool = "choose";
     let selected = null;
@@ -667,6 +669,8 @@
       if (id) {
         const loc = current.locations.find(function (item) { return item.id === id; });
         if (!loc || loc.trashed) return;
+        const canon = canonLoc(loc);
+        id = canon ? canon.id : id;
       }
       current.focusId = id || "";
       current.talkId = "";
@@ -822,9 +826,71 @@
       current.locations = current.locations.filter(function (item) { return !ids[item.id]; });
       if (selected && ids[selected.id]) selected = null;
     }
+    function placeMates(loc) {
+      if (!loc || !loc.placeId) return [];
+      return view().locations.filter(function (item) {
+        return item && item.id !== loc.id && !item.trashed && item.placeId === loc.placeId;
+      });
+    }
+    function canonLoc(loc) {
+      if (!loc || !loc.placeId) return loc;
+      const mates = [loc].concat(placeMates(loc));
+      if (mates.length < 2) return loc;
+      const current = view();
+      function weight(item) {
+        let score = 0;
+        current.locations.forEach(function (row) {
+          if (row && !row.trashed && (row.parentId || "") === item.id) score += 4;
+        });
+        (current.markers || []).forEach(function (row) {
+          if (row && (row.locId || "") === item.id) score += 2;
+        });
+        (current.labels || []).forEach(function (row) {
+          if (row && (row.locId || "") === item.id) score += 1;
+        });
+        if (item.day || item.night || String(item.tip || "").trim()) score += 1;
+        return score;
+      }
+      let best = mates[0];
+      let score = weight(best);
+      mates.forEach(function (item) {
+        const next = weight(item);
+        if (next > score) {
+          best = item;
+          score = next;
+        }
+      });
+      return best;
+    }
+    function retargetInterior(fromId, toId) {
+      if (!fromId || !toId || fromId === toId) return;
+      const current = view();
+      current.locations.forEach(function (item) {
+        if (item && (item.parentId || "") === fromId) item.parentId = toId;
+      });
+      ["markers", "labels", "strokes"].forEach(function (key) {
+        (current[key] || []).forEach(function (row) {
+          if (row && (row.locId || "") === fromId) row.locId = toId;
+        });
+      });
+      if ((current.focusId || "") === fromId) current.focusId = toId;
+    }
     function dropLocation(id) {
       const loc = findLoc(id);
       if (!loc || loc.trashed) return;
+      const mates = placeMates(loc);
+      if (mates.length) {
+        retargetInterior(id, mates[0].id);
+        view().locations = view().locations.filter(function (item) { return item.id !== id; });
+        if ((view().focusId || "") === id) view().focusId = mates[0].id;
+        if (selected && selected.kind === "loc" && selected.id === id) selected = null;
+        closeMenu();
+        closeSetup();
+        paintBoard();
+        paintTree();
+        ctx.save();
+        return;
+      }
       const ids = subtree(id);
       if (hasStuff(id)) loc.trashed = true;
       else {
@@ -1048,6 +1114,92 @@
       paintTree();
     }
     function paintSelected() {}
+    function markerPersonId(marker) {
+      if (!marker) return "";
+      if (marker.npcId) return marker.npcId;
+      if (marker.codexId) return marker.codexId;
+      if (marker.actorId && ctx.campaign.battle) {
+        const actor = (ctx.campaign.battle.actors || []).find(function (row) { return row && row.id === marker.actorId; });
+        if (actor && actor.codexId) return actor.codexId;
+      }
+      return "";
+    }
+    function keepEnemy(marker) {
+      if (!marker || (marker.kind !== "foe" && marker.kind !== "npc")) return;
+      const id = markerPersonId(marker);
+      const known = id && (book().npcs || []).find(function (row) { return row && row.id === id; });
+      if (known) return;
+      if (marker.kind !== "foe") return;
+      const nid = id || crypto.randomUUID();
+      book().npcs.push({
+        id: nid,
+        role: "enemy",
+        name: marker.name || "Враг",
+        note: "",
+        weapon: marker.weapon || "",
+        damage: marker.damage || "",
+        hp: Number(marker.hp) || 0,
+        hpMax: Number(marker.hpMax) || Number(marker.hp) || 0,
+        portrait: marker.portrait || ""
+      });
+      marker.codexId = nid;
+    }
+    function releaseMarker(marker) {
+      if (!marker) return;
+      keepEnemy(marker);
+      const personId = markerPersonId(marker);
+      const battle = ctx.campaign.battle;
+      if (battle) {
+        (battle.actors || []).forEach(function (actor) {
+          if (actor && actor.markerId === marker.id) actor.markerId = "";
+        });
+      }
+      if (!personId) return;
+      const loc = marker.locId ? findLoc(marker.locId) : null;
+      const placeId = loc && loc.placeId;
+      if (!placeId) return;
+      const still = (view().markers || []).some(function (row) {
+        return row && row.id !== marker.id && markerPersonId(row) === personId && (function () {
+          const home = row.locId ? findLoc(row.locId) : null;
+          return home && home.placeId === placeId;
+        })();
+      });
+      if (still) return;
+      const place = (book().places || []).find(function (row) { return row && row.id === placeId; });
+      if (place && place.people) place.people = place.people.filter(function (id) { return id !== personId; });
+    }
+    function liftSquad(personId) {
+      if (!personId) return;
+      const squad = (book().squads || []).find(function (row) {
+        return row && (row.memberIds || []).indexOf(personId) >= 0;
+      });
+      const ids = {};
+      if (squad) (squad.memberIds || []).forEach(function (id) { if (id) ids[id] = true; });
+      else ids[personId] = true;
+      (ctx.campaign.pages || []).forEach(function (page) {
+        (page.views || []).forEach(function (one) {
+          (one.markers || []).forEach(function (marker) {
+            if (marker && ids[markerPersonId(marker)]) keepEnemy(marker);
+          });
+          one.markers = (one.markers || []).filter(function (marker) {
+            return !(marker && ids[markerPersonId(marker)]);
+          });
+        });
+      });
+      const battle = ctx.campaign.battle;
+      if (battle) {
+        (battle.actors || []).forEach(function (actor) {
+          if (actor && actor.codexId && ids[actor.codexId]) actor.markerId = "";
+        });
+      }
+      if (squad) {
+        const place = squad.placeId && (book().places || []).find(function (row) { return row && row.id === squad.placeId; });
+        if (place && place.people) {
+          place.people = place.people.filter(function (id) { return !ids[id]; });
+        }
+        squad.placeId = "";
+      }
+    }
     function removeItem() {
       const item = findItem();
       if (!item) return;
@@ -1058,6 +1210,7 @@
       } else if (selected.kind === "label") {
         current.labels = current.labels.filter(function (label) { return label.id !== item.id; });
       } else {
+        releaseMarker(item);
         current.markers = current.markers.filter(function (marker) { return marker.id !== item.id; });
       }
       selected = null;
@@ -1079,9 +1232,8 @@
       const current = view();
       if (selected.kind === "loc") {
         copy.trashed = false;
-        copy.placeId = "";
         current.locations.push(copy);
-        ensurePlace(copy);
+        if (!copy.placeId) ensurePlace(copy);
       }
       else current.markers.push(copy);
       selected = { kind: selected.kind, id: copy.id };
@@ -1137,6 +1289,15 @@
     }
     function forgetPlace(loc) {
       if (!loc || !loc.placeId) return;
+      let used = false;
+      (ctx.campaign.pages || []).forEach(function (page) {
+        (page.views || []).forEach(function (one) {
+          (one.locations || []).forEach(function (item) {
+            if (item && item.id !== loc.id && !item.trashed && item.placeId === loc.placeId) used = true;
+          });
+        });
+      });
+      if (used) return;
       const places = book().places;
       const row = places.find(function (item) { return item.id === loc.placeId; });
       if (row && row.people && row.people.length) return;
@@ -1277,9 +1438,14 @@
       const linesBtn = board.querySelector("[data-talk=lines]");
       if (linesBtn) linesBtn.addEventListener("click", function () { openLines(linkedNpc(marker) || marker); });
       if (window.ShirmoShopFont) {
+        let fontWait = 0;
         window.ShirmoShopFont.bind(board, function (size) {
           window.ShirmoShopFont.write(size, ctx.campaign);
           dirty();
+          clearTimeout(fontWait);
+          fontWait = setTimeout(function () {
+            if (ctx.shopFont) ctx.shopFont(size);
+          }, 120);
         });
       }
       const showGoods = board.querySelector("[data-talk=show-goods]");
@@ -2061,12 +2227,7 @@
       });
     }
     function seatNpcAt(npcId, placeId) {
-      if (!npcId) return;
-      (book().places || []).forEach(function (place) {
-        if (!place || !place.people) return;
-        place.people = place.people.filter(function (id) { return id !== npcId; });
-      });
-      if (!placeId) return;
+      if (!npcId || !placeId) return;
       const place = (book().places || []).find(function (row) { return row.id === placeId; });
       if (!place) return;
       place.people = place.people || [];
@@ -2101,6 +2262,8 @@
         const row = (list || []).find(function (item) { return item.id === id; });
         if (!row) return;
         if ((row.locId || "") === to) return;
+        const prevLoc = row.locId ? findLoc(row.locId) : null;
+        const prevPlace = prevLoc && prevLoc.placeId;
         row.locId = to;
         if ((row.kind === "npc" && row.npcId) || (row.kind === "foe" && (row.codexId || row.actorId))) {
           const hostLoc = to ? findLoc(to) : null;
@@ -2111,6 +2274,17 @@
           }
           if (personId) {
             seatNpcAt(personId, hostLoc && hostLoc.placeId);
+            if (prevPlace && prevPlace !== (hostLoc && hostLoc.placeId)) {
+              const left = (current.markers || []).some(function (marker) {
+                if (!marker || marker.id === row.id || markerPersonId(marker) !== personId) return false;
+                const home = marker.locId ? findLoc(marker.locId) : null;
+                return home && home.placeId === prevPlace;
+              });
+              if (!left) {
+                const place = (book().places || []).find(function (entry) { return entry && entry.id === prevPlace; });
+                if (place && place.people) place.people = place.people.filter(function (id) { return id !== personId; });
+              }
+            }
             dedupePersonMarkers(personId, row.id);
           }
         }
@@ -2136,9 +2310,10 @@
       });
       if (hits.length < 2) return;
       const keep = hits.find(function (marker) { return marker.id === keepId; }) || hits[0];
+      const here = keep.locId || "";
       const drop = {};
       hits.forEach(function (marker) {
-        if (marker.id !== keep.id) drop[marker.id] = true;
+        if (marker.id !== keep.id && (marker.locId || "") === here) drop[marker.id] = true;
       });
       current.markers = current.markers.filter(function (marker) { return !drop[marker.id]; });
       const actors = ctx.campaign.battle && ctx.campaign.battle.actors || [];
@@ -2250,9 +2425,16 @@
         return '<button type="button" class="pin-act" data-act="' + act + '" title="' + label + '" aria-label="' + label + '">' + ACT[act] + "</button>";
       }
       const canHome = selected.kind === "loc" || selected.kind === "npc" || selected.kind === "mark" || selected.kind === "foe" || selected.kind === "label" || selected.kind === "image";
+      const personId = markerPersonId(item);
+      const inSquad = personId && (book().squads || []).some(function (squad) {
+        return squad && (squad.memberIds || []).indexOf(personId) >= 0;
+      });
+      const squadBtn = inSquad && (selected.kind === "foe" || selected.kind === "npc")
+        ? actBtn("unsquad", "Убрать весь отряд с карты, в справочнике он останется")
+        : "";
       const actions = '<div class="pin-acts">' + (selected.kind === "label"
         ? actBtn("del", "Удалить надпись") + actBtn("rename", "Изменить текст") + actBtn("rehome", "Перенести в другую локацию")
-        : actBtn("del", selected.kind === "image" ? "Удалить картинку" : "Удалить точку") + actBtn("copy", selected.kind === "image" ? "Копировать картинку" : "Копировать точку") + actBtn("move", "Перетащить") + (canHome ? actBtn("rehome", "Перенести в другую локацию") : "") + (selected.kind === "image" ? "" : actBtn("rename", "Изменить имя")) + (selected.kind === "loc" ? actBtn("setup", "Имя, день и ночь, фоны") : "") + (bookBtn ? actBtn("book", "Назначить запись из справочника") : "")) + "</div>";
+        : actBtn("del", selected.kind === "image" ? "Удалить картинку" : "Удалить точку") + squadBtn + actBtn("copy", selected.kind === "image" ? "Копировать картинку" : "Копировать точку") + actBtn("move", "Перетащить") + (canHome ? actBtn("rehome", "Перенести в другую локацию") : "") + (selected.kind === "image" ? "" : actBtn("rename", "Изменить имя")) + (selected.kind === "loc" ? actBtn("setup", "Имя, день и ночь, фоны") : "") + (bookBtn ? actBtn("book", "Назначить запись из справочника") : "")) + "</div>";
       menu.innerHTML = styleHtml(item, selected.kind) + actions;
       menu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 256)) + "px";
       menu.style.top = Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - Math.min(520, window.innerHeight * 0.7) - 8)) + "px";
@@ -2443,6 +2625,16 @@
         if (!button || !menu.contains(button)) return;
         const act = button.getAttribute("data-act");
         if (act === "del") removeItem();
+        if (act === "unsquad") {
+          const row = findItem();
+          const who = row && markerPersonId(row);
+          if (who) liftSquad(who);
+          selected = null;
+          closeMenu();
+          paintBoard();
+          paintTree();
+          ctx.save();
+        }
         if (act === "copy") copyItem();
         if (act === "rename") beginRename();
         if (act === "book") assignCodex();
@@ -3077,8 +3269,11 @@
         const id = selected && selected.id;
         press = null;
         if (open && kind === "loc") enter(id);
-        else if (open && kind === "npc") openTalk(id);
-        else if (open && kind === "foe" && ctx.openBattle) ctx.openBattle(id);
+        else if (open && kind === "npc") {
+          const row = (view().markers || []).find(function (item) { return item && item.id === id; });
+          const npc = row && row.npcId && (book().npcs || []).find(function (item) { return item && item.id === row.npcId; });
+          if (!npc || npc.role !== "enemy") openTalk(id);
+        }
         else if (open && kind === "image") {
           const row = (view().markers || []).find(function (item) { return item && item.id === id; });
           const url = row && (row.url || row.icon);

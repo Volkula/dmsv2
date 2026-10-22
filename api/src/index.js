@@ -708,6 +708,10 @@ const server = http.createServer(async function (req, res) {
         const fontSize = Math.round(Number(body.fontSize) || 0);
         if (fontSize >= 12 && fontSize <= 28) event.fontSize = fontSize;
       }
+      if (event.type === "wares-font") {
+        const fontSize = Math.round(Number(body.fontSize) || 0);
+        if (fontSize >= 12 && fontSize <= 28) event.fontSize = fontSize;
+      }
       if (event.type === "die") {
         const roll = body.roll && typeof body.roll === "object" ? body.roll : {};
         const shown = publicRoll(roll);

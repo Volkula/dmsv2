@@ -258,15 +258,21 @@ function projectMap(page, campaign) {
         pinSize: Math.min(480, Math.max(24, Number(item.pinSize) || 120))
       };
     }
-    const npc = item.kind === "npc" ? npcs.find(function (row) { return row && row.id === item.npcId; }) : null;
-    const face = activeFace(npc);
+    const personId = item.npcId || item.codexId || "";
+    const npc = (item.kind === "npc" || item.kind === "foe") && personId
+      ? npcs.find(function (row) { return row && row.id === personId; })
+      : null;
+    const face = item.kind === "foe"
+      ? { portrait: item.portrait || (npc && npc.portrait) || "", x: 50, y: 50, zoom: 1 }
+      : activeFace(npc);
     const portrait = face.portrait ? clip(face.portrait, 300) : "";
+    const kind = item.kind === "npc" ? "npc" : (item.kind === "foe" ? "foe" : "mark");
     return Object.assign({
       id: clip(item.id, 80),
       name: clip(item.name, 80),
       x: unit(item.x),
       y: unit(item.y),
-      kind: item.kind === "npc" ? "npc" : "mark",
+      kind: kind,
       tip: clip(item.tip, 400),
       pinSize: Math.min(160, Math.max(12, Number(item.pinSize) || (portrait ? 56 : 14))),
       portrait: portrait,

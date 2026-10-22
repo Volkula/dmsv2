@@ -750,6 +750,14 @@
     return send(fontSize);
   }
 
+  function pushShopFont(roomId, headers, campaign) {
+    return api("/api/rooms/" + roomId + "/events", {
+      method: "POST",
+      headers: headers,
+      body: JSON.stringify({ type: "wares-font", fontSize: readShopFont(campaign) })
+    });
+  }
+
   function hidePlayerGoods(roomId, headers) {
     const shown = document.querySelector(".board-show");
     if (shown) shown.remove();
@@ -782,6 +790,13 @@
       }
       if (event && event.type === "die" && event.roll) {
         showDie(event.roll);
+        return;
+      }
+      if (event && event.type === "wares-font") {
+        const font = boardFontSize(event.fontSize);
+        document.querySelectorAll(".board-card, .talk-shop").forEach(function (card) {
+          card.style.setProperty("--board-font", font + "px");
+        });
         return;
       }
       if (event && event.type === "wares") {
@@ -1372,6 +1387,7 @@
           upload: function (file) { return uploadFile(id, key, file); },
           showGoods: function (goods) { return publishGoods(id, headers, goods, state.campaign); },
           hideGoods: function () { return hidePlayerGoods(id, headers); },
+          shopFont: function () { return pushShopFont(id, headers, state.campaign); },
           showImage: function (url) {
             return api("/api/rooms/" + id + "/events", {
               method: "POST",

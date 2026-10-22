@@ -209,6 +209,24 @@ window.ShirmoCodex = (function () {
           }
         });
         (view.markers || []).forEach(function (marker) {
+          if (!marker) return;
+          if (marker.kind === "npc" && marker.npcId) {
+            const seated = book.npcs.find(function (row) { return row.id === marker.npcId; });
+            if (seated && seated.role === "enemy") {
+              marker.kind = "foe";
+              marker.codexId = seated.id;
+              marker.npcId = "";
+              if (seated.portrait && !marker.portrait) marker.portrait = seated.portrait;
+              changed = true;
+            }
+          }
+          if (marker.kind === "foe" && marker.codexId) {
+            const foe = book.npcs.find(function (row) { return row.id === marker.codexId; });
+            if (foe && foe.role === "enemy" && foe.portrait && !marker.portrait) {
+              marker.portrait = foe.portrait;
+              changed = true;
+            }
+          }
           if (!marker || marker.kind !== "npc") return;
           let npc = marker.npcId && book.npcs.find(function (row) { return row.id === marker.npcId; });
           if (!npc) {
@@ -817,54 +835,112 @@ window.ShirmoCodex = (function () {
       }
       return ids;
     }
+    function markerKindFor(person) {
+      return person && person.role === "enemy" ? "foe" : "npc";
+    }
+    function stampMarker(marker, person, personId) {
+      if (!marker || !person) return;
+      const kind = markerKindFor(person);
+      marker.kind = kind;
+      marker.name = person.name || marker.name || (kind === "foe" ? "Враг" : "НПС");
+      if (kind === "foe") {
+        marker.codexId = personId;
+        marker.npcId = "";
+        if (person.portrait) marker.portrait = person.portrait;
+        if (marker.hidden == null) marker.hidden = true;
+      } else if (!marker.npcId) marker.npcId = personId;
+    }
+    function dropMarkerIds(ids) {
+      const kill = {};
+      (ids || []).forEach(function (id) { if (id) kill[id] = true; });
+      if (!Object.keys(kill).length) return;
+      eachMapView(function (view) {
+        view.markers = (view.markers || []).filter(function (marker) { return !(marker && kill[marker.id]); });
+      });
+      const actors = ctx.campaign.battle && ctx.campaign.battle.actors || [];
+      actors.forEach(function (actor) {
+        if (actor && kill[actor.markerId]) actor.markerId = "";
+      });
+    }
+    function markersHere(view, personId, locId) {
+      return (view.markers || []).filter(function (marker) {
+        if (!markerPersonIds(marker)[personId]) return false;
+        if (locId == null) return true;
+        return (marker.locId || "") === locId;
+      });
+    }
+    function clearPersonMarkers(personId, placeId) {
+      if (!personId) return;
+      const drop = [];
+      eachMapView(function (view) {
+        (view.markers || []).forEach(function (marker) {
+          if (!marker || !markerPersonIds(marker)[personId]) return;
+          if (!placeId) {
+            drop.push(marker.id);
+            return;
+          }
+          const loc = (view.locations || []).find(function (row) { return row && row.id === marker.locId; });
+          if (loc && loc.placeId === placeId) drop.push(marker.id);
+        });
+      });
+      dropMarkerIds(drop);
+    }
+    function ensurePersonMarker(personId, placeId) {
+      const locId = locIdForPlace(placeId);
+      if (!personId || !locId) return;
+      const person = (book().npcs || []).find(function (row) { return row && row.id === personId; });
+      const kind = markerKindFor(person);
+      eachMapView(function (view) {
+        const hits = markersHere(view, personId, locId);
+        if (hits.length) {
+          stampMarker(hits[0], person, personId);
+          if (hits.length > 1) dropMarkerIds(hits.slice(1).map(function (marker) { return marker.id; }));
+          return;
+        }
+        view.markers = view.markers || [];
+        const marker = {
+          id: crypto.randomUUID(),
+          name: (person && person.name) || (kind === "foe" ? "Враг" : "НПС"),
+          x: 0.5,
+          y: 0.52,
+          kind: kind,
+          tip: "",
+          hidden: kind === "foe",
+          locId: locId,
+          portrait: (person && person.portrait) || ""
+        };
+        if (kind === "foe") marker.codexId = personId;
+        else marker.npcId = personId;
+        view.markers.push(marker);
+      });
+    }
     function syncNpcSeat(personId, placeId) {
       if (!personId) return;
       const locId = locIdForPlace(placeId);
-      const person = (book().npcs || []).find(function (row) { return row && row.id === personId; });
-      let touched = false;
-      eachMapView(function (view) {
-        const hits = (view.markers || []).filter(function (marker) {
-          return !!markerPersonIds(marker)[personId];
-        });
-        if (!hits.length) {
-          if (!locId) return;
-          view.markers = view.markers || [];
-          view.markers.push({
-            id: crypto.randomUUID(),
-            name: (person && person.name) || "НПС",
-            x: 0.5,
-            y: 0.52,
-            kind: "npc",
-            tip: "",
-            hidden: false,
-            locId: locId,
-            npcId: personId
-          });
-          touched = true;
-          return;
-        }
-        hits.sort(function (a, b) {
-          const rank = function (marker) {
-            return marker.kind === "npc" ? 0 : (marker.kind === "foe" ? 1 : 2);
-          };
-          return rank(a) - rank(b);
-        });
-        const keep = hits[0];
-        keep.locId = locId || "";
-        if (keep.kind === "npc" && !keep.npcId) keep.npcId = personId;
-        if (keep.kind === "foe" && !keep.codexId) keep.codexId = personId;
-        if (person && person.name) keep.name = person.name;
-        touched = true;
-        if (hits.length === 1) return;
-        const drop = {};
-        hits.slice(1).forEach(function (marker) { drop[marker.id] = true; });
-        view.markers = view.markers.filter(function (marker) { return !drop[marker.id]; });
-        const actors = ctx.campaign.battle && ctx.campaign.battle.actors || [];
-        actors.forEach(function (actor) {
-          if (actor && drop[actor.markerId]) actor.markerId = keep.id;
-        });
-      });
-      if (touched) refreshMap();
+      if (!locId) {
+        clearPersonMarkers(personId, "");
+        refreshMap();
+        return;
+      }
+      clearPersonMarkers(personId, "");
+      ensurePersonMarker(personId, placeId);
+      refreshMap();
+    }
+    function addSeat(personId, placeId) {
+      if (!personId || !placeId) return;
+      const place = book().places.find(function (row) { return row && row.id === placeId; });
+      if (!place) return;
+      place.people = place.people || [];
+      if (place.people.indexOf(personId) < 0) place.people.push(personId);
+      ensurePersonMarker(personId, placeId);
+      refreshMap();
+    }
+    function unseatPerson(personId, placeId) {
+      if (!personId || !placeId) return;
+      const place = book().places.find(function (row) { return row && row.id === placeId; });
+      if (place && place.people) place.people = place.people.filter(function (id) { return id !== personId; });
+      clearPersonMarkers(personId, placeId);
+      refreshMap();
     }
     function refreshMap() {
       const mapHost = document.getElementById("work-map");
@@ -886,12 +962,23 @@ window.ShirmoCodex = (function () {
       if (!squad) return;
       const to = placeId || "";
       const members = (squad.memberIds || []).filter(Boolean);
-      squad.placeId = to;
       squad.memberIds = members;
+      if (!to) {
+        members.forEach(function (id) {
+          seatPerson(id, "");
+          clearPersonMarkers(id, "");
+        });
+        squad.placeId = "";
+        refreshMap();
+        return;
+      }
+      squad.placeId = to;
       members.forEach(function (id) {
         seatPerson(id, to);
-        syncNpcSeat(id, to);
+        clearPersonMarkers(id, "");
+        ensurePersonMarker(id, to);
       });
+      refreshMap();
     }
     function moveNpcToPlace(npcId, placeId) {
       if (!npcId) return;
@@ -2279,15 +2366,16 @@ window.ShirmoCodex = (function () {
         const sel = host.querySelector('[data-seat="' + index + '"]');
         const id = sel && sel.value;
         if (!place || !id) return;
-        moveNpcToPlace(id, place.id);
+        addSeat(id, place.id);
         paint();
         saveSoon();
         return;
       }
       if (act === "unseat") {
         const id = button.getAttribute("data-npc");
-        if (!id) return;
-        moveNpcToPlace(id, "");
+        const place = book().places[Number(button.getAttribute("data-i"))];
+        if (!id || !place) return;
+        unseatPerson(id, place.id);
         paint();
         saveSoon();
         return;
