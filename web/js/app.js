@@ -1156,29 +1156,27 @@
       '<button type="button" id="roll-look" title="Скорость, цвет и текстура кубика">Кубик</button>' +
       '<button type="button" id="library" title="Шрифты, картинки и заметки комнаты">Библиотека</button>' +
       "</div>" +
-      '<div class="top-center">' +
       '<input id="title" class="room-title" type="text" value="' + esc(state.title) + '" aria-label="Название комнаты" title="Название комнаты">' +
-      '<nav class="top-mods" aria-label="Разделы">' +
-      '<button type="button" id="mod-scene" class="is-on" title="Страница с текстом и фоном">Сцена</button>' +
-      '<button type="button" id="mod-map" title="Карта и локации">Карта</button>' +
-      '<button type="button" id="mod-codex" title="Персонажи, отряды и каталог">Справочник</button>' +
-      '<button type="button" id="mod-battle" title="Инициатива, хиты и враги на карте">Бой</button>' +
-      "</nav></div>" +
       '<div class="top-publish">' +
-      '<div class="top-modes">' +
       '<div class="mode-switch">' +
       '<button type="button" id="mode-live" class="' + (state.publishMode === "live" ? "is-on" : "") + '" title="Правки открытой страницы сразу видны игрокам">Сразу</button>' +
       '<button type="button" id="mode-hold" class="' + (state.publishMode === "hold" ? "is-on" : "") + '" title="Игроки видят кадр, когда нажмёте «Показать»">Только по кнопке</button>' +
       "</div>" +
       '<button type="button" class="primary" id="show" title="Отправить игрокам то, что на экране сейчас">Показать</button>' +
       "</div>" +
+      '<nav class="top-mods" aria-label="Разделы">' +
+      '<button type="button" id="mod-scene" class="is-on" title="Страница с текстом и фоном">Сцена</button>' +
+      '<button type="button" id="mod-map" title="Карта и локации">Карта</button>' +
+      '<button type="button" id="mod-codex" title="Персонажи, отряды и каталог">Справочник</button>' +
+      '<button type="button" id="mod-battle" title="Инициатива, хиты и враги на карте">Бой</button>' +
+      "</nav>" +
       '<div class="top-links">' +
       '<button type="button" id="backup" title="Скачать кампанию и файлы">Выгрузка</button>' +
       '<button type="button" id="pass" title="Сменить пароль мастера этой комнаты">Пароль</button>' +
       '<button type="button" id="copy-master" title="Скопировать ссылку с паролем мастера">Ссылка мастера</button>' +
       '<button type="button" id="copy" title="Скопировать ссылку для зрителей">Ссылка игроков</button>' +
       '<a href="' + esc(viewerUrl) + '" target="_blank" rel="noopener" title="Открыть экран игроков в новой вкладке">Открыть экран</a>' +
-      "</div></div></header><div class=\"work\" id=\"work-scene\"><aside class=\"side\">" +
+      "</div></header><div class=\"work\" id=\"work-scene\"><aside class=\"side\">" +
       '<label title="Крупная строка на сцене">Заголовок<input id="page-title" type="text"></label>' +
       '<label title="Текст под заголовком">Текст<textarea id="page-text"></textarea></label>' +
       '<label title="Цвет фона сцены">Фон<input id="page-color" type="color"></label>' +
