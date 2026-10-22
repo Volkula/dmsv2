@@ -7,6 +7,7 @@ window.ShirmoCodex = (function () {
   const FACE = icon('<circle cx="12" cy="9" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 19c1.2-3 3.2-4.5 6-4.5S16.8 16 18 19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>');
   const SCENE = icon('<rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8.5" cy="10" r="1.4" fill="currentColor"/><path d="M3 16l5-4 4 3 3-2 6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>');
   const CROSS = icon('<path d="M8 8l8 8M16 8l-8 8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>');
+  const PIN = icon('<path d="M9 4h6l1 5 2 1v2H6v-2l2-1zM12 12v8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>');
 
   const PERSON = [["name", "Имя", "text"], ["note", "Заметка", "text"], ["weapon", "Оружие", "text"], ["damage", "Урон", "text"], ["ac", "КД", "number"], ["hp", "ХП", "number"], ["hpMax", "Макс", "number"]];
   const TABS = [
@@ -333,6 +334,10 @@ window.ShirmoCodex = (function () {
   function mount(host, ctx) {
     if (host._codexOff) host._codexOff();
     let tab = "places";
+    try {
+      const savedTab = sessionStorage.getItem("shirmo-codex-tab");
+      if (TABS.some(function (item) { return item[0] === savedTab; })) tab = savedTab;
+    } catch (err) { /* нет хранилища */ }
     let placeCols = 2;
     try {
       const savedCols = Number(sessionStorage.getItem("shirmo-place-cols"));
@@ -356,6 +361,10 @@ window.ShirmoCodex = (function () {
     let hits = [];
     let catalogError = false;
     let alive = true;
+    let codexScroll = 0;
+    try { codexScroll = Number(sessionStorage.getItem("shirmo-codex-scroll")) || 0; } catch (err) { /* нет хранилища */ }
+    let thumbBusy = false;
+    const thumbQueue = [];
 
     function book() {
       return ensure(ctx.campaign);
@@ -1061,13 +1070,17 @@ window.ShirmoCodex = (function () {
       const squadLine = bound.length ? '<p class="note">Отряд: ' + bound.map(function (squad) { return esc(squad.name || "Отряд"); }).join(", ") + "</p>" : "";
       const parent = place.parentId && book().places.find(function (row) { return row.id === place.parentId; });
       const parentLine = parent ? '<p class="note">Внутри: ' + esc(parent.name || "Место") + "</p>" : "";
-      const scene = place.backdrop ? ' style="background-image:url(&quot;' + esc(place.backdrop) + '&quot;)"' : "";
+      const scene = place.backdrop
+        ? '<div class="npc-scene" data-full="' + esc(place.backdrop) + '" data-thumb="' + esc(place.backdropThumb || "") + '" data-slot="backdrop" data-i="' + index + '">' +
+          '<img class="place-backdrop" alt=""' + (place.backdropThumb ? ' src="' + esc(place.backdropThumb) + '"' : "") + ">"
+        : '<div class="npc-scene">';
       const face = place.portrait
-        ? '<button type="button" class="npc-portrait" data-act="face" data-i="' + index + '" title="Настроить, какая часть изображения видна"><img alt="" src="' + esc(place.portrait) + '" style="' + faceStyle(place) + '"></button>'
+        ? '<button type="button" class="npc-portrait" data-act="face" data-i="' + index + '" data-full="' + esc(place.portrait) + '" data-thumb="' + esc(place.portraitThumb || "") + '" data-slot="portrait" title="Настроить, какая часть изображения видна"><img alt=""' + (place.portraitThumb ? ' src="' + esc(place.portraitThumb) + '"' : "") + ' style="' + faceStyle(place) + '"></button>'
         : '<span class="npc-portrait npc-portrait-empty" aria-hidden="true"></span>';
-      return '<article class="place-card" data-place="' + esc(place.id) + '" title="ПКМ — перенести место">' +
-        '<div class="npc-scene"' + scene + ">" + face + "</div>" +
+      return '<article class="place-card' + (place.pinned ? " is-pinned" : "") + '" data-place="' + esc(place.id) + '" title="ПКМ — перенести место">' +
+        scene + face + "</div>" +
         '<div class="place-tools">' +
+        '<button type="button" class="icon-btn' + (place.pinned ? " is-on" : "") + '" data-act="pin" data-i="' + index + '" title="' + (place.pinned ? "Открепить место" : "Закрепить место") + '" aria-label="Закрепить">' + PIN + "</button>" +
         '<span class="place-pair"><label class="file-btn" title="Загрузить изображение места">' + FACE + '<input type="file" accept="image/*" data-pic="portrait" data-i="' + index + '" aria-label="Изображение места"></label>' +
         '<button type="button" class="icon-btn" data-act="clear-pic" data-pic="portrait" data-i="' + index + '"' + (place.portrait ? "" : " disabled") + ' title="Убрать изображение" aria-label="Убрать изображение">' + CROSS + "</button></span>" +
         '<span class="place-pair"><label class="file-btn" title="Загрузить фон карточки">' + SCENE + '<input type="file" accept="image/*" data-pic="backdrop" data-i="' + index + '" aria-label="Фон места"></label>' +
@@ -1081,25 +1094,49 @@ window.ShirmoCodex = (function () {
           : '<p class="note">Сначала заведите персонажей.</p>') +
         "</article>";
     }
-    function placesHtml() {
-      const places = book().places;
-      if (!places.length) return '<p class="note">Пока пусто. На место ставятся уже созданные персонажи. ПКМ по карточке — перенос.</p>';
+    function placeOrder() {
+      const places = (book().places || []).filter(Boolean);
       const known = {};
-      places.forEach(function (place) { if (place) known[place.id] = true; });
+      places.forEach(function (place) { known[place.id] = true; });
+      const pinned = [];
+      const rest = [];
       const seen = {};
-      function walk(parentId, depth) {
-        return places.filter(function (place) {
+      function walk(parentId) {
+        places.filter(function (place) {
           const parent = place.parentId || "";
           if (parentId) return parent === parentId;
           return !parent || !known[parent];
-        }).map(function (place) {
-          if (seen[place.id]) return "";
+        }).forEach(function (place) {
+          if (seen[place.id]) return;
           seen[place.id] = true;
-          const index = placeIndex(place.id);
-          return placeCardHtml(place, index) + walk(place.id, depth + 1);
-        }).join("");
+          if (place.pinned) pinned.push(place);
+          else rest.push(place);
+          walk(place.id);
+        });
       }
-      return '<div class="place-grid place-cols-' + placeCols + '">' + walk("", 0) + "</div>";
+      walk("");
+      places.forEach(function (place) {
+        if (seen[place.id]) return;
+        seen[place.id] = true;
+        if (place.pinned) pinned.push(place);
+        else rest.push(place);
+      });
+      return pinned.concat(rest);
+    }
+    function placeIndexHtml() {
+      const rows = placeOrder();
+      if (!rows.length) return "";
+      return '<div class="place-index" aria-label="Список мест">' + rows.map(function (place) {
+        return '<button type="button" data-place-jump="' + esc(place.id) + '" class="' + (place.pinned ? "is-pin" : "") + '" title="' + esc(place.name || "Без имени") + '">' +
+          (place.pinned ? PIN : "") + "<span>" + esc(place.name || "Без имени") + "</span></button>";
+      }).join("") + "</div>";
+    }
+    function placesHtml() {
+      const places = book().places;
+      if (!places.length) return '<p class="note">Пока пусто. На место ставятся уже созданные персонажи. ПКМ по карточке — перенос.</p>';
+      return '<div class="place-grid place-cols-' + placeCols + '">' + placeOrder().map(function (place) {
+        return placeCardHtml(place, placeIndex(place.id));
+      }).join("") + "</div>";
     }
     function takenHtml() {
       const rows = list();
@@ -1551,6 +1588,105 @@ window.ShirmoCodex = (function () {
       return '<label title="Искать в каталоге. От двух букв">Поиск<input id="cat-q" type="text" value="' + esc(query) + '" placeholder="Две буквы и больше" autocomplete="off"></label>' +
         '<div id="cat-results"></div><div id="cat-preview" class="cat-preview" hidden></div>' + takenHtml();
     }
+    function shrinkFile(file) {
+      return new Promise(function (resolve) {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = function () {
+          const max = 360;
+          const scale = Math.min(1, max / Math.max(img.width || 1, img.height || 1));
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(img.width * scale));
+          canvas.height = Math.max(1, Math.round(img.height * scale));
+          canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+          URL.revokeObjectURL(url);
+          canvas.toBlob(function (blob) { resolve(blob || null); }, "image/jpeg", 0.62);
+        };
+        img.onerror = function () {
+          URL.revokeObjectURL(url);
+          resolve(null);
+        };
+        img.src = url;
+      });
+    }
+    function pumpThumb() {
+      if (thumbBusy || !thumbQueue.length || !ctx.upload) return;
+      const job = thumbQueue.shift();
+      if (!job.row[job.slot] || job.row[job.slot + "Thumb"]) {
+        pumpThumb();
+        return;
+      }
+      thumbBusy = true;
+      const image = job.image;
+      const max = 360;
+      const scale = Math.min(1, max / Math.max(image.naturalWidth || 1, image.naturalHeight || 1));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round((image.naturalWidth || 1) * scale));
+      canvas.height = Math.max(1, Math.round((image.naturalHeight || 1) * scale));
+      try { canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height); }
+      catch (err) {
+        thumbBusy = false;
+        return;
+      }
+      canvas.toBlob(function (blob) {
+        if (!blob) {
+          thumbBusy = false;
+          pumpThumb();
+          return;
+        }
+        ctx.upload(new File([blob], "thumb.jpg", { type: "image/jpeg" })).then(function (url) {
+          if (alive && url && job.row[job.slot] && !job.row[job.slot + "Thumb"]) {
+            job.row[job.slot + "Thumb"] = url;
+            saveSoon();
+          }
+        }).catch(function () {}).then(function () {
+          thumbBusy = false;
+          pumpThumb();
+        });
+      }, "image/jpeg", 0.62);
+    }
+    function queueThumb(row, slot, image) {
+      if (!row || !slot || !image || row[slot + "Thumb"] || !ctx.upload) return;
+      if (thumbQueue.some(function (job) { return job.row === row && job.slot === slot; })) return;
+      thumbQueue.push({ row: row, slot: slot, image: image });
+      pumpThumb();
+    }
+    function armPlacePictures() {
+      if (tab !== "places") return;
+      const root = host.querySelector(".codex-main");
+      const nodes = host.querySelectorAll(".place-card [data-full]");
+      function show(node) {
+        if (node.getAttribute("data-armed")) return;
+        const full = node.getAttribute("data-full") || "";
+        if (!full) return;
+        node.setAttribute("data-armed", "1");
+        const img = node.querySelector("img");
+        if (!img) return;
+        const thumb = node.getAttribute("data-thumb") || "";
+        if (thumb && !img.getAttribute("src")) img.src = thumb;
+        const loader = new Image();
+        loader.onload = function () {
+          if (!alive) return;
+          img.src = full;
+          const row = book().places[Number(node.getAttribute("data-i"))];
+          const slot = node.getAttribute("data-slot");
+          if (row && slot && !thumb) queueThumb(row, slot, loader);
+        };
+        loader.src = full;
+      }
+      if (!root || !("IntersectionObserver" in window)) {
+        nodes.forEach(show);
+        return;
+      }
+      const io = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (!entry.isIntersecting) return;
+          show(entry.target);
+          io.unobserve(entry.target);
+        });
+      }, { root: root, rootMargin: "240px" });
+      nodes.forEach(function (node) { io.observe(node); });
+    }
     function paint() {
       const nav = TABS.map(function (item) {
         return '<button type="button" data-tab="' + item[0] + '" class="' + (tab === item[0] ? "is-on" : "") + '" title="' + esc(item[1]) + '">' + item[2] + "<span>" + esc(item[1]) + "</span></button>";
@@ -1566,7 +1702,8 @@ window.ShirmoCodex = (function () {
         '<label title="Локация, к которой привяжется отряд">Место<select id="codex-place" aria-label="Место отряда">' + placeOptions + "</select></label>" +
         '<button type="button" data-act="squad" title="Создать врагов и связать их в отряд">Собрать отряд</button>';
       const body = tab === "places" ? placesHtml() : (tab === "squads" ? squadsHtml() : (tab === "names" ? namesHtml() : (tab === "wares" ? waresHtml() : (tab === "coins" ? coinsHtml() : (catalogKind() ? catalogHtml() : (isPerson(tab) ? peopleHtml() : tableHtml()))))));
-      host.innerHTML = '<aside class="side codex-nav">' + nav + "</aside>" +
+      host.innerHTML = '<aside class="side codex-nav"><div class="codex-tabs-col">' + nav + "</div>" +
+        (tab === "places" ? placeIndexHtml() : "") + "</aside>" +
         '<div class="codex-main"><div class="codex-head"><b class="codex-tab-name">' + esc(current[1]) + "</b>" +
         (catalogKind() || tab === "squads" || tab === "names" || tab === "wares" || tab === "coins" ? "" : '<button type="button" data-act="add" title="Новая запись на этой вкладке">Добавить</button>') + "</div>" +
         (tab === "places" ? '<div class="place-bar"><p class="note">Места с карты попадают сюда сами. Сюда же ставятся персонажи.</p><div class="place-cols" title="Сколько карточек в ряд">' +
@@ -1577,6 +1714,16 @@ window.ShirmoCodex = (function () {
         body +
         '<p class="error" id="codex-err"></p></div><footer class="codex-foot">Использованы материалы с сайта <a href="https://tentaculus.ru/">tentaculus.ru</a>, CC BY-NC-SA 3.0.</footer>';
       if (catalogKind()) paintResults();
+      const main = host.querySelector(".codex-main");
+      if (main && tab === "places" && codexScroll) main.scrollTop = codexScroll;
+      if (main && !main._scrollWatch) {
+        main._scrollWatch = true;
+        main.addEventListener("scroll", function () {
+          codexScroll = main.scrollTop;
+          try { sessionStorage.setItem("shirmo-codex-scroll", String(codexScroll)); } catch (err) { /* нет хранилища */ }
+        });
+      }
+      armPlacePictures();
       if (isPerson(tab) && window.ShirmoNpc) {
         host.querySelectorAll("[data-npc-sheet]").forEach(function (node) {
           const row = list()[Number(node.getAttribute("data-i"))];
@@ -1982,9 +2129,17 @@ window.ShirmoCodex = (function () {
           if (fail) fail.textContent = "Загрузка недоступна.";
           return;
         }
-        ctx.upload(file).then(function (url) {
+        const thumbJob = tab === "places"
+          ? shrinkFile(file).then(function (blob) {
+            if (!blob) return "";
+            return ctx.upload(new File([blob], "thumb.jpg", { type: "image/jpeg" })).catch(function () { return ""; });
+          })
+          : Promise.resolve("");
+        Promise.all([ctx.upload(file), thumbJob]).then(function (pair) {
+          const url = pair[0];
           if (!alive) return;
           row[slot] = url;
+          if (tab === "places") row[slot + "Thumb"] = pair[1] || "";
           if (slot === "portrait" && isPerson(tab) && window.ShirmoNpc) {
             window.ShirmoNpc.apply(row);
             row.portrait = url;
@@ -2360,16 +2515,31 @@ window.ShirmoCodex = (function () {
         paint();
         return;
       }
+      const jump = event.target.closest("[data-place-jump]");
+      if (jump && host.contains(jump)) {
+        const card = host.querySelector('.place-card[data-place="' + jump.getAttribute("data-place-jump") + '"]');
+        if (card) card.scrollIntoView({ block: "start" });
+        return;
+      }
       const button = event.target.closest("[data-tab], [data-act]");
       if (!button || !host.contains(button)) return;
       readGenerators();
       const nextTab = button.getAttribute("data-tab");
       if (nextTab) {
         tab = nextTab;
+        try { sessionStorage.setItem("shirmo-codex-tab", tab); } catch (err) { /* нет хранилища */ }
         paint();
         return;
       }
       const act = button.getAttribute("data-act");
+      if (act === "pin") {
+        const place = book().places[Number(button.getAttribute("data-i"))];
+        if (!place) return;
+        place.pinned = !place.pinned;
+        paint();
+        saveSoon();
+        return;
+      }
       if (act === "rehome") {
         const kind = button.getAttribute("data-kind");
         const id = button.getAttribute("data-id");
@@ -2565,6 +2735,7 @@ window.ShirmoCodex = (function () {
         const slot = button.getAttribute("data-pic");
         if (!row || (slot !== "portrait" && slot !== "backdrop")) return;
         row[slot] = "";
+        row[slot + "Thumb"] = "";
         if (slot === "portrait" && isPerson(tab) && window.ShirmoNpc) window.ShirmoNpc.write(row);
         if (tab === "places") syncPlaceMedia(row);
         paint();

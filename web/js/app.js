@@ -1333,6 +1333,7 @@
       });
     }
     function showModule(kind) {
+      try { sessionStorage.setItem("shirmo-mod-" + id, kind); } catch (err) { /* нет хранилища */ }
       readForm();
       const mapHost = app.querySelector("#work-map");
       const codexHost = app.querySelector("#work-codex");
@@ -1521,7 +1522,12 @@
       navigator.clipboard.writeText(viewerUrl);
     });
     if (window.ShirmoCodex && window.ShirmoCodex.adopt(state.campaign)) save();
-    if (page().kind === "map") showModule("map");
+    let open = page().kind === "map" ? "map" : "scene";
+    try {
+      const saved = sessionStorage.getItem("shirmo-mod-" + id);
+      if (saved === "scene" || saved === "map" || saved === "codex" || saved === "battle") open = saved;
+    } catch (err) { /* нет хранилища */ }
+    showModule(open);
   }
 
   function filePick(id, accept, kind) {

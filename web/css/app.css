@@ -1742,7 +1742,50 @@ label.check input { width: auto; }
 .codex-row > button,
 .row > button { flex: 0 0 auto; }
 
-.codex-nav { gap: 2px; padding: 8px; }
+.codex-nav { gap: 2px; padding: 8px; overflow: hidden; }
+.codex-tabs-col { flex: none; display: flex; flex-direction: column; gap: 2px; }
+.place-index {
+  flex: 1 1 140px;
+  min-height: 140px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.place-index button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 8px;
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink);
+  text-align: left;
+  font-size: 13px;
+}
+.place-index button span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.place-index button.is-pin { color: var(--brass); }
+.place-index svg { width: 14px; height: 14px; flex: none; }
+.place-grid .place-card.is-pinned { border-color: var(--brass); }
+.place-tools .icon-btn.is-on { color: var(--brass); border-color: var(--brass); }
+.place-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.place-grid .npc-portrait { z-index: 1; }
 .codex-nav button {
   display: flex;
   align-items: center;
