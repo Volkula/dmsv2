@@ -12,6 +12,7 @@ window.ShirmoCodex = (function () {
   const PERSON = [["name", "Имя", "text"], ["note", "Заметка", "text"], ["weapon", "Оружие", "text"], ["damage", "Урон", "text"], ["ac", "КД", "number"], ["hp", "ХП", "number"], ["hpMax", "Макс", "number"]];
   const TABS = [
     ["places", "Места", icon('<path d="M12 21s6-5.2 6-10a6 6 0 1 0-12 0c0 4.8 6 10 6 10z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="11" r="1.6" fill="currentColor"/>')],
+    ["heroes", "Герои", icon('<path d="M12 3l7 3v6c0 4.2-3 7.2-7 9-4-1.8-7-4.8-7-9V6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>')],
     ["npc", "НПС", icon('<circle cx="12" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 19c1.2-3 3.2-4.5 6-4.5S16.8 16 18 19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>')],
     ["merchant", "Торговцы", icon('<path d="M4 9h16l-1.2 9H5.2zM8 9l1-4h6l1 4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>')],
     ["enemy", "Враги", icon('<path d="M6 18l5-5M14 6l4 4-7 7H7v-4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>')],
@@ -141,10 +142,250 @@ window.ShirmoCodex = (function () {
     return String(name || "").replace(/\s*\([^)]*\)\s*$/, "").trim();
   }
 
+  const STAT_RU = { str: "Сил", dex: "Лвк", con: "Тел", int: "Инт", wis: "Мдр", cha: "Хар" };
+  const SKILL_RU = {
+    acrobatics: "Акробатика",
+    "animal handling": "Уход за животными",
+    arcana: "Магия",
+    athletics: "Атлетика",
+    deception: "Обман",
+    history: "История",
+    insight: "Проницательность",
+    intimidation: "Запугивание",
+    investigation: "Анализ",
+    medicine: "Медицина",
+    nature: "Природа",
+    perception: "Восприятие",
+    performance: "Выступление",
+    persuasion: "Убеждение",
+    religion: "Религия",
+    "sleight of hand": "Ловкость рук",
+    stealth: "Скрытность",
+    survival: "Выживание"
+  };
+
+  function lssVal(node) {
+    if (node == null) return "";
+    if (typeof node === "string" || typeof node === "number") return node;
+    if (Object.prototype.hasOwnProperty.call(node, "value")) return node.value == null ? "" : node.value;
+    return "";
+  }
+
+  function abilityMod(score) {
+    const n = Number(score);
+    if (!Number.isFinite(n)) return 0;
+    return Math.floor((n - 10) / 2);
+  }
+
+  function calcExpr(input) {
+    const s = String(input || "").replace(/\s+/g, "");
+    if (!s || !/^[\d+\-*/().]+$/.test(s)) return null;
+    let i = 0;
+    function factor() {
+      if (s[i] === "+") { i += 1; return factor(); }
+      if (s[i] === "-") { i += 1; const v = factor(); return v == null ? null : -v; }
+      if (s[i] === "(") {
+        i += 1;
+        const v = expr();
+        if (s[i] === ")") i += 1;
+        return v;
+      }
+      let n = "";
+      while (i < s.length && /[\d.]/.test(s[i])) n += s[i++];
+      return n ? Number(n) : null;
+    }
+    function term() {
+      let v = factor();
+      if (v == null) return null;
+      while (s[i] === "*" || s[i] === "/") {
+        const op = s[i++];
+        const r = factor();
+        if (r == null) return null;
+        v = op === "*" ? v * r : (r ? v / r : null);
+        if (v == null) return null;
+      }
+      return v;
+    }
+    function expr() {
+      let v = term();
+      if (v == null) return null;
+      while (s[i] === "+" || s[i] === "-") {
+        const op = s[i++];
+        const r = term();
+        if (r == null) return null;
+        v = op === "+" ? v + r : v - r;
+      }
+      return v;
+    }
+    const v = expr();
+    return Number.isFinite(v) ? v : null;
+  }
+
+  function fillFormula(formula, env) {
+    return String(formula == null ? "" : formula).replace(/\[([A-Za-z ]+)\]/g, function (_, key) {
+      const v = env[String(key).trim().toUpperCase()];
+      return v == null ? "0" : String(v);
+    }).replace(/к/gi, "d");
+  }
+
+  function spellLabel(entry) {
+    if (entry == null || entry === "") return null;
+    if (typeof entry === "object") {
+      const named = entry.name || entry.title || "";
+      if (named) return { name: spellLabel(named).name, level: entry.level };
+      return spellLabel(entry.slug || entry.id || "");
+    }
+    const text = String(entry).trim();
+    if (!text || /^[a-f0-9]{16,}$/i.test(text)) return null;
+    const ru = text.replace(/\s*\[[^\]]*\]\s*/g, " ").trim();
+    if (ru && ru !== text) return { name: ru, level: null };
+    if (/^[a-z0-9-]+$/.test(text)) {
+      return {
+        name: text.split("-").map(function (word) { return word.charAt(0).toUpperCase() + word.slice(1); }).join(" "),
+        level: null
+      };
+    }
+    return { name: text, level: null };
+  }
+
+  function docLines(block) {
+    const root = block && block.value && block.value.data;
+    if (!root || !Array.isArray(root.content)) return [];
+    return root.content.map(function (para) {
+      const bits = [];
+      (function walk(node) {
+        if (!node || node.type === "resource") return;
+        if (node.type === "text" && node.text) bits.push(node.text);
+        (node.content || []).forEach(walk);
+      })(para);
+      return bits.join("").replace(/\s+/g, " ").trim();
+    }).filter(Boolean);
+  }
+
+  function readLss(raw) {
+    let doc = raw;
+    if (typeof raw === "string") doc = JSON.parse(raw);
+    if (Array.isArray(doc)) doc = doc[0];
+    if (!doc || typeof doc !== "object") throw new Error("Это не лист персонажа.");
+    let data = doc;
+    if (typeof doc.data === "string") data = JSON.parse(doc.data);
+    else if (doc.data && doc.data.stats) data = doc.data;
+    if (!data || !data.stats) throw new Error("В файле нет листа Long Story Short.");
+    const info = data.info || {};
+    const stats = ["str", "dex", "con", "int", "wis", "cha"].map(function (key) {
+      const score = Number(data.stats[key] && data.stats[key].score) || 10;
+      return { id: key, name: STAT_RU[key], score: score, mod: abilityMod(score) };
+    });
+    const env = { PROF: 0, LVL: 1 };
+    stats.forEach(function (stat) { env[stat.id.toUpperCase()] = stat.mod; });
+    const level = Number(lssVal(info.level)) || 1;
+    env.LVL = level;
+    const profRaw = data.proficiencyCustom || data.proficiency;
+    const prof = Math.round(Number(typeof profRaw === "object" ? lssVal(profRaw) : profRaw) || 0);
+    env.PROF = prof;
+    function bonusSum(target) {
+      return (data.bonuses || []).reduce(function (sum, bonus) {
+        if (!bonus || bonus.target !== target || (bonus.mode && bonus.mode !== "add")) return sum;
+        const n = typeof bonus.value === "number" ? bonus.value : calcExpr(fillFormula(bonus.value, env));
+        return Number.isFinite(n) ? sum + n : sum;
+      }, 0);
+    }
+    const vital = data.vitality || {};
+    const acFormula = lssVal(vital.ac) || "10+[DEX]";
+    let ac = calcExpr(fillFormula(acFormula, env));
+    if (!Number.isFinite(ac)) ac = 10 + (env.DEX || 0);
+    const shield = vital.shield || {};
+    if (shield.value === true || shield.value === "true" || Number(shield.value) > 0) {
+      const extra = calcExpr(fillFormula(shield.mod == null ? "2" : shield.mod, env));
+      ac += Number.isFinite(extra) ? extra : 2;
+    }
+    ac = Math.round(ac + bonusSum("ac"));
+    const hpMax = Math.max(1, Math.round((Number(lssVal(vital["hp-max"])) || 1) + (Number(lssVal(vital["hp-max-bonus"])) || 0) + bonusSum("hp.max")));
+    const hpNow = lssVal(vital["hp-current"]);
+    const hp = hpNow === "" ? hpMax : Math.max(0, Math.round(Number(hpNow) || 0));
+    const initFormula = lssVal(vital.initiative);
+    let init = env.DEX || 0;
+    if (initFormula !== "" && initFormula != null) {
+      const rolled = calcExpr(fillFormula(initFormula, env));
+      if (Number.isFinite(rolled)) init = Math.round(rolled);
+    }
+    init = Math.round(init + bonusSum("initiative"));
+    const skills = Object.keys(data.skills || {}).map(function (key) {
+      const skill = data.skills[key] || {};
+      const expert = !!(skill.isExpertise || skill.expertise);
+      if (!skill.isProf && !expert) return null;
+      const stat = String(skill.baseStat || "str").toLowerCase();
+      const bonus = (env[stat.toUpperCase()] || 0) + prof * (expert ? 2 : 1) + bonusSum("skill." + key);
+      return { name: SKILL_RU[key] || key, bonus: Math.round(bonus) };
+    }).filter(Boolean);
+    const saves = ["str", "dex", "con", "int", "wis", "cha"].filter(function (key) {
+      return data.saves && data.saves[key] && data.saves[key].isProf;
+    }).map(function (key) { return STAT_RU[key]; });
+    const attacks = (data.weaponsList || []).map(function (weapon) {
+      const name = String(lssVal(weapon && weapon.name) || "").trim();
+      if (!name) return null;
+      const stat = String((weapon && weapon.ability) || "str").toLowerCase();
+      const bonus = (env[stat.toUpperCase()] || 0) + (weapon.isProf ? prof : 0);
+      const damage = fillFormula(lssVal(weapon.dmg) || "1d6", env).replace(/\+\s*0$/, "").replace(/-\s*0$/, "");
+      return { name: name, bonus: Math.round(bonus), damage: damage };
+    }).filter(Boolean);
+    const spellBag = doc.spells && typeof doc.spells === "object" && !Array.isArray(doc.spells) ? doc.spells : {};
+    const spellSource = (spellBag.prepared || []).concat(spellBag.granted || []);
+    const spellRows = (spellSource.length ? spellSource : (spellBag.book || [])).map(spellLabel).filter(Boolean);
+    const seenSpell = {};
+    const spells = spellRows.filter(function (spell) {
+      const key = spell.name.toLowerCase();
+      if (seenSpell[key]) return false;
+      seenSpell[key] = true;
+      return true;
+    });
+    const abilities = [];
+    Object.keys(data.resources || {}).forEach(function (key) {
+      const res = data.resources[key];
+      if (!res || !res.name) return;
+      const cur = res.current == null ? "" : res.current;
+      const max = res.max == null ? "" : res.max;
+      abilities.push({ name: String(res.name), note: cur === "" && max === "" ? "" : cur + "/" + max });
+    });
+    const text = data.text || {};
+    Object.keys(text).forEach(function (key) {
+      if (!/trait|feature|action|attack/i.test(key)) return;
+      docLines(text[key]).forEach(function (line) {
+        if (abilities.length >= 10) return;
+        abilities.push({ name: line.length > 160 ? line.slice(0, 157) + "…" : line, note: "" });
+      });
+    });
+    const avatar = data.avatar;
+    const portrait = typeof avatar === "string"
+      ? avatar
+      : (avatar && (avatar.url || avatar.src || avatar.jpeg || avatar.png || avatar.value)) || "";
+    const className = [lssVal(info.charClass), lssVal(info.charSubclass)].filter(Boolean).join(", ");
+    const title = [className ? className + " " + level : String(level), lssVal(info.race)].filter(Boolean).join(" · ");
+    return {
+      name: String(lssVal(data.name) || "Герой"),
+      title: title,
+      player: String(lssVal(info.playerName) || ""),
+      portrait: String(portrait || ""),
+      hp: hp,
+      hpMax: hpMax,
+      ac: ac,
+      init: init,
+      prof: prof,
+      speed: String(lssVal(vital.speed) || ""),
+      stats: stats,
+      skills: skills,
+      saves: saves,
+      attacks: attacks,
+      spells: spells,
+      abilities: abilities
+    };
+  }
+
   function ensure(campaign) {
     if (!campaign.codex) campaign.codex = {};
     const book = campaign.codex;
     book.places = book.places || [];
+    book.heroes = book.heroes || [];
     book.npcs = book.npcs || [];
     book.goods = book.goods || [];
     book.wares = book.wares || [];
@@ -1687,6 +1928,51 @@ window.ShirmoCodex = (function () {
       }, { root: root, rootMargin: "240px" });
       nodes.forEach(function (node) { io.observe(node); });
     }
+    function signed(n) {
+      const v = Math.round(Number(n) || 0);
+      return (v > 0 ? "+" : "") + v;
+    }
+    function heroInFight(id) {
+      const battle = ctx.campaign.battle;
+      return !!(battle && (battle.actors || []).some(function (actor) { return actor && actor.heroId === id; }));
+    }
+    function heroesHtml() {
+      const heroes = book().heroes || [];
+      if (!heroes.length) return '<p class="note">Пока пусто. Загрузите JSON листа Long Story Short.</p>';
+      return heroes.map(function (hero, index) {
+        const face = hero.portrait
+          ? '<img class="hero-face" alt="" src="' + esc(hero.portrait) + '">'
+          : '<span class="hero-face hero-face-empty" aria-hidden="true"></span>';
+        const stats = (hero.stats || []).map(function (stat) {
+          return "<span>" + esc(stat.name) + " " + esc(stat.score) + " (" + signed(stat.mod) + ")</span>";
+        }).join("");
+        const skills = (hero.skills || []).map(function (skill) {
+          return "<span>" + esc(skill.name) + " " + signed(skill.bonus) + "</span>";
+        }).join("");
+        const attacks = (hero.attacks || []).map(function (arm) {
+          return "<li>" + esc(arm.name) + " " + signed(arm.bonus) + " · " + esc(arm.damage || "") + "</li>";
+        }).join("");
+        const spells = (hero.spells || []).map(function (spell) {
+          const level = spell.level === 0 || spell.level === "0" ? "заговор" : (spell.level ? spell.level + " круг" : "");
+          return "<li>" + (level ? "<b>" + esc(level) + "</b> " : "") + esc(spell.name) + "</li>";
+        }).join("");
+        const abilities = (hero.abilities || []).map(function (item) {
+          return "<li>" + esc(item.name) + (item.note ? " <b>" + esc(item.note) + "</b>" : "") + "</li>";
+        }).join("");
+        const line = [hero.title, hero.player ? "игрок " + hero.player : "", "КД " + (hero.ac || 0), "ХП " + (hero.hp || 0) + "/" + (hero.hpMax || 0), hero.speed ? hero.speed + " фт" : "", (hero.saves || []).length ? "спас " + hero.saves.join(", ") : ""].filter(Boolean).join(" · ");
+        return '<article class="hero-card">' + face +
+          '<div><div class="hero-head"><b>' + esc(hero.name || "Герой") + "</b>" +
+          '<button type="button" data-act="hero-fight" data-i="' + index + '" title="Поставить героя на экран боя">' + (heroInFight(hero.id) ? "Обновить в бою" : "На бой") + "</button>" +
+          '<button type="button" data-act="hero-del" data-i="' + index + '" title="Убрать героя из справочника" aria-label="Удалить">×</button></div>' +
+          '<p class="note">' + esc(line) + "</p>" +
+          (stats ? '<div class="hero-stats">' + stats + "</div>" : "") +
+          (skills ? '<div class="hero-skills">' + skills + "</div>" : "") +
+          (attacks ? "<p class=\"hero-label\">Атаки</p><ul class=\"hero-list\">" + attacks + "</ul>" : "") +
+          (spells ? "<p class=\"hero-label\">Заклинания</p><ul class=\"hero-list\">" + spells + "</ul>" : "") +
+          (abilities ? "<p class=\"hero-label\">Умения</p><ul class=\"hero-list\">" + abilities + "</ul>" : "") +
+          "</div></article>";
+      }).join("");
+    }
     function paint() {
       const nav = TABS.map(function (item) {
         return '<button type="button" data-tab="' + item[0] + '" class="' + (tab === item[0] ? "is-on" : "") + '" title="' + esc(item[1]) + '">' + item[2] + "<span>" + esc(item[1]) + "</span></button>";
@@ -1701,11 +1987,11 @@ window.ShirmoCodex = (function () {
         '<label title="Урон каждого, например 1к6">Урон<input id="codex-damage" type="text" value="' + esc(squadDamage) + '" placeholder="1к6"></label>' +
         '<label title="Локация, к которой привяжется отряд">Место<select id="codex-place" aria-label="Место отряда">' + placeOptions + "</select></label>" +
         '<button type="button" data-act="squad" title="Создать врагов и связать их в отряд">Собрать отряд</button>';
-      const body = tab === "places" ? placesHtml() : (tab === "squads" ? squadsHtml() : (tab === "names" ? namesHtml() : (tab === "wares" ? waresHtml() : (tab === "coins" ? coinsHtml() : (catalogKind() ? catalogHtml() : (isPerson(tab) ? peopleHtml() : tableHtml()))))));
+      const body = tab === "places" ? placesHtml() : (tab === "heroes" ? heroesHtml() : (tab === "squads" ? squadsHtml() : (tab === "names" ? namesHtml() : (tab === "wares" ? waresHtml() : (tab === "coins" ? coinsHtml() : (catalogKind() ? catalogHtml() : (isPerson(tab) ? peopleHtml() : tableHtml())))))));
       host.innerHTML = '<aside class="side codex-nav"><div class="codex-tabs-col">' + nav + "</div>" +
         (tab === "places" ? placeIndexHtml() : "") + "</aside>" +
         '<div class="codex-main"><div class="codex-head"><b class="codex-tab-name">' + esc(current[1]) + "</b>" +
-        (catalogKind() || tab === "squads" || tab === "names" || tab === "wares" || tab === "coins" ? "" : '<button type="button" data-act="add" title="Новая запись на этой вкладке">Добавить</button>') + "</div>" +
+        (tab === "heroes" ? '<label class="hero-load" title="Файл JSON из Long Story Short">Загрузить лист<input type="file" accept="application/json,.json" data-hero-file aria-label="Загрузить лист"></label>' : (catalogKind() || tab === "squads" || tab === "names" || tab === "wares" || tab === "coins" ? "" : '<button type="button" data-act="add" title="Новая запись на этой вкладке">Добавить</button>')) + "</div>" +
         (tab === "places" ? '<div class="place-bar"><p class="note">Места с карты попадают сюда сами. Сюда же ставятся персонажи.</p><div class="place-cols" title="Сколько карточек в ряд">' +
           [1, 2, 3, 4].map(function (count) {
             return '<button type="button" data-place-cols="' + count + '" class="' + (placeCols === count ? "is-on" : "") + '" title="' + count + ' в ряд" aria-label="' + count + ' в ряд">' + count + "</button>";
@@ -2049,6 +2335,46 @@ window.ShirmoCodex = (function () {
         item.icon = event.target.value;
         paint();
         saveSoon();
+        return;
+      }
+      if (event.target.hasAttribute("data-hero-file")) {
+        const file = event.target.files && event.target.files[0];
+        event.target.value = "";
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function () {
+          let hero;
+          try { hero = readLss(String(reader.result || "")); }
+          catch (err) {
+            const node = host.querySelector("#codex-err");
+            if (node) node.textContent = err.message || "Не удалось прочитать лист.";
+            return;
+          }
+          hero.id = crypto.randomUUID();
+          function done() {
+            if (!alive) return;
+            book().heroes.push(hero);
+            paint();
+            saveSoon();
+          }
+          const pic = hero.portrait || "";
+          if (pic.indexOf("data:") !== 0 || !ctx.upload) {
+            done();
+            return;
+          }
+          try {
+            const match = pic.match(/^data:([^;]+);base64,(.+)$/);
+            if (!match) { done(); return; }
+            const bin = atob(match[2]);
+            const bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+            ctx.upload(new File([bytes], "hero.png", { type: match[1] || "image/png" })).then(function (url) {
+              if (url) hero.portrait = url;
+              done();
+            }, done);
+          } catch (err) { done(); }
+        };
+        reader.readAsText(file);
         return;
       }
       if (event.target.type === "file" && event.target.hasAttribute("data-ware-file")) {
@@ -2741,6 +3067,20 @@ window.ShirmoCodex = (function () {
         paint();
         saveSoon();
         refreshMap();
+        return;
+      }
+      if (act === "hero-del") {
+        book().heroes.splice(Number(button.getAttribute("data-i")), 1);
+        paint();
+        saveSoon();
+        return;
+      }
+      if (act === "hero-fight") {
+        const hero = book().heroes[Number(button.getAttribute("data-i"))];
+        if (!hero || !window.ShirmoBattle || !window.ShirmoBattle.placeHero) return;
+        window.ShirmoBattle.placeHero(ctx.campaign, hero);
+        paint();
+        saveSoon();
         return;
       }
       if (act === "add") {

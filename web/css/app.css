@@ -2012,6 +2012,78 @@ label.check input { width: auto; }
 
 .cat-thumb { width: 36px; height: 36px; object-fit: cover; border-radius: 4px; }
 
+.hero-load {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: auto;
+  cursor: pointer;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #120f0c;
+}
+
+.hero-card {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+  margin: 0 0 12px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #120f0c;
+}
+
+.hero-face {
+  width: 96px;
+  height: 96px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #1a1612;
+  border: 1px solid var(--line);
+}
+
+.hero-face-empty { display: block; }
+
+.hero-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hero-head b { flex: 1; min-width: 0; font-weight: 500; }
+
+.hero-stats,
+.hero-skills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.hero-stats span,
+.hero-skills span {
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.hero-label {
+  margin: 10px 0 0;
+  color: var(--brass);
+  font-size: 13px;
+}
+
+.hero-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.hero-list li { margin: 2px 0; }
+
 .npc-card {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);

@@ -442,6 +442,13 @@
       actor.dead = actor.hp <= 0;
       pushMarker(actor);
       syncPerson(actor, ["hp", "hpMax"]);
+      if (actor.heroId) {
+        const hero = (book().heroes || []).find(function (row) { return row && row.id === actor.heroId; });
+        if (hero) {
+          hero.hp = actor.hp;
+          hero.hpMax = actor.hpMax;
+        }
+      }
     }
 
     function roll(spec) {
@@ -807,7 +814,7 @@
     }
 
     function personForActor(actor) {
-      if (!actor) return null;
+      if (!actor || actor.heroId) return null;
       const shelf = book().npcs || [];
       const named = peopleByName(actor.name);
       const bestNamed = pickBestPerson(named);
@@ -2118,5 +2125,58 @@
       screenHtml(actors, active, page.log, false, false, page.round) + "</div>";
   }
 
-  window.ShirmoBattle = { mount: mount, ensure: ensure, formula: formula, playerHtml: playerHtml, revealActive: revealActive };
+  function placeHero(campaign, hero) {
+    if (!campaign || !hero) return null;
+    const battle = ensure(campaign);
+    let actor = (battle.actors || []).find(function (row) { return row && row.heroId === hero.id; });
+    if (!actor) {
+      actor = blank("player");
+      actor.heroId = hero.id;
+      actor.codexId = "";
+      battle.actors.push(actor);
+    }
+    actor.name = hero.name || "Герой";
+    actor.side = "player";
+    actor.hpMax = Math.max(1, Math.round(Number(hero.hpMax) || Number(hero.hp) || 1));
+    actor.hp = Math.max(0, Math.min(actor.hpMax, Math.round(hero.hp == null ? actor.hpMax : Number(hero.hp))));
+    actor.dead = actor.hp <= 0;
+    actor.ac = Math.max(0, Math.round(Number(hero.ac) || 10));
+    actor.initBonus = Math.round(Number(hero.init) || 0);
+    actor.portrait = hero.portrait || "";
+    actor.note = hero.title || "";
+    actor.codexId = "";
+    const attacks = (hero.attacks || []).filter(function (arm) { return arm && arm.name; });
+    if (attacks.length) {
+      actor.weapons = attacks.map(function (arm) {
+        return {
+          id: crypto.randomUUID(),
+          name: arm.name,
+          damage: arm.damage || "1d6",
+          bonus: Math.round(Number(arm.bonus) || 0)
+        };
+      });
+      actor.armId = actor.weapons[0].id;
+      actor.weapon = actor.weapons[0].name;
+      actor.damage = actor.weapons[0].damage;
+      actor.bonus = actor.weapons[0].bonus;
+    }
+    let group = (battle.board || []).find(function (row) {
+      return row && row.kind !== "sep" && row.name === "Герои";
+    });
+    if (!group) {
+      group = { id: crypto.randomUUID(), kind: "squad", name: "Герои", memberIds: [] };
+      battle.board.unshift(group);
+    }
+    battle.board.forEach(function (row) {
+      if (!row || row === group || !row.memberIds) return;
+      row.memberIds = row.memberIds.filter(function (id) { return id !== actor.id; });
+    });
+    if (group.memberIds.indexOf(actor.id) < 0) group.memberIds.push(actor.id);
+    battle.board = battle.board.filter(function (row) {
+      return row && (row.kind === "sep" || row === group || (row.memberIds && row.memberIds.length));
+    });
+    return actor;
+  }
+
+  window.ShirmoBattle = { mount: mount, ensure: ensure, formula: formula, playerHtml: playerHtml, revealActive: revealActive, placeHero: placeHero };
 })();
