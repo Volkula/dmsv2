@@ -1853,7 +1853,10 @@ label.check input { width: auto; }
   left: 0;
   top: 0;
   width: 74px;
+  max-width: none;
   margin: 0;
+  white-space: nowrap;
+  pointer-events: auto;
   transform: translate(-50%, -50%) rotate(var(--a)) translateY(-108px) rotate(calc(var(--a) * -1));
 }
 
@@ -1867,10 +1870,12 @@ label.check input { width: auto; }
   position: absolute;
   left: 0;
   top: 0;
-  width: 88px;
+  width: 128px;
   transform: translate(-50%, -50%);
   text-align: center;
   color: var(--brass);
+  line-height: 1.25;
+  pointer-events: none;
 }
 
 .codex-head, .codex-tabs, .codex-row, .codex-bar, .codex-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
@@ -1967,6 +1972,7 @@ label.check input { width: auto; }
 .tool-wheel.is-icons button {
   width: 36px;
   height: 36px;
+  max-width: none;
   padding: 0;
   display: grid;
   place-items: center;
@@ -3132,7 +3138,14 @@ button.ware-face-btn img { width: 100%; height: 100%; object-fit: cover; display
 .battle-pop .battle-hits button { display: flex; flex-direction: column; align-items: flex-start; text-align: left; }
 .mark-picks { display: flex; flex-wrap: wrap; gap: 4px; }
 .mark-picks button.is-on { background: var(--brass); color: #1a140c; border-color: var(--brass); }
-.tool-wheel.is-words button { width: 108px; font-size: 12px; pointer-events: auto; }
+.tool-wheel.is-words button {
+  width: auto;
+  min-width: 92px;
+  max-width: none;
+  padding: 8px 14px;
+  font-size: 13px;
+  pointer-events: auto;
+}
 .stage.play-battle p.fight-round,
 .battle-screen p.fight-round {
   position: static;

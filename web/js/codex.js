@@ -2025,11 +2025,13 @@ window.ShirmoCodex = (function () {
           return '<button type="button" class="hero-skill' + (skill.trained ? " is-prof" : "") + (skill.expert ? " is-expert" : "") + '" data-act="hero-skill" data-i="' + index + '" data-s="' + at + '" title="' + esc(skill.name) + ' ' + signed(skill.bonus) + '">' +
             "<span>" + esc(skill.name) + "</span><b>" + signed(skill.bonus) + "</b></button>";
         }).join("");
+        const spellCount = (hero.spells || []).length;
         const vitals = [
           '<span class="hero-pill" title="Класс доспеха"><em>КД</em><b>' + esc(hero.ac || 0) + "</b></span>",
           '<span class="hero-pill" title="Хиты"><em>ХП</em><b>' + esc((hero.hp || 0) + "/" + (hero.hpMax || 0)) + "</b></span>",
           hero.speed ? '<span class="hero-pill" title="Скорость"><em>Ск</em><b>' + esc(hero.speed) + "</b></span>" : "",
-          '<span class="hero-pill" title="Бонус мастерства"><em>БМ</em><b>' + signed(hero.prof || 0) + "</b></span>"
+          '<span class="hero-pill" title="Бонус мастерства"><em>БМ</em><b>' + signed(hero.prof || 0) + "</b></span>",
+          spellCount ? '<span class="hero-pill" title="Заклинания на полном листе"><em>Магия</em><b>' + esc(spellCount) + "</b></span>" : ""
         ].filter(Boolean).join("");
         const attacks = (hero.attacks || []).map(function (arm) {
           return "<li><b>" + esc(arm.name) + "</b> " + signed(arm.bonus) + " · " + esc(arm.damage || "") + "</li>";
@@ -2052,7 +2054,7 @@ window.ShirmoCodex = (function () {
           "</div></div>" +
           '<div class="hero-body">' +
           '<div class="hero-head"><button type="button" class="hero-name" data-act="hero-toggle" data-i="' + index + '" title="' + (open ? "Свернуть" : "Полный лист") + '">' + esc(hero.name || "Герой") + "</button>" +
-          '<button type="button" data-act="hero-fight" data-i="' + index + '" title="Поставить героя на экран боя">' + (heroInFight(hero.id) ? "В бою" : "На бой") + "</button>" +
+          '<button type="button" data-act="hero-fight" data-i="' + index + '" title="' + (heroInFight(hero.id) ? "Убрать героя с экрана боя" : "Поставить героя на экран боя") + '">' + (heroInFight(hero.id) ? "Снять с боя" : "На бой") + "</button>" +
           '<button type="button" data-act="hero-del" data-i="' + index + '" title="Убрать героя" aria-label="Удалить">×</button></div>' +
           '<p class="hero-sub">' + esc([hero.title, hero.player ? "игрок " + hero.player : ""].filter(Boolean).join(" · ")) + "</p>" +
           '<div class="hero-vitals">' + vitals + "</div>" +
@@ -3210,8 +3212,9 @@ window.ShirmoCodex = (function () {
       }
       if (act === "hero-fight") {
         const hero = book().heroes[Number(button.getAttribute("data-i"))];
-        if (!hero || !window.ShirmoBattle || !window.ShirmoBattle.placeHero) return;
-        window.ShirmoBattle.placeHero(ctx.campaign, hero);
+        if (!hero || !window.ShirmoBattle) return;
+        if (heroInFight(hero.id) && window.ShirmoBattle.removeHero) window.ShirmoBattle.removeHero(ctx.campaign, hero.id);
+        else if (window.ShirmoBattle.placeHero) window.ShirmoBattle.placeHero(ctx.campaign, hero);
         paint();
         saveSoon();
         return;

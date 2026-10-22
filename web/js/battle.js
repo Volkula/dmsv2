@@ -432,6 +432,25 @@
       paint();
     }
 
+    function dropFighter(actorId) {
+      const actor = (battle.actors || []).find(function (row) { return row && row.id === actorId; });
+      if (!actor) return;
+      if (actor.markerId) dropMarkers([actor.markerId]);
+      battle.actors = (battle.actors || []).filter(function (row) { return !(row && row.id === actorId); });
+      (battle.board || []).forEach(function (group) {
+        if (!group || !group.memberIds) return;
+        group.memberIds = group.memberIds.filter(function (id) { return id !== actorId; });
+      });
+      battle.board = (battle.board || []).filter(function (row) {
+        return row && (row.kind === "sep" || (row.memberIds && row.memberIds.length));
+      });
+      const list = rows();
+      if (list.length) battle.turn = Math.min(Number(battle.turn) || 0, list.length - 1);
+      else battle.turn = 0;
+      save();
+      paint();
+    }
+
     function note(text) {
       battle.log.unshift(text);
       battle.log = battle.log.slice(0, 24);
@@ -601,6 +620,7 @@
 
     const WHEEL = [
       ["fighter", "Добавить бойца в отряд", "Боец"],
+      ["hero", "Добавить героя из справочника", "Герой"],
       ["sep", "Добавить разделитель", "Черта"],
       ["squad", "Добавить отряд из справочника", "Отряд"]
     ];
@@ -965,6 +985,7 @@
       closeWheel();
       if (!item) return;
       if (item[0] === "fighter") openAdd();
+      else if (item[0] === "hero") openCodexHeroes();
       else if (item[0] === "sep") openSep();
       else openCodexSquads();
     }
@@ -1146,6 +1167,7 @@
         '<label>Урон<input data-q="damage" data-id="' + esc(actor.id) + '" type="text" value="' + esc(actor.damage || "") + '" aria-label="Урон"></label>' +
         inkField(actor) +
         squadPick +
+        '<button type="button" data-act="drop-fighter" data-id="' + esc(actor.id) + '" title="Убрать этого бойца с экрана боя">Убрать из боя</button>' +
         "</div></td></tr>";
       return main + more;
     }
@@ -1257,6 +1279,16 @@
         return '<button type="button" data-codex-squad="' + esc(squad.id) + '"><b>' + esc(squad.name || "Отряд") + "</b><span>" + esc(names || "пусто") + "</span></button>";
       }).join("") : '<p class="note">В справочнике нет отрядов.</p>';
       openPop("Отряд из справочника", '<div class="battle-hits">' + html + "</div>");
+    }
+
+    function openCodexHeroes() {
+      const heroes = (book().heroes || []).filter(Boolean);
+      const html = heroes.length ? heroes.map(function (hero) {
+        const on = (battle.actors || []).some(function (actor) { return actor && actor.heroId === hero.id; });
+        return '<button type="button" data-codex-hero="' + esc(hero.id) + '"><b>' + esc(hero.name || "Герой") + "</b><span>" +
+          esc((hero.title || "") + (on ? " · уже в бою" : "")) + "</span></button>";
+      }).join("") : '<p class="note">В справочнике нет героев. Загрузите лист на вкладке «Герои».</p>';
+      openPop("Герой из справочника", '<div class="battle-hits">' + html + "</div>");
     }
 
     function realArms(actor) {
@@ -1772,6 +1804,9 @@
       if (act === "squad-del") {
         dropSquadFromBattle(button.getAttribute("data-id"));
       }
+      if (act === "drop-fighter") {
+        dropFighter(button.getAttribute("data-id"));
+      }
       if (act === "life") {
         const actor = battle.actors.find(function (row) { return row.id === button.getAttribute("data-id"); });
         if (actor) toggleLife(actor);
@@ -1824,6 +1859,18 @@
       const squadBtn = event.target.closest("[data-codex-squad]");
       if (squadBtn && pop && pop.contains(squadBtn)) {
         takeSquad(squadBtn.getAttribute("data-codex-squad"));
+        return;
+      }
+      const heroBtn = event.target.closest("[data-codex-hero]");
+      if (heroBtn && pop && pop.contains(heroBtn)) {
+        const hero = (book().heroes || []).find(function (row) { return row && row.id === heroBtn.getAttribute("data-codex-hero"); });
+        if (hero) {
+          placeHero(ctx.campaign, hero);
+          assignInks(battle);
+          closePop();
+          save();
+          paint();
+        }
         return;
       }
       const whoBtn = event.target.closest("[data-attacker]");
@@ -2178,5 +2225,47 @@
     return actor;
   }
 
-  window.ShirmoBattle = { mount: mount, ensure: ensure, formula: formula, playerHtml: playerHtml, revealActive: revealActive, placeHero: placeHero };
+  function removeHero(campaign, heroId) {
+    if (!campaign || !heroId) return false;
+    const battle = ensure(campaign);
+    const actor = (battle.actors || []).find(function (row) { return row && row.heroId === heroId; });
+    if (!actor) return false;
+    const markerIds = actor.markerId ? [actor.markerId] : [];
+    if (markerIds.length) {
+      (campaign.pages || []).forEach(function (page) {
+        (page.views || []).forEach(function (view) {
+          view.markers = (view.markers || []).filter(function (row) { return !(row && markerIds.indexOf(row.id) >= 0); });
+          (view.locations || []).forEach(function (loc) {
+            if (!loc || !loc.markers) return;
+            loc.markers = loc.markers.filter(function (row) { return !(row && markerIds.indexOf(row.id) >= 0); });
+          });
+        });
+      });
+    }
+    battle.actors = (battle.actors || []).filter(function (row) { return !(row && row.id === actor.id); });
+    (battle.board || []).forEach(function (group) {
+      if (!group || !group.memberIds) return;
+      group.memberIds = group.memberIds.filter(function (id) { return id !== actor.id; });
+    });
+    battle.board = (battle.board || []).filter(function (row) {
+      return row && (row.kind === "sep" || (row.memberIds && row.memberIds.length));
+    });
+    const ordered = battle.actors.map(function (row, index) { return { actor: row, index: index }; }).sort(function (a, b) {
+      const diff = (Number(b.actor.init) || 0) - (Number(a.actor.init) || 0);
+      return diff || a.index - b.index;
+    });
+    if (ordered.length) battle.turn = Math.min(Number(battle.turn) || 0, ordered.length - 1);
+    else battle.turn = 0;
+    return true;
+  }
+
+  window.ShirmoBattle = {
+    mount: mount,
+    ensure: ensure,
+    formula: formula,
+    playerHtml: playerHtml,
+    revealActive: revealActive,
+    placeHero: placeHero,
+    removeHero: removeHero
+  };
 })();
