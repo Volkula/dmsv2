@@ -1065,18 +1065,18 @@ window.ShirmoCodex = (function () {
         ? '<button type="button" class="npc-portrait" data-act="face" data-i="' + index + '" title="Настроить, какая часть изображения видна"><img alt="" src="' + esc(place.portrait) + '" style="' + faceStyle(place) + '"></button>'
         : '<span class="npc-portrait npc-portrait-empty" aria-hidden="true"></span>';
       return '<article class="place-card" data-place="' + esc(place.id) + '" title="ПКМ — перенести место">' +
-        '<div class="npc-scene"' + scene + ">" + face +
-        '<div class="npc-pics">' +
+        '<div class="npc-scene"' + scene + ">" + face + "</div>" +
+        '<div class="place-tools">' +
         '<label class="file-btn" title="Загрузить изображение места, как портрет у НПС">' + FACE + '<input type="file" accept="image/*" data-pic="portrait" data-i="' + index + '" aria-label="Изображение места"></label>' +
         '<label class="file-btn" title="Загрузить фон карточки места">' + SCENE + '<input type="file" accept="image/*" data-pic="backdrop" data-i="' + index + '" aria-label="Фон места"></label>' +
         (place.portrait ? '<button type="button" data-act="clear-pic" data-pic="portrait" data-i="' + index + '" title="Убрать изображение" aria-label="Убрать изображение">×</button>' : "") +
         (place.backdrop ? '<button type="button" data-act="clear-pic" data-pic="backdrop" data-i="' + index + '" title="Убрать фон" aria-label="Убрать фон">×</button>' : "") +
-        "</div></div>" +
-        '<div class="codex-row"><input data-field="name" data-i="' + index + '" type="text" value="' + esc(place.name || "") + '" title="Название места" aria-label="Название места"><button type="button" data-act="rehome" data-kind="place" data-id="' + esc(place.id) + '" title="Перенести в другое место">Перенести</button><button type="button" data-act="del" data-i="' + index + '" title="Удалить место" aria-label="Удалить">×</button></div>' +
+        "</div>" +
+        '<div class="codex-row place-name"><input data-field="name" data-i="' + index + '" type="text" value="' + esc(place.name || "") + '" title="Название места" aria-label="Название места"><button type="button" data-act="rehome" data-kind="place" data-id="' + esc(place.id) + '" title="Перенести в другое место">Перенести</button><button type="button" data-act="del" data-i="' + index + '" title="Удалить место" aria-label="Удалить">×</button></div>' +
         parentLine + squadLine +
         '<div class="place-people">' + (people || '<span class="note">На месте никого нет.</span>') + "</div>" +
         (npcs.length
-          ? '<div class="codex-row"><select data-seat="' + index + '" title="Кого поставить на это место" aria-label="Персонаж"><option value="">Персонаж</option>' + options + '</select><button type="button" data-act="seat" data-i="' + index + '" title="Поставить выбранного персонажа">На место</button></div>'
+          ? '<div class="codex-row place-seat"><select data-seat="' + index + '" title="Кого поставить на это место" aria-label="Персонаж"><option value="">Персонаж</option>' + options + '</select><button type="button" data-act="seat" data-i="' + index + '" title="Поставить выбранного персонажа">На место</button></div>'
           : '<p class="note">Сначала заведите персонажей.</p>') +
         "</article>";
     }

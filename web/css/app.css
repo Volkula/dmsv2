@@ -21,7 +21,10 @@ button, input, textarea, select {
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 8px 12px;
+  max-width: 100%;
 }
+
+input, textarea, select { min-width: 0; }
 
 input[type="range"],
 input[type="file"],
@@ -1728,6 +1731,17 @@ label.check input { width: auto; }
 
 .codex-head, .codex-tabs, .codex-row, .codex-bar, .codex-tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 
+.codex-row > input,
+.codex-row > select,
+.row > input,
+.row > select {
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+
+.codex-row > button,
+.row > button { flex: 0 0 auto; }
+
 .codex-nav { gap: 2px; padding: 8px; }
 .codex-nav button {
   display: flex;
@@ -2225,6 +2239,9 @@ button.ware-face-btn img { width: 100%; height: 100%; object-fit: cover; display
 .place-grid.place-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 
 .place-grid .place-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   margin: 0;
   min-width: 0;
   border: 1px solid var(--line);
@@ -2233,9 +2250,36 @@ button.ware-face-btn img { width: 100%; height: 100%; object-fit: cover; display
   background: #120f0c;
 }
 
-.place-grid .npc-scene { height: 132px; }
+.place-grid .npc-scene { height: 148px; }
 
-.place-grid .codex-row input[type="text"] { flex: 1; min-width: 0; }
+.place-grid .npc-portrait {
+  top: 10px;
+  bottom: auto;
+  left: 10px;
+  width: 64px;
+  height: 64px;
+}
+
+.place-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.place-tools > button {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  flex: 0 0 40px;
+}
+
+.place-grid .place-name,
+.place-grid .place-seat { flex-wrap: nowrap; }
+
+.place-grid .place-seat select { flex: 1 1 auto; }
+
+.place-grid .place-card > .note { line-height: 1.3; }
 
 .place-card { border-top: 1px solid var(--line); padding: 10px 0; }
 
