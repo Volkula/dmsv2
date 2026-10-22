@@ -1864,7 +1864,7 @@ label.check input { width: auto; }
 
 .npc-portrait-empty { display: block; border-style: dashed; }
 
-button.npc-portrait { padding: 0; cursor: pointer; }
+button.npc-portrait { padding: 0; cursor: pointer; overflow: hidden; flex: none; }
 
 .npc-emoji {
   position: absolute;
@@ -2250,7 +2250,11 @@ button.ware-face-btn img { width: 100%; height: 100%; object-fit: cover; display
   background: #120f0c;
 }
 
-.place-grid .npc-scene { height: 148px; }
+.place-grid .npc-scene {
+  height: 148px;
+  flex: none;
+  overflow: hidden;
+}
 
 .place-grid .npc-portrait {
   top: 10px;
@@ -2258,6 +2262,7 @@ button.ware-face-btn img { width: 100%; height: 100%; object-fit: cover; display
   left: 10px;
   width: 64px;
   height: 64px;
+  padding: 0;
 }
 
 .place-tools {
@@ -2267,17 +2272,30 @@ button.ware-face-btn img { width: 100%; height: 100%; object-fit: cover; display
   align-items: center;
 }
 
-.place-tools > button {
+.place-tools > button,
+.place-tools > label.file-btn {
+  display: grid;
+  place-items: center;
   width: 40px;
   height: 40px;
+  min-width: 40px;
+  min-height: 40px;
   padding: 0;
   flex: 0 0 40px;
+  line-height: 0;
+}
+
+.place-tools > button svg,
+.place-tools > label.file-btn svg {
+  width: 18px;
+  height: 18px;
+  display: block;
 }
 
 .place-grid .place-name,
-.place-grid .place-seat { flex-wrap: nowrap; }
+.place-grid .place-seat { flex-wrap: wrap; }
 
-.place-grid .place-seat select { flex: 1 1 auto; }
+.place-grid .place-seat select { flex: 1 1 8rem; }
 
 .place-grid .place-card > .note { line-height: 1.3; }
 
