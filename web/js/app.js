@@ -1171,32 +1171,38 @@
     };
     const viewerUrl = location.origin + "/v/" + id;
 
+    function glyph(body) {
+      return '<svg viewBox="0 0 24 24" aria-hidden="true">' + body + "</svg>";
+    }
     app.innerHTML = '<section class="master"><header class="topbar">' +
-      '<div class="top-tools">' +
+      '<div class="top-corner">' +
+      '<button type="button" id="top-kebab" class="kebab-btn" title="Меню" aria-label="Меню" aria-expanded="false">' + glyph('<circle cx="12" cy="6" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="18" r="1.5" fill="currentColor"/>') + "</button>" +
+      '<div class="kebab-menu" id="kebab-menu" hidden>' +
       '<button type="button" id="roll" title="Бросок с преимуществом или помехой, закреплённые и история">Броски</button>' +
       '<button type="button" id="roll-look" title="Скорость, цвет и текстура кубика">Кубик</button>' +
       '<button type="button" id="library" title="Шрифты, картинки и заметки комнаты">Библиотека</button>' +
-      "</div>" +
+      '<div class="kebab-gap"></div>' +
+      '<button type="button" id="backup" title="Скачать кампанию и файлы">Выгрузка</button>' +
+      '<button type="button" id="pass" title="Сменить пароль мастера этой комнаты">Пароль</button>' +
+      '<button type="button" id="copy-master" title="Скопировать ссылку с паролем мастера">Ссылка мастера</button>' +
+      '<button type="button" id="copy" title="Скопировать ссылку для зрителей">Ссылка игроков</button>' +
+      '<a href="' + esc(viewerUrl) + '" target="_blank" rel="noopener" title="Открыть экран игроков в новой вкладке">Открыть экран</a>' +
+      "</div></div>" +
+      '<div class="top-mid">' +
+      '<nav class="top-mods" aria-label="Разделы">' +
+      '<button type="button" id="mod-scene" class="is-on" title="Сцена" aria-label="Сцена">' + glyph('<rect x="4" y="4" width="16" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 9h8M8 13h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "</button>" +
+      '<button type="button" id="mod-map" title="Карта" aria-label="Карта">' + glyph('<path d="M12 21s6-5.2 6-10a6 6 0 1 0-12 0c0 4.8 6 10 6 10z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="11" r="1.6" fill="currentColor"/>') + "</button>" +
+      '<button type="button" id="mod-codex" title="Справочник" aria-label="Справочник">' + glyph('<path d="M5 5.5h5.5A2.5 2.5 0 0113 8v11H8a3 3 0 00-3 3zM19 5.5h-5.5A2.5 2.5 0 0011 8v11h5a3 3 0 013 3z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>') + "</button>" +
+      '<button type="button" id="mod-battle" title="Бой" aria-label="Бой">' + glyph('<path d="M14.5 3.5l6 6M4.5 13.5l6 6M9.5 16.5l7-7M16.5 9.5l2-2M8.5 17.5l-2 2M5 19l2-2M19 5l-2 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "</button>" +
+      "</nav>" +
       '<input id="title" class="room-title" type="text" value="' + esc(state.title) + '" aria-label="Название комнаты" title="Название комнаты">' +
+      "</div>" +
       '<div class="top-publish">' +
       '<div class="mode-switch">' +
       '<button type="button" id="mode-live" class="' + (state.publishMode === "live" ? "is-on" : "") + '" title="Правки открытой страницы сразу видны игрокам">Сразу</button>' +
       '<button type="button" id="mode-hold" class="' + (state.publishMode === "hold" ? "is-on" : "") + '" title="Игроки видят кадр, когда нажмёте «Показать»">Только по кнопке</button>' +
       "</div>" +
       '<button type="button" class="primary" id="show" title="Отправить игрокам то, что на экране сейчас">Показать</button>' +
-      "</div>" +
-      '<nav class="top-mods" aria-label="Разделы">' +
-      '<button type="button" id="mod-scene" class="is-on" title="Страница с текстом и фоном">Сцена</button>' +
-      '<button type="button" id="mod-map" title="Карта и локации">Карта</button>' +
-      '<button type="button" id="mod-codex" title="Персонажи, отряды и каталог">Справочник</button>' +
-      '<button type="button" id="mod-battle" title="Инициатива, хиты и враги на карте">Бой</button>' +
-      "</nav>" +
-      '<div class="top-links">' +
-      '<button type="button" id="backup" title="Скачать кампанию и файлы">Выгрузка</button>' +
-      '<button type="button" id="pass" title="Сменить пароль мастера этой комнаты">Пароль</button>' +
-      '<button type="button" id="copy-master" title="Скопировать ссылку с паролем мастера">Ссылка мастера</button>' +
-      '<button type="button" id="copy" title="Скопировать ссылку для зрителей">Ссылка игроков</button>' +
-      '<a href="' + esc(viewerUrl) + '" target="_blank" rel="noopener" title="Открыть экран игроков в новой вкладке">Открыть экран</a>' +
       "</div></header><div class=\"work\" id=\"work-scene\"><aside class=\"side\">" +
       '<label title="Крупная строка на сцене">Заголовок<input id="page-title" type="text"></label>' +
       '<label title="Текст под заголовком">Текст<textarea id="page-text"></textarea></label>' +
@@ -1500,6 +1506,18 @@
     });
     state.rolls = state.rolls || [];
     state.pins = state.pins || [];
+    const kebabBtn = app.querySelector("#top-kebab");
+    const kebabMenu = app.querySelector("#kebab-menu");
+    function setKebab(open) {
+      kebabMenu.hidden = !open;
+      kebabBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+    kebabBtn.addEventListener("click", function (event) {
+      event.stopPropagation();
+      setKebab(kebabMenu.hidden);
+    });
+    kebabMenu.addEventListener("click", function () { setKebab(false); });
+    document.addEventListener("click", function () { setKebab(false); });
     app.querySelector("#roll").addEventListener("click", function () {
       const look = document.getElementById("roll-look-menu");
       if (look && look._close) look._close();
