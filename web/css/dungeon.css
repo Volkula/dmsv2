@@ -1,3 +1,10 @@
+/* .work по умолчанию — колонка 280px+1fr; данж сам себе раскладка на всю ширину */
+#work-dungeon.work {
+  display: block;
+  overflow: hidden;
+  min-height: 0;
+}
+
 .dung-work {
   display: grid;
   grid-template-columns: 280px minmax(0, 1fr);
@@ -126,10 +133,13 @@
 
 .dung-grid {
   display: block;
+  max-width: 100%;
+  height: auto;
   cursor: crosshair;
   image-rendering: auto;
   background: #15120e;
-  border: 1px solid rgba(230, 195, 106, 0.25);
+  border: 1px solid rgba(230, 195, 106, 0.45);
+  box-shadow: 0 0 0 1px rgba(230, 195, 106, 0.15);
 }
 
 .dung-eyes {

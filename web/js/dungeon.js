@@ -675,7 +675,7 @@ window.ShirmoDungeon = (function () {
     function underUrl() {
       const show = d.underlay.show || "master";
       if (show === "off") return "";
-      if (show === "custom") return d.underlay.custom || "";
+      if (show === "custom") return d.underlay.preview || d.underlay.custom || "";
       if (show === "clean") return d.underlay.clean || CLEAN_MAP;
       return d.underlay.master || MASTER_MAP;
     }
@@ -734,7 +734,7 @@ window.ShirmoDungeon = (function () {
           ctx2.fillRect(ox + x * cell, oy + y * cell, cell + 0.5, cell + 0.5);
         }
       }
-      ctx2.strokeStyle = "rgba(230,195,106,0.12)";
+      ctx2.strokeStyle = "rgba(230,195,106,0.35)";
       ctx2.lineWidth = 1;
       for (let x = 0; x <= level.w; x++) {
         ctx2.beginPath();
@@ -973,23 +973,34 @@ window.ShirmoDungeon = (function () {
       this.value = "";
       if (!file) return;
       const status = host.querySelector("[data-dung-upload-status]");
+      const localUrl = URL.createObjectURL(file);
+      d.underlay.preview = localUrl;
+      d.underlay.show = "custom";
+      const opt = underSelect.querySelector('option[value="custom"]');
+      if (opt) opt.disabled = false;
+      underSelect.value = "custom";
+      underImg.dataset.url = localUrl;
+      underImg.src = localUrl;
+      paintGrid();
+      if (status) status.textContent = "На экране. Сохраняю…";
       if (!ctx.upload) {
-        if (status) status.textContent = "Загрузка недоступна.";
+        d.underlay.custom = localUrl;
+        if (status) status.textContent = "Локально: " + (file.name || "карта");
+        saveSoon();
         return;
       }
-      if (status) status.textContent = "Гружу…";
       ctx.upload(file).then(function (url) {
         d.underlay.custom = url;
         d.underlay.show = "custom";
-        const opt = underSelect.querySelector('option[value="custom"]');
-        if (opt) opt.disabled = false;
-        underSelect.value = "custom";
+        underImg.dataset.url = url;
+        underImg.src = url;
         if (status) status.textContent = "Готово: " + (file.name || "карта");
-        syncUnder();
         paintGrid();
         saveSoon();
       }).catch(function (error) {
-        if (status) status.textContent = (error && error.message) || "Ошибка загрузки";
+        d.underlay.custom = localUrl;
+        if (status) status.textContent = (error && error.message) || "Сервер не принял — показан локальный файл";
+        saveSoon();
       });
     });
     host.querySelector("[data-dung=torch]").addEventListener("change", function () {
