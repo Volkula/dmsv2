@@ -1065,7 +1065,7 @@ window.ShirmoDungeon = (function () {
       '<p class="dung-under-title">Подложка</p>' +
       '<label class="dung-upload"><span>Загрузить карту</span>' +
       '<input type="file" accept="image/*" data-dung-upload></label>' +
-      '<p class="note" data-dung-upload-status>ПКМ по сетке — радиальное меню.</p>' +
+      '<p class="note" data-dung-upload-status>СКМ — колесо инструментов · Пробел+тяни — панорама.</p>' +
       '<label>Яркость<input data-dung="alpha" type="range" min="20" max="100" value="' + Math.round((d.underlay.alpha || 0.88) * 100) + '"></label>' +
       '<label>Масштаб<input data-dung="under-scale" type="range" min="40" max="200" value="100"></label>' +
       '<label>Сдвиг X<input data-dung="under-x" type="range" min="-40" max="40" value="0"></label>' +
@@ -1225,20 +1225,51 @@ window.ShirmoDungeon = (function () {
         }).join("") + "</div>";
     }
 
-    function paintRadial() {
+    function paintRadial(activeIndex) {
       const radial = host.querySelector("[data-radial]");
-      radial.innerHTML = TOOLS.map(function (t) { return toolButtonHtml(t, true); }).join("");
+      const n = TOOLS.length;
+      const size = 220;
+      const cx = size / 2;
+      const cy = size / 2;
+      const outer = 100;
+      const inner = 34;
+      let wedges = "";
+      let icons = "";
+      for (let i = 0; i < n; i++) {
+        const a0 = -Math.PI / 2 + (i / n) * Math.PI * 2;
+        const a1 = -Math.PI / 2 + ((i + 1) / n) * Math.PI * 2;
+        const x0 = cx + Math.cos(a0) * outer;
+        const y0 = cy + Math.sin(a0) * outer;
+        const x1 = cx + Math.cos(a1) * outer;
+        const y1 = cy + Math.sin(a1) * outer;
+        const xi0 = cx + Math.cos(a1) * inner;
+        const yi0 = cy + Math.sin(a1) * inner;
+        const xi1 = cx + Math.cos(a0) * inner;
+        const yi1 = cy + Math.sin(a0) * inner;
+        const large = (a1 - a0) > Math.PI ? 1 : 0;
+        const d = "M " + x0 + " " + y0 +
+          " A " + outer + " " + outer + " 0 " + large + " 1 " + x1 + " " + y1 +
+          " L " + xi0 + " " + yi0 +
+          " A " + inner + " " + inner + " 0 " + large + " 0 " + xi1 + " " + yi1 + " Z";
+        const on = activeIndex === i || (activeIndex == null && TOOLS[i].id === tool);
+        wedges += '<path data-radial-i="' + i + '" data-tool="' + TOOLS[i].id + '" d="' + d + '" class="dung-wedge' + (on ? " is-on" : "") + '">' +
+          '<title>' + esc(TOOLS[i].label) + "</title></path>";
+        const mid = (a0 + a1) / 2;
+        const ix = cx + Math.cos(mid) * ((inner + outer) / 2) - 14;
+        const iy = cy + Math.sin(mid) * ((inner + outer) / 2) - 14;
+        icons += '<canvas class="dung-wedge-icon" width="28" height="28" data-tool-icon="' + esc(TOOLS[i].icon || TOOLS[i].id) +
+          '" style="left:' + ix + "px;top:" + iy + 'px"></canvas>';
+      }
+      radial.innerHTML =
+        '<svg class="dung-radial-svg" viewBox="0 0 ' + size + " " + size + '" width="' + size + '" height="' + size + '">' +
+        '<circle cx="' + cx + '" cy="' + cy + '" r="' + (outer + 2) + '" class="dung-radial-ring"/>' +
+        wedges +
+        '<circle cx="' + cx + '" cy="' + cy + '" r="' + inner + '" class="dung-radial-hub"/>' +
+        '<text x="' + cx + '" y="' + (cy + 4) + '" class="dung-radial-hub-text">СКМ</text></svg>' + icons;
       radial.querySelectorAll("canvas[data-tool-icon]").forEach(function (c) {
         c.getContext("2d").drawImage(iconOf(c.getAttribute("data-tool-icon"), 28), 0, 0);
       });
-      const buttons = radial.querySelectorAll("[data-tool]");
-      const n = buttons.length;
-      const radius = 78;
-      buttons.forEach(function (btn, i) {
-        const ang = -Math.PI / 2 + (i / n) * Math.PI * 2;
-        btn.style.left = 90 + Math.cos(ang) * radius - 22 + "px";
-        btn.style.top = 90 + Math.sin(ang) * radius - 22 + "px";
-      });
+      radial._size = size;
     }
 
     function paintPropPalette() {
@@ -1555,18 +1586,45 @@ window.ShirmoDungeon = (function () {
       hideRadial();
     }
 
+    let radialHold = false;
+    let radialIndex = -1;
+
     function hideRadial() {
       const radial = host.querySelector("[data-radial]");
       if (radial) radial.hidden = true;
+      radialHold = false;
+      radialIndex = -1;
+    }
+
+    function radialIndexAt(clientX, clientY) {
+      const radial = host.querySelector("[data-radial]");
+      if (!radial || radial.hidden) return -1;
+      const rect = radial.getBoundingClientRect();
+      const size = radial._size || 220;
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const dx = clientX - cx;
+      const dy = clientY - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const scale = size / rect.width;
+      const r = dist * scale;
+      if (r < 34 || r > 104) return -1;
+      let ang = Math.atan2(dy, dx) + Math.PI / 2;
+      if (ang < 0) ang += Math.PI * 2;
+      const n = TOOLS.length;
+      return Math.min(n - 1, Math.floor((ang / (Math.PI * 2)) * n));
     }
 
     function showRadial(clientX, clientY) {
       const radial = host.querySelector("[data-radial]");
       const boardRect = board.getBoundingClientRect();
+      const size = 220;
       radial.hidden = false;
-      radial.style.left = Math.max(0, clientX - boardRect.left - 90) + "px";
-      radial.style.top = Math.max(0, clientY - boardRect.top - 90) + "px";
-      paintRadial();
+      radial.style.left = Math.max(8, Math.min(boardRect.width - size - 8, clientX - boardRect.left - size / 2)) + "px";
+      radial.style.top = Math.max(8, Math.min(boardRect.height - size - 8, clientY - boardRect.top - size / 2)) + "px";
+      radialIndex = -1;
+      paintRadial(-1);
+      radialHold = true;
     }
 
     host.addEventListener("click", function (event) {
@@ -1789,14 +1847,24 @@ window.ShirmoDungeon = (function () {
       });
     });
 
-    grid.addEventListener("contextmenu", function (event) {
-      event.preventDefault();
-      showRadial(event.clientX, event.clientY);
+    grid.addEventListener("auxclick", function (event) {
+      if (event.button === 1) event.preventDefault();
     });
     grid.addEventListener("mousedown", function (event) {
-      if (event.button === 2) return;
-      hideRadial();
-      if (spaceDown || event.button === 1) {
+      if (event.button === 1) {
+        event.preventDefault();
+        showRadial(event.clientX, event.clientY);
+        return;
+      }
+      if (!host.querySelector("[data-radial]").hidden && event.button === 0) {
+        const hit = event.target.closest("[data-tool]");
+        if (hit && host.querySelector("[data-radial]").contains(hit)) {
+          setTool(hit.getAttribute("data-tool"));
+          return;
+        }
+        hideRadial();
+      }
+      if (spaceDown) {
         panning = true;
         panFrom = { x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y };
         return;
@@ -1805,6 +1873,14 @@ window.ShirmoDungeon = (function () {
       applyBrush(cellFromEvent(event));
     });
     grid.addEventListener("mousemove", function (event) {
+      if (radialHold) {
+        const next = radialIndexAt(event.clientX, event.clientY);
+        if (next !== radialIndex) {
+          radialIndex = next;
+          paintRadial(radialIndex >= 0 ? radialIndex : -1);
+        }
+        return;
+      }
       if (panning && panFrom) {
         pan.x = panFrom.panX + (event.clientX - panFrom.x);
         pan.y = panFrom.panY + (event.clientY - panFrom.y);
@@ -1815,7 +1891,18 @@ window.ShirmoDungeon = (function () {
       if (tool === "foe" || tool === "prop" || tool === "party") return;
       applyBrush(cellFromEvent(event));
     });
-    window.addEventListener("mouseup", function () { paint = false; panning = false; });
+    window.addEventListener("mouseup", function (event) {
+      if (event.button === 1 && radialHold) {
+        const pick = radialIndexAt(event.clientX, event.clientY);
+        if (pick >= 0 && TOOLS[pick]) setTool(TOOLS[pick].id);
+        else hideRadial();
+        paint = false;
+        panning = false;
+        return;
+      }
+      paint = false;
+      panning = false;
+    });
     board.addEventListener("wheel", function (event) {
       event.preventDefault();
       const next = zoom * (event.deltaY < 0 ? 1.1 : 0.9);
