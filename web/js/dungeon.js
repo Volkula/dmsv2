@@ -1,18 +1,39 @@
 window.ShirmoDungeon = (function () {
-  const CELL = { VOID: 0, FLOOR: 1, WALL: 2, DOOR: 3, SECRET: 4, CHASM: 5, BRIDGE: 6 };
-  const CELL_NAME = {
-    0: "пусто", 1: "пол", 2: "стена", 3: "дверь", 4: "секрет", 5: "пропасть", 6: "мост"
-  };
+  const CELL = { VOID: 0, FLOOR: 1, WALL: 2, DOOR: 3, SECRET: 4, CHASM: 5, BRIDGE: 6, STAIR_UP: 7, STAIR_DOWN: 8 };
   const DIRS = [
     { x: 0, y: -1, name: "С" },
     { x: 1, y: 0, name: "В" },
     { x: 0, y: 1, name: "Ю" },
     { x: -1, y: 0, name: "З" }
   ];
-  const MASTER_MAP = "/dungeon/redbrand-master.webp";
-  const CLEAN_MAP = "/dungeon/redbrand-clean.webp";
-  const DEFAULT_W = 42;
-  const DEFAULT_H = 52;
+  const DEFAULT_W = 48;
+  const DEFAULT_H = 56;
+  const TEX = 64;
+
+  const PROP_KINDS = [
+    { id: "lever", name: "Рычаг", secret: true, dc: 15 },
+    { id: "chest", name: "Сундук", secret: false, dc: 12 },
+    { id: "torch", name: "Факел", secret: false, light: 20 },
+    { id: "trap", name: "Ловушка", secret: true, dc: 14 },
+    { id: "note", name: "Записка", secret: false, dc: 10 },
+    { id: "altar", name: "Алтарь", secret: false, dc: 0 },
+    { id: "secretDoor", name: "Секретная дверь", secret: true, dc: 15 }
+  ];
+
+  const TOOLS = [
+    { id: "floor", label: "Пол", cell: CELL.FLOOR },
+    { id: "wall", label: "Стена", cell: CELL.WALL },
+    { id: "door", label: "Дверь", cell: CELL.DOOR },
+    { id: "secret", label: "Секрет", cell: CELL.SECRET },
+    { id: "chasm", label: "Яма", cell: CELL.CHASM },
+    { id: "bridge", label: "Мост", cell: CELL.BRIDGE },
+    { id: "stair_up", label: "↑ Этаж", cell: CELL.STAIR_UP },
+    { id: "stair_down", label: "↓ Этаж", cell: CELL.STAIR_DOWN },
+    { id: "erase", label: "Стереть", cell: CELL.VOID },
+    { id: "party", label: "Партия", cell: null },
+    { id: "foe", label: "Враг", cell: null },
+    { id: "prop", label: "Предмет", cell: null }
+  ];
 
   function esc(value) {
     return String(value == null ? "" : value)
@@ -20,6 +41,10 @@ window.ShirmoDungeon = (function () {
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
+  }
+
+  function uid() {
+    return crypto.randomUUID ? crypto.randomUUID() : ("id-" + Math.random().toString(16).slice(2));
   }
 
   function blankCells(w, h, fill) {
@@ -32,71 +57,339 @@ window.ShirmoDungeon = (function () {
     return rows;
   }
 
-  function seedStart(cells) {
+  function seedRoom(cells) {
     const h = cells.length;
     const w = cells[0].length;
     const cx = Math.floor(w / 2);
-    const cy = Math.floor(h * 0.78);
-    for (let y = cy - 2; y <= cy + 2; y++) {
-      for (let x = cx - 2; x <= cx + 2; x++) {
-        if (y < 0 || x < 0 || y >= h || x >= w) continue;
-        const edge = y === cy - 2 || y === cy + 2 || x === cx - 2 || x === cx + 2;
+    const cy = Math.floor(h * 0.75);
+    for (let y = cy - 3; y <= cy + 3; y++) {
+      for (let x = cx - 3; x <= cx + 3; x++) {
+        if (x < 0 || y < 0 || x >= w || y >= h) continue;
+        const edge = y === cy - 3 || y === cy + 3 || x === cx - 3 || x === cx + 3;
         cells[y][x] = edge ? CELL.WALL : CELL.FLOOR;
       }
     }
-    cells[cy - 2][cx] = CELL.DOOR;
+    cells[cy - 3][cx] = CELL.DOOR;
     return { x: cx, y: cy };
+  }
+
+  /* ——— процедурные текстуры в стиле старого Doom ——— */
+  function noise(x, y, seed) {
+    const n = Math.sin(x * 127.1 + y * 311.7 + seed * 74.7) * 43758.5453;
+    return n - Math.floor(n);
+  }
+
+  function makeTex(paint) {
+    const c = document.createElement("canvas");
+    c.width = TEX;
+    c.height = TEX;
+    const g = c.getContext("2d");
+    paint(g, TEX);
+    return c;
+  }
+
+  function texStone(g, s) {
+    g.fillStyle = "#3a342c";
+    g.fillRect(0, 0, s, s);
+    for (let i = 0; i < 900; i++) {
+      const x = Math.floor(noise(i, 1, 3) * s);
+      const y = Math.floor(noise(i, 2, 5) * s);
+      const v = 40 + noise(i, 3, 7) * 50;
+      g.fillStyle = "rgb(" + (v | 0) + "," + ((v * 0.9) | 0) + "," + ((v * 0.75) | 0) + ")";
+      g.fillRect(x, y, 1 + (noise(i, 4, 1) * 2 | 0), 1);
+    }
+    g.strokeStyle = "rgba(0,0,0,0.35)";
+    for (let row = 0; row < 4; row++) {
+      const yy = row * 16 + 8;
+      g.beginPath();
+      g.moveTo(0, yy);
+      g.lineTo(s, yy);
+      g.stroke();
+      const off = row % 2 ? 16 : 0;
+      for (let col = 0; col < 4; col++) {
+        g.beginPath();
+        g.moveTo(col * 32 + off, yy - 8);
+        g.lineTo(col * 32 + off, yy + 8);
+        g.stroke();
+      }
+    }
+    g.fillStyle = "rgba(255,220,160,0.04)";
+    g.fillRect(0, 0, s, s / 3);
+  }
+
+  function texBrick(g, s) {
+    g.fillStyle = "#4a2e24";
+    g.fillRect(0, 0, s, s);
+    const bh = 10;
+    const bw = 20;
+    for (let y = 0; y < s; y += bh) {
+      const shift = ((y / bh) | 0) % 2 ? bw / 2 : 0;
+      for (let x = -bw; x < s + bw; x += bw) {
+        const shade = 90 + noise(x, y, 9) * 40;
+        g.fillStyle = "rgb(" + (shade | 0) + "," + ((shade * 0.55) | 0) + "," + ((shade * 0.4) | 0) + ")";
+        g.fillRect(x + shift + 1, y + 1, bw - 2, bh - 2);
+      }
+    }
+    g.strokeStyle = "rgba(20,10,8,0.6)";
+    g.lineWidth = 1;
+    for (let y = 0; y <= s; y += bh) {
+      g.beginPath(); g.moveTo(0, y); g.lineTo(s, y); g.stroke();
+    }
+  }
+
+  function texWood(g, s) {
+    g.fillStyle = "#5a3a1e";
+    g.fillRect(0, 0, s, s);
+    for (let x = 0; x < s; x++) {
+      const v = 70 + noise(x, 0, 2) * 40 + Math.sin(x * 0.4) * 8;
+      g.fillStyle = "rgb(" + (v | 0) + "," + ((v * 0.65) | 0) + "," + ((v * 0.35) | 0) + ")";
+      g.fillRect(x, 0, 1, s);
+    }
+    g.strokeStyle = "rgba(0,0,0,0.35)";
+    for (let y = 16; y < s; y += 16) {
+      g.beginPath(); g.moveTo(0, y); g.lineTo(s, y); g.stroke();
+    }
+  }
+
+  function texFloor(g, s) {
+    g.fillStyle = "#2a241c";
+    g.fillRect(0, 0, s, s);
+    for (let i = 0; i < 500; i++) {
+      const x = noise(i, 8, 1) * s | 0;
+      const y = noise(i, 9, 2) * s | 0;
+      const v = 35 + noise(i, 10, 3) * 35;
+      g.fillStyle = "rgb(" + (v | 0) + "," + ((v * 0.88) | 0) + "," + ((v * 0.7) | 0) + ")";
+      g.fillRect(x, y, 2, 2);
+    }
+    g.strokeStyle = "rgba(0,0,0,0.25)";
+    for (let i = 0; i <= 4; i++) {
+      g.beginPath(); g.moveTo(i * 16, 0); g.lineTo(i * 16, s); g.stroke();
+      g.beginPath(); g.moveTo(0, i * 16); g.lineTo(s, i * 16); g.stroke();
+    }
+  }
+
+  function texCeil(g, s) {
+    g.fillStyle = "#1a1612";
+    g.fillRect(0, 0, s, s);
+    for (let i = 0; i < 300; i++) {
+      const x = noise(i, 11, 4) * s | 0;
+      const y = noise(i, 12, 5) * s | 0;
+      g.fillStyle = "rgba(0,0,0," + (0.15 + noise(i, 13, 6) * 0.4) + ")";
+      g.fillRect(x, y, 3, 3);
+    }
+  }
+
+  function texDoor(g, s) {
+    texWood(g, s);
+    g.fillStyle = "rgba(0,0,0,0.35)";
+    g.fillRect(s * 0.15, s * 0.1, s * 0.7, s * 0.8);
+    g.fillStyle = "#c4a35a";
+    g.beginPath();
+    g.arc(s * 0.72, s * 0.5, 3, 0, Math.PI * 2);
+    g.fill();
+  }
+
+  function texSecret(g, s) {
+    texStone(g, s);
+    g.strokeStyle = "rgba(230,195,106,0.35)";
+    g.strokeRect(8, 8, s - 16, s - 16);
+  }
+
+  const TEX_SET = {
+    wall: null,
+    brick: null,
+    wood: null,
+    floor: null,
+    ceil: null,
+    door: null,
+    secret: null
+  };
+
+  function textures() {
+    if (!TEX_SET.wall) {
+      TEX_SET.wall = makeTex(texStone);
+      TEX_SET.brick = makeTex(texBrick);
+      TEX_SET.wood = makeTex(texWood);
+      TEX_SET.floor = makeTex(texFloor);
+      TEX_SET.ceil = makeTex(texCeil);
+      TEX_SET.door = makeTex(texDoor);
+      TEX_SET.secret = makeTex(texSecret);
+    }
+    return TEX_SET;
+  }
+
+  function iconCanvas(kind, size) {
+    const c = document.createElement("canvas");
+    c.width = size;
+    c.height = size;
+    const g = c.getContext("2d");
+    g.clearRect(0, 0, size, size);
+    if (kind === "lever") {
+      g.fillStyle = "#6a5430";
+      g.fillRect(size * 0.35, size * 0.55, size * 0.3, size * 0.35);
+      g.strokeStyle = "#e6c36a";
+      g.lineWidth = 3;
+      g.beginPath();
+      g.moveTo(size * 0.5, size * 0.55);
+      g.lineTo(size * 0.25, size * 0.2);
+      g.stroke();
+      g.fillStyle = "#e4533e";
+      g.beginPath();
+      g.arc(size * 0.25, size * 0.2, 4, 0, Math.PI * 2);
+      g.fill();
+    } else if (kind === "chest") {
+      g.fillStyle = "#8a5a22";
+      g.fillRect(size * 0.15, size * 0.35, size * 0.7, size * 0.45);
+      g.fillStyle = "#c4a35a";
+      g.fillRect(size * 0.45, size * 0.5, size * 0.1, size * 0.15);
+      g.strokeStyle = "#3a2410";
+      g.strokeRect(size * 0.15, size * 0.35, size * 0.7, size * 0.45);
+    } else if (kind === "torch") {
+      g.fillStyle = "#5a3a1e";
+      g.fillRect(size * 0.45, size * 0.4, size * 0.1, size * 0.45);
+      g.fillStyle = "#e6a020";
+      g.beginPath();
+      g.moveTo(size * 0.5, size * 0.15);
+      g.lineTo(size * 0.35, size * 0.45);
+      g.lineTo(size * 0.65, size * 0.45);
+      g.closePath();
+      g.fill();
+    } else if (kind === "trap") {
+      g.strokeStyle = "#e4533e";
+      g.lineWidth = 2;
+      g.strokeRect(size * 0.2, size * 0.2, size * 0.6, size * 0.6);
+      g.beginPath();
+      g.moveTo(size * 0.3, size * 0.3);
+      g.lineTo(size * 0.7, size * 0.7);
+      g.moveTo(size * 0.7, size * 0.3);
+      g.lineTo(size * 0.3, size * 0.7);
+      g.stroke();
+    } else if (kind === "foe") {
+      g.fillStyle = "#6b2a22";
+      g.beginPath();
+      g.arc(size * 0.5, size * 0.4, size * 0.22, 0, Math.PI * 2);
+      g.fill();
+      g.fillRect(size * 0.32, size * 0.55, size * 0.36, size * 0.3);
+      g.fillStyle = "#e07a6a";
+      g.fillRect(size * 0.4, size * 0.35, 3, 3);
+      g.fillRect(size * 0.55, size * 0.35, 3, 3);
+    } else if (kind === "party") {
+      g.fillStyle = "#e6c36a";
+      g.beginPath();
+      g.moveTo(size * 0.5, size * 0.15);
+      g.lineTo(size * 0.8, size * 0.8);
+      g.lineTo(size * 0.2, size * 0.8);
+      g.closePath();
+      g.fill();
+    } else if (kind === "secretDoor") {
+      g.fillStyle = "#4a4338";
+      g.fillRect(size * 0.2, size * 0.15, size * 0.6, size * 0.7);
+      g.fillStyle = "#e6c36a";
+      g.font = "bold " + Math.floor(size * 0.45) + "px Georgia";
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      g.fillText("S", size * 0.5, size * 0.5);
+    } else {
+      g.fillStyle = "#5a6a7a";
+      g.beginPath();
+      g.arc(size * 0.5, size * 0.5, size * 0.28, 0, Math.PI * 2);
+      g.fill();
+    }
+    return c;
+  }
+
+  const ICON_CACHE = {};
+  function iconOf(kind, size) {
+    const key = kind + ":" + size;
+    if (!ICON_CACHE[key]) ICON_CACHE[key] = iconCanvas(kind, size);
+    return ICON_CACHE[key];
+  }
+
+  function makeLevel(name, w, h) {
+    const cells = blankCells(w || DEFAULT_W, h || DEFAULT_H, CELL.VOID);
+    const start = seedRoom(cells);
+    return {
+      id: uid(),
+      name: name || "Этаж 1",
+      w: w || DEFAULT_W,
+      h: h || DEFAULT_H,
+      cells: cells,
+      underlay: "",
+      start: start
+    };
   }
 
   function ensure(campaign) {
     if (!campaign.dungeon || typeof campaign.dungeon !== "object") campaign.dungeon = {};
     const d = campaign.dungeon;
-    if (!d.title) d.title = "Redbrand Hideout";
+    if (!d.title) d.title = "Данж";
     if (!Number.isFinite(Number(d.cellFt)) || Number(d.cellFt) <= 0) d.cellFt = 5;
     if (!Number.isFinite(Number(d.torchFt))) d.torchFt = 15;
     if (!Number.isFinite(Number(d.darkvisionFt))) d.darkvisionFt = 60;
     if (d.screen == null) d.screen = false;
-    if (!d.underlay || typeof d.underlay !== "object") {
-      d.underlay = { master: MASTER_MAP, clean: CLEAN_MAP, custom: "", show: "master", alpha: 0.92 };
-    }
-    if (!d.underlay.master) d.underlay.master = MASTER_MAP;
-    if (!d.underlay.clean) d.underlay.clean = CLEAN_MAP;
-    if (d.underlay.custom == null) d.underlay.custom = "";
-    /* blob: нельзя хранить в кампании — после F5 ссылка мёртвая */
-    if (d.underlay.preview) delete d.underlay.preview;
+    if (!d.underlay || typeof d.underlay !== "object") d.underlay = { alpha: 0.85 };
+    if (!Number.isFinite(Number(d.underlay.alpha))) d.underlay.alpha = 0.85;
+    delete d.underlay.preview;
     if (String(d.underlay.custom || "").indexOf("blob:") === 0) d.underlay.custom = "";
-    if (!d.underlay.show || (d.underlay.show === "custom" && !d.underlay.custom)) {
-      d.underlay.show = d.underlay.custom ? "custom" : "master";
-    }
-    if (!Number.isFinite(Number(d.underlay.alpha))) d.underlay.alpha = 0.92;
-    if (Number(d.underlay.alpha) < 0.4) d.underlay.alpha = 0.92;
+
     if (!Array.isArray(d.levels) || !d.levels.length) {
-      const cells = blankCells(DEFAULT_W, DEFAULT_H, CELL.VOID);
-      const start = seedStart(cells);
-      d.levels = [{ id: "main", name: "Укрытие Редбрандов", z: 0, w: DEFAULT_W, h: DEFAULT_H, cells: cells }];
-      d.party = { x: start.x, y: start.y, z: 0, dir: 0, torch: true, darkvision: false };
+      const level = makeLevel("Этаж 1");
+      d.levels = [level];
+      d.activeLevelId = level.id;
+      d.party = {
+        x: level.start.x,
+        y: level.start.y,
+        levelId: level.id,
+        dir: 0,
+        torch: true,
+        darkvision: false
+      };
     }
-    const level = d.levels[0];
-    if (!level.w) level.w = (level.cells && level.cells[0] && level.cells[0].length) || DEFAULT_W;
-    if (!level.h) level.h = (level.cells && level.cells.length) || DEFAULT_H;
-    if (!level.cells || !level.cells.length) level.cells = blankCells(level.w, level.h, CELL.VOID);
-    if (!d.party || typeof d.party !== "object") {
-      d.party = { x: 1, y: 1, z: 0, dir: 0, torch: true, darkvision: false };
+    d.levels.forEach(function (level, i) {
+      if (!level.id) level.id = uid();
+      if (!level.name) level.name = "Этаж " + (i + 1);
+      if (!level.w) level.w = (level.cells && level.cells[0] && level.cells[0].length) || DEFAULT_W;
+      if (!level.h) level.h = (level.cells && level.cells.length) || DEFAULT_H;
+      if (!level.cells || !level.cells.length) level.cells = blankCells(level.w, level.h, CELL.VOID);
+      if (level.underlay == null) level.underlay = "";
+      if (String(level.underlay).indexOf("blob:") === 0) level.underlay = "";
+    });
+    if (!d.activeLevelId || !d.levels.some(function (l) { return l.id === d.activeLevelId; })) {
+      d.activeLevelId = d.levels[0].id;
     }
-    d.party.x = Math.max(0, Math.min(level.w - 1, Math.round(Number(d.party.x) || 0)));
-    d.party.y = Math.max(0, Math.min(level.h - 1, Math.round(Number(d.party.y) || 0)));
+    if (!d.party || typeof d.party !== "object") d.party = {};
+    if (!d.party.levelId || !d.levels.some(function (l) { return l.id === d.party.levelId; })) {
+      d.party.levelId = d.activeLevelId;
+    }
+    const pl = levelById(d, d.party.levelId) || d.levels[0];
+    d.party.x = Math.max(0, Math.min(pl.w - 1, Math.round(Number(d.party.x) || 0)));
+    d.party.y = Math.max(0, Math.min(pl.h - 1, Math.round(Number(d.party.y) || 0)));
     d.party.dir = ((Math.round(Number(d.party.dir) || 0) % 4) + 4) % 4;
     if (d.party.torch == null) d.party.torch = true;
     if (d.party.darkvision == null) d.party.darkvision = false;
     d.props = Array.isArray(d.props) ? d.props : [];
     d.foes = Array.isArray(d.foes) ? d.foes : [];
     if (!d.explored || typeof d.explored !== "object") d.explored = {};
+    if (!d.brushProp) d.brushProp = "lever";
+    /* migrate old single underlay */
+    if (d.underlay.custom && d.levels[0] && !d.levels[0].underlay) {
+      d.levels[0].underlay = d.underlay.custom;
+    }
     markExplored(d);
+    textures();
     return d;
   }
 
-  function levelOf(d) {
-    return (d.levels || [])[0] || { w: DEFAULT_W, h: DEFAULT_H, cells: blankCells(DEFAULT_W, DEFAULT_H) };
+  function levelById(d, id) {
+    return (d.levels || []).find(function (l) { return l && l.id === id; }) || null;
+  }
+
+  function activeLevel(d) {
+    return levelById(d, d.activeLevelId) || d.levels[0];
+  }
+
+  function partyLevel(d) {
+    return levelById(d, d.party.levelId) || activeLevel(d);
   }
 
   function cellAt(level, x, y) {
@@ -105,48 +398,36 @@ window.ShirmoDungeon = (function () {
     return row ? (row[x] | 0) : CELL.WALL;
   }
 
-  function walkable(kind, secretsOpen) {
-    if (kind === CELL.FLOOR || kind === CELL.DOOR || kind === CELL.BRIDGE) return true;
-    if (kind === CELL.SECRET && secretsOpen) return true;
-    return false;
+  function secretOpen(d, levelId, x, y) {
+    return (d.props || []).some(function (p) {
+      return p && p.kind === "secretDoor" && p.levelId === levelId && p.x === x && p.y === y && p.revealed;
+    });
   }
 
-  function blocksLos(kind, secretsOpen) {
-    if (kind === CELL.WALL) return true;
-    if (kind === CELL.SECRET && !secretsOpen) return true;
-    if (kind === CELL.DOOR) return true;
-    return false;
+  function effectiveCell(d, level, x, y) {
+    const kind = cellAt(level, x, y);
+    if (kind === CELL.SECRET && secretOpen(d, level.id, x, y)) return CELL.DOOR;
+    return kind;
+  }
+
+  function walkable(kind) {
+    return kind === CELL.FLOOR || kind === CELL.DOOR || kind === CELL.BRIDGE ||
+      kind === CELL.STAIR_UP || kind === CELL.STAIR_DOWN;
   }
 
   function visionRange(d) {
     const party = d.party || {};
-    if (party.darkvision) return Math.max(1, Math.round(Number(d.darkvisionFt) || 60) / (Number(d.cellFt) || 5));
-    if (party.torch === false) return 0.5;
-    return Math.max(0.5, Math.round(Number(d.torchFt) || 15) / (Number(d.cellFt) || 5));
+    const cellFt = Number(d.cellFt) || 5;
+    if (party.darkvision) return Math.max(1, (Number(d.darkvisionFt) || 60) / cellFt);
+    if (party.torch === false) return 0.6;
+    return Math.max(0.6, (Number(d.torchFt) || 15) / cellFt);
   }
 
-  function keyOf(x, y, z) {
-    return String(z || 0) + ":" + x + ":" + y;
+  function keyOf(levelId, x, y) {
+    return levelId + ":" + x + ":" + y;
   }
 
-  function markExplored(d) {
-    const level = levelOf(d);
-    const party = d.party;
-    const range = Math.ceil(visionRange(d));
-    const z = party.z || 0;
-    for (let dy = -range; dy <= range; dy++) {
-      for (let dx = -range; dx <= range; dx++) {
-        if (dx * dx + dy * dy > (range + 0.2) * (range + 0.2)) continue;
-        const x = party.x + dx;
-        const y = party.y + dy;
-        if (x < 0 || y < 0 || x >= level.w || y >= level.h) continue;
-        if (!hasLos(level, party.x, party.y, x, y, d)) continue;
-        d.explored[keyOf(x, y, z)] = true;
-      }
-    }
-  }
-
-  function hasLos(level, x0, y0, x1, y1, d) {
+  function hasLos(d, level, x0, y0, x1, y1) {
     let x = x0;
     let y = y0;
     const dx = Math.abs(x1 - x0);
@@ -157,21 +438,9 @@ window.ShirmoDungeon = (function () {
     while (true) {
       if (x === x1 && y === y1) return true;
       if (!(x === x0 && y === y0)) {
-        const kind = cellAt(level, x, y);
-        const secretOpen = (d.props || []).some(function (p) {
-          return p && p.kind === "secretDoor" && p.x === x && p.y === y && p.revealed;
-        }) || kind !== CELL.SECRET;
-        if (kind === CELL.SECRET) {
-          const open = (d.props || []).some(function (p) {
-            return p && p.x === x && p.y === y && p.revealed;
-          });
-          if (!open && blocksLos(CELL.SECRET, false)) return false;
-        } else if (blocksLos(kind, false) && !(kind === CELL.DOOR)) {
-          return false;
-        } else if (kind === CELL.DOOR) {
-          /* door blocks until adjacent end */
-          if (!(x === x1 && y === y1)) return false;
-        }
+        const kind = effectiveCell(d, level, x, y);
+        if (kind === CELL.WALL || kind === CELL.SECRET) return false;
+        if (kind === CELL.DOOR && !(x === x1 && y === y1)) return false;
       }
       const e2 = 2 * err;
       if (e2 > -dy) { err -= dy; x += sx; }
@@ -179,21 +448,43 @@ window.ShirmoDungeon = (function () {
     }
   }
 
-  function secretOpenAt(d, x, y) {
-    return (d.props || []).some(function (p) {
-      return p && p.kind === "secretDoor" && p.x === x && p.y === y && p.revealed;
-    });
+  function markExplored(d) {
+    const level = partyLevel(d);
+    if (!level) return;
+    const party = d.party;
+    const range = Math.ceil(visionRange(d));
+    for (let dy = -range; dy <= range; dy++) {
+      for (let dx = -range; dx <= range; dx++) {
+        if (dx * dx + dy * dy > (range + 0.25) * (range + 0.25)) continue;
+        const x = party.x + dx;
+        const y = party.y + dy;
+        if (x < 0 || y < 0 || x >= level.w || y >= level.h) continue;
+        if (!hasLos(d, level, party.x, party.y, x, y)) continue;
+        d.explored[keyOf(level.id, x, y)] = true;
+      }
+    }
   }
 
-  function effectiveCell(d, level, x, y) {
-    const kind = cellAt(level, x, y);
-    if (kind === CELL.SECRET && secretOpenAt(d, x, y)) return CELL.FLOOR;
-    return kind;
+  function dist2(ax, ay, bx, by) {
+    const dx = ax - bx;
+    const dy = ay - by;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  function texForCell(kind, master) {
+    const t = textures();
+    if (kind === CELL.DOOR) return t.door;
+    if (kind === CELL.SECRET) return master ? t.secret : t.wall;
+    if (kind === CELL.BRIDGE) return t.wood;
+    return t.wall;
   }
 
   function project(campaign) {
     const d = ensure(campaign);
-    const level = levelOf(d);
+    const level = partyLevel(d);
+    const battle = campaign.battle;
+    const actors = (battle && battle.actors) || [];
+    const turn = Math.max(0, Math.round(Number(battle && battle.turn) || 0));
     return {
       kind: "dungeon",
       title: d.title || "Данж",
@@ -203,79 +494,51 @@ window.ShirmoDungeon = (function () {
       party: {
         x: d.party.x,
         y: d.party.y,
-        z: d.party.z || 0,
+        levelId: d.party.levelId,
         dir: d.party.dir,
         torch: !!d.party.torch,
         darkvision: !!d.party.darkvision
       },
       level: {
+        id: level.id,
+        name: level.name,
         w: level.w,
         h: level.h,
         cells: level.cells
       },
-      props: (d.props || []).map(function (p) {
+      levels: d.levels.map(function (l) { return { id: l.id, name: l.name }; }),
+      props: (d.props || []).filter(function (p) { return p.levelId === level.id; }).map(function (p) {
         return {
-          id: p.id,
-          x: p.x,
-          y: p.y,
-          kind: p.kind,
-          name: p.name || "",
-          revealed: !!p.revealed,
-          secret: !!p.secret
+          id: p.id, x: p.x, y: p.y, kind: p.kind, name: p.name || "",
+          revealed: !!p.revealed, secret: !!p.secret
         };
       }),
-      foes: (d.foes || []).map(function (f) {
-        const actor = ((campaign.battle && campaign.battle.actors) || []).find(function (a) {
-          return a && a.id === f.actorId;
-        });
+      foes: (d.foes || []).filter(function (f) { return f.levelId === level.id; }).map(function (f) {
+        const actor = actors.find(function (a) { return a && a.id === f.actorId; });
         return {
-          id: f.id,
-          x: f.x,
-          y: f.y,
-          actorId: f.actorId || "",
+          id: f.id, x: f.x, y: f.y, actorId: f.actorId || "",
           name: (actor && actor.name) || f.name || "Враг",
-          portrait: (actor && actor.portrait) || f.portrait || "",
+          portrait: (actor && actor.portrait) || "",
           dead: !!(actor && actor.dead)
         };
       }),
       explored: d.explored || {},
       flash: d.flash || null,
-      battle: projectInit(campaign)
+      battle: actors.length ? {
+        round: Math.max(1, Math.round(Number(battle.round) || 1)),
+        turn: turn,
+        actors: actors.filter(function (a) { return a && String(a.name || "").trim(); }).map(function (actor, index) {
+          return {
+            id: actor.id,
+            name: actor.name || "—",
+            side: actor.side === "player" ? "player" : "foe",
+            portrait: actor.portrait || "",
+            dead: !!actor.dead,
+            active: index === turn
+          };
+        })
+      } : null
     };
-  }
-
-  function projectInit(campaign) {
-    const battle = campaign.battle;
-    if (!battle || !Array.isArray(battle.actors)) return null;
-    const actors = battle.actors.filter(function (a) { return a && String(a.name || "").trim(); });
-    if (!actors.length) return null;
-    const turn = Math.max(0, Math.round(Number(battle.turn) || 0));
-    return {
-      round: Math.max(1, Math.round(Number(battle.round) || 1)),
-      turn: turn,
-      actors: actors.map(function (actor, index) {
-        return {
-          id: actor.id,
-          name: actor.name || "—",
-          side: actor.side === "player" ? "player" : "foe",
-          portrait: actor.portrait || "",
-          dead: !!actor.dead,
-          active: index === turn
-        };
-      })
-    };
-  }
-
-  function playerHtml(page) {
-    return '<div class="stage play-dungeon" data-dungeon-stage>' +
-      '<canvas class="dung-fp" width="960" height="540" aria-label="Данж"></canvas>' +
-      '<div class="dung-hud">' +
-      '<canvas class="dung-mini" width="200" height="200" aria-label="Миникарта"></canvas>' +
-      '<div class="dung-meta"><b>' + esc(page.title || "Данж") + "</b>" +
-      '<span>Факел ' + esc(page.torchFt || 15) + "фт</span></div>" +
-      "</div>" +
-      (page.battle ? initStripHtml(page.battle, false) : "") +
-      '<div class="dung-flash" hidden></div></div>';
   }
 
   function initStripHtml(battle, clickable) {
@@ -286,33 +549,24 @@ window.ShirmoDungeon = (function () {
         : "<span>" + esc((actor.name || "?").slice(0, 1)) + "</span>";
       const cls = "dung-tok " + (actor.side === "player" ? "is-player" : "is-foe") +
         (actor.active ? " is-on" : "") + (actor.dead ? " is-dead" : "");
-      const tag = clickable
+      return clickable
         ? '<button type="button" class="' + cls + '" data-dung-turn="' + esc(actor.id) + '">' + face + "<em>" + esc(actor.name) + "</em></button>"
         : '<div class="' + cls + '">' + face + "<em>" + esc(actor.name) + "</em></div>";
-      return tag;
     }).join("");
     return '<div class="dung-init"><span class="dung-round">Раунд <b>' + esc(battle.round || 1) + "</b></span>" +
       '<div class="dung-track">' + tokens + "</div></div>";
   }
 
-  function paintView(root, page, opts) {
-    if (!root || !page || page.kind !== "dungeon") return;
-    const fp = root.querySelector(".dung-fp");
-    const mini = root.querySelector(".dung-mini");
-    if (fp) renderFp(fp, page, opts);
-    if (mini) renderMini(mini, page, opts);
-    const flash = root.querySelector(".dung-flash");
-    if (flash && page.flash) {
-      flash.hidden = false;
-      flash.textContent = page.flash.text || "Открыто!";
-      setTimeout(function () { flash.hidden = true; }, 1800);
-    }
-  }
-
-  function dist2(ax, ay, bx, by) {
-    const dx = ax - bx;
-    const dy = ay - by;
-    return Math.sqrt(dx * dx + dy * dy);
+  function playerHtml(page) {
+    return '<div class="stage play-dungeon" data-dungeon-stage>' +
+      '<canvas class="dung-fp" width="960" height="540" aria-label="Данж"></canvas>' +
+      '<div class="dung-hud">' +
+      '<canvas class="dung-mini" width="200" height="200" aria-label="Миникарта"></canvas>' +
+      '<div class="dung-meta"><b>' + esc(page.title || "Данж") + "</b>" +
+      "<span>" + esc((page.level && page.level.name) || "") + " · факел " + esc(page.torchFt || 15) + "фт</span></div>" +
+      "</div>" +
+      (page.battle ? initStripHtml(page.battle, false) : "") +
+      '<div class="dung-flash" hidden></div></div>';
   }
 
   function renderFp(canvas, page, opts) {
@@ -325,18 +579,28 @@ window.ShirmoDungeon = (function () {
     const dir = DIRS[party.dir || 0];
     const camX = party.x + 0.5;
     const camY = party.y + 0.5;
-    const range = master ? 40 : visionRange(page);
+    const range = master ? 48 : visionRange(page);
+    const tset = textures();
+    const rdx = dir.x;
+    const rdy = dir.y;
+    const planeScale = Math.tan(Math.PI / 6);
+    const planeX = -rdy * planeScale;
+    const planeY = rdx * planeScale;
+
     ctx.fillStyle = "#050403";
     ctx.fillRect(0, 0, w, h);
 
-    const fov = Math.PI / 3;
-    const planeScale = Math.tan(fov / 2);
-    const dirAngle = Math.atan2(dir.y, dir.x);
-    /* remap: dir vector in our DIRS is grid; raycaster uses x right, y down */
-    const rdx = dir.x;
-    const rdy = dir.y;
-    const planeX = -rdy * planeScale;
-    const planeY = rdx * planeScale;
+    /* потолок / пол градиентом + намёк текстур */
+    const ceil = ctx.createLinearGradient(0, 0, 0, h / 2);
+    ceil.addColorStop(0, "#14110e");
+    ceil.addColorStop(1, "#0a0806");
+    ctx.fillStyle = ceil;
+    ctx.fillRect(0, 0, w, h / 2);
+    const floor = ctx.createLinearGradient(0, h / 2, 0, h);
+    floor.addColorStop(0, "#2a2218");
+    floor.addColorStop(1, "#100e0a");
+    ctx.fillStyle = floor;
+    ctx.fillRect(0, h / 2, w, h / 2);
 
     for (let col = 0; col < w; col++) {
       const cam = 2 * col / w - 1;
@@ -357,7 +621,7 @@ window.ShirmoDungeon = (function () {
       let hit = 0;
       let side = 0;
       let kind = CELL.VOID;
-      for (let i = 0; i < 48; i++) {
+      for (let i = 0; i < 64; i++) {
         if (sideDistX < sideDistY) {
           sideDistX += deltaDistX;
           mapX += stepX;
@@ -368,83 +632,61 @@ window.ShirmoDungeon = (function () {
           side = 1;
         }
         kind = effectiveCell(page, level, mapX, mapY);
-        if (kind === CELL.WALL || kind === CELL.SECRET || kind === CELL.DOOR) {
+        if (kind === CELL.WALL || kind === CELL.SECRET || kind === CELL.DOOR || kind === CELL.STAIR_UP || kind === CELL.STAIR_DOWN) {
           hit = 1;
           break;
         }
-        if (kind === CELL.VOID || kind === CELL.CHASM) {
-          /* keep going through void; soft stop far */
-        }
       }
-      let perp = 0;
-      if (hit) {
-        perp = side === 0
+      let perp = hit
+        ? (side === 0
           ? (mapX - camX + (1 - stepX) / 2) / rayDirX
-          : (mapY - camY + (1 - stepY) / 2) / rayDirY;
-      } else {
-        perp = 24;
-      }
+          : (mapY - camY + (1 - stepY) / 2) / rayDirY)
+        : 40;
       if (perp < 0.05) perp = 0.05;
       const lineH = Math.floor(h / perp);
-      const drawStart = Math.max(0, Math.floor(-lineH / 2 + h / 2));
-      const drawEnd = Math.min(h - 1, Math.floor(lineH / 2 + h / 2));
+      const drawStart = Math.max(0, (-lineH / 2 + h / 2) | 0);
+      const drawEnd = Math.min(h - 1, (lineH / 2 + h / 2) | 0);
 
-      /* ceiling / floor */
-      const ceilGrad = ctx.createLinearGradient(col, 0, col, h / 2);
-      ceilGrad.addColorStop(0, "#1a1510");
-      ceilGrad.addColorStop(1, "#0c0a08");
-      ctx.fillStyle = ceilGrad;
-      ctx.fillRect(col, 0, 1, h / 2);
-      const floorGrad = ctx.createLinearGradient(col, h / 2, col, h);
-      floorGrad.addColorStop(0, "#2a241c");
-      floorGrad.addColorStop(1, "#12100c");
-      ctx.fillStyle = floorGrad;
-      ctx.fillRect(col, h / 2, 1, h / 2);
-
-      if (hit && perp <= range + 0.5) {
-        let shade = side ? 0.65 : 0.85;
-        if (kind === CELL.DOOR) shade *= 0.9;
-        if (kind === CELL.SECRET) shade *= master ? 0.55 : 0.85;
+      if (hit && perp <= range + 0.8) {
+        let wallX = side === 0 ? camY + perp * rayDirY : camX + perp * rayDirX;
+        wallX -= Math.floor(wallX);
+        let texX = (wallX * TEX) | 0;
+        if (side === 0 && rayDirX > 0) texX = TEX - texX - 1;
+        if (side === 1 && rayDirY < 0) texX = TEX - texX - 1;
+        const tex = texForCell(kind, master);
         const fog = Math.min(1, perp / Math.max(range, 0.5));
-        shade *= 1 - fog * 0.92;
-        const base = kind === CELL.DOOR ? [120, 90, 50] : (kind === CELL.SECRET && master ? [90, 70, 40] : [70, 62, 52]);
-        const r = Math.round(base[0] * shade);
-        const g = Math.round(base[1] * shade);
-        const b = Math.round(base[2] * shade);
-        ctx.fillStyle = "rgb(" + r + "," + g + "," + b + ")";
-        ctx.fillRect(col, drawStart, 1, drawEnd - drawStart + 1);
-        if (kind === CELL.DOOR) {
-          ctx.fillStyle = "rgba(30,20,10," + (0.35 + fog * 0.4) + ")";
-          ctx.fillRect(col, drawStart + (drawEnd - drawStart) * 0.15, 1, (drawEnd - drawStart) * 0.7);
+        const shade = (side ? 0.7 : 1) * (1 - fog * 0.85);
+        ctx.globalAlpha = Math.max(0.15, shade);
+        ctx.drawImage(tex, texX, 0, 1, TEX, col, drawStart, 1, drawEnd - drawStart + 1);
+        ctx.globalAlpha = 1;
+        if (kind === CELL.STAIR_UP || kind === CELL.STAIR_DOWN) {
+          ctx.fillStyle = "rgba(230,195,106," + (0.25 * (1 - fog)) + ")";
+          ctx.fillRect(col, drawStart, 1, drawEnd - drawStart + 1);
         }
       } else if (!master) {
-        ctx.fillStyle = "rgba(0,0,0," + Math.min(0.96, 0.55 + (perp / 20)) + ")";
+        ctx.fillStyle = "rgba(0,0,0,0.85)";
         ctx.fillRect(col, 0, 1, h);
       }
     }
 
-    /* sprites: foes + revealed props */
     const sprites = [];
     (page.foes || []).forEach(function (f) {
       if (!f || f.dead) return;
       const dist = dist2(camX, camY, f.x + 0.5, f.y + 0.5);
       if (!master && dist > range) return;
-      if (!master && !hasLos(level, party.x, party.y, f.x, f.y, page)) return;
-      sprites.push({ x: f.x + 0.5, y: f.y + 0.5, dist: dist, label: f.name || "Враг", foe: true, portrait: f.portrait });
+      if (!master && !hasLos(page, level, party.x, party.y, f.x, f.y)) return;
+      sprites.push({ x: f.x + 0.5, y: f.y + 0.5, dist: dist, kind: "foe", label: f.name, portrait: f.portrait });
     });
     (page.props || []).forEach(function (p) {
       if (!p) return;
       if (p.secret && !p.revealed && !master) return;
-      if (!master && p.secret && !p.revealed) return;
       const dist = dist2(camX, camY, p.x + 0.5, p.y + 0.5);
       if (!master && dist > range) return;
       sprites.push({
-        x: p.x + 0.5,
-        y: p.y + 0.5,
-        dist: dist,
-        label: p.name || (p.kind === "secretDoor" ? "Секрет" : "Объект"),
-        secret: !!p.secret && !p.revealed,
-        revealed: !!p.revealed
+        x: p.x + 0.5, y: p.y + 0.5, dist: dist,
+        kind: p.kind || "note",
+        label: p.name || "",
+        secret: !!p.secret && !p.revealed
       });
     });
     sprites.sort(function (a, b) { return b.dist - a.dist; });
@@ -455,27 +697,18 @@ window.ShirmoDungeon = (function () {
       const transformX = inv * (rdy * relX - rdx * relY);
       const transformY = inv * (-planeY * relX + planeX * relY);
       if (transformY <= 0.2) return;
-      const spriteH = Math.abs(Math.floor(h / transformY * 0.7));
+      const spriteH = Math.abs(h / transformY * 0.65) | 0;
       const spriteW = spriteH;
-      const screenX = Math.floor(w / 2 * (1 + transformX / transformY));
-      const drawX = Math.floor(screenX - spriteW / 2);
-      const drawY = Math.floor(h / 2 - spriteH / 2);
+      const screenX = (w / 2 * (1 + transformX / transformY)) | 0;
+      const drawX = (screenX - spriteW / 2) | 0;
+      const drawY = (h / 2 - spriteH / 2) | 0;
       const fog = Math.min(1, sp.dist / Math.max(range, 0.5));
-      ctx.globalAlpha = master && sp.secret ? 0.55 : (1 - fog * 0.75);
-      if (sp.foe) {
-        ctx.fillStyle = "#6b2a22";
-        ctx.fillRect(drawX, drawY, spriteW, spriteH);
-        ctx.strokeStyle = "#e07a6a";
-        ctx.strokeRect(drawX + 0.5, drawY + 0.5, spriteW - 1, spriteH - 1);
-      } else {
-        ctx.fillStyle = sp.secret ? "#c4a35a" : (sp.revealed ? "#8fce4a" : "#5a6a7a");
-        ctx.beginPath();
-        ctx.ellipse(screenX, drawY + spriteH * 0.55, spriteW * 0.28, spriteH * 0.35, 0, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      ctx.globalAlpha = (master && sp.secret ? 0.55 : 1) * (1 - fog * 0.7);
+      const ic = iconOf(sp.kind === "foe" ? "foe" : sp.kind, Math.max(32, Math.min(128, spriteW)));
+      ctx.drawImage(ic, drawX, drawY, spriteW, spriteH);
       ctx.globalAlpha = 1;
-      if (spriteH > 28) {
-        ctx.fillStyle = "rgba(243,234,216," + (0.85 - fog * 0.5) + ")";
+      if (spriteH > 36 && sp.label) {
+        ctx.fillStyle = "rgba(243,234,216," + (0.9 - fog * 0.5) + ")";
         ctx.font = "12px Georgia, serif";
         ctx.textAlign = "center";
         ctx.fillText(sp.label, screenX, drawY - 4);
@@ -483,10 +716,10 @@ window.ShirmoDungeon = (function () {
     });
 
     if (!master) {
-      const g = ctx.createRadialGradient(w / 2, h * 0.55, h * 0.08, w / 2, h * 0.55, h * 0.72);
-      g.addColorStop(0, "rgba(0,0,0,0)");
-      g.addColorStop(0.55, "rgba(0,0,0,0.15)");
-      g.addColorStop(1, "rgba(0,0,0," + (page.party.torch || page.party.darkvision ? 0.72 : 0.94) + ")");
+      const g = ctx.createRadialGradient(w / 2, h * 0.55, h * 0.05, w / 2, h * 0.55, h * 0.75);
+      g.addColorStop(0, "rgba(255,180,80,0.06)");
+      g.addColorStop(0.35, "rgba(0,0,0,0)");
+      g.addColorStop(1, "rgba(0,0,0," + (page.party.torch || page.party.darkvision ? 0.78 : 0.95) + ")");
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, w, h);
     }
@@ -506,32 +739,27 @@ window.ShirmoDungeon = (function () {
     ctx.fillRect(0, 0, tw, th);
     for (let y = 0; y < level.h; y++) {
       for (let x = 0; x < level.w; x++) {
-        const seen = master || page.explored[keyOf(x, y, party.z || 0)];
+        const seen = master || page.explored[keyOf(level.id, x, y)];
         if (!seen) continue;
         const kind = effectiveCell(page, level, x, y);
         if (kind === CELL.VOID) continue;
-        if (kind === CELL.WALL || (kind === CELL.SECRET && !secretOpenAt(page, x, y))) ctx.fillStyle = "#4a4338";
-        else if (kind === CELL.DOOR) ctx.fillStyle = "#8a6a3a";
-        else if (kind === CELL.CHASM) ctx.fillStyle = "#1a1210";
+        if (kind === CELL.WALL || kind === CELL.SECRET) ctx.fillStyle = "#5a5248";
+        else if (kind === CELL.DOOR) ctx.fillStyle = "#a07840";
+        else if (kind === CELL.CHASM) ctx.fillStyle = "#120c0a";
         else if (kind === CELL.BRIDGE) ctx.fillStyle = "#6a5230";
+        else if (kind === CELL.STAIR_UP || kind === CELL.STAIR_DOWN) ctx.fillStyle = "#c4a35a";
         else ctx.fillStyle = "#2e2a22";
         ctx.fillRect(ox + x * cell, oy + y * cell, Math.ceil(cell), Math.ceil(cell));
       }
     }
     (page.foes || []).forEach(function (f) {
       if (!f || f.dead) return;
-      const seen = master || page.explored[keyOf(f.x, f.y, party.z || 0)];
-      if (!seen) return;
-      if (!master) {
-        const dist = dist2(party.x, party.y, f.x, f.y);
-        if (dist > visionRange(page)) return;
-      }
-      ctx.fillStyle = "#e4533e";
-      ctx.fillRect(ox + f.x * cell + cell * 0.2, oy + f.y * cell + cell * 0.2, cell * 0.6, cell * 0.6);
+      if (!master && !page.explored[keyOf(level.id, f.x, f.y)]) return;
+      ctx.drawImage(iconOf("foe", 16), ox + f.x * cell, oy + f.y * cell, cell, cell);
     });
+    const dir = DIRS[party.dir || 0];
     const px = ox + (party.x + 0.5) * cell;
     const py = oy + (party.y + 0.5) * cell;
-    const dir = DIRS[party.dir || 0];
     ctx.fillStyle = "#e6c36a";
     ctx.beginPath();
     ctx.moveTo(px + dir.x * cell * 0.45, py + dir.y * cell * 0.45);
@@ -541,28 +769,35 @@ window.ShirmoDungeon = (function () {
     ctx.fill();
   }
 
-  /* effectiveCell for page projection shape */
+  function paintView(root, page, opts) {
+    if (!root || !page || page.kind !== "dungeon") return;
+    const fp = root.querySelector(".dung-fp");
+    const mini = root.querySelector(".dung-mini");
+    if (fp) renderFp(fp, page, opts);
+    if (mini) renderMini(mini, page, opts);
+    const flash = root.querySelector(".dung-flash");
+    if (flash && page.flash) {
+      flash.hidden = false;
+      flash.textContent = page.flash.text || "Открыто!";
+      setTimeout(function () { flash.hidden = true; }, 1600);
+    }
+  }
+
+  /* effectiveCell/hasLos for projected page (props without levelId filter already) */
   function effectiveCell(pageOrD, level, x, y) {
     const kind = cellAt(level, x, y);
     const props = pageOrD.props || [];
     if (kind === CELL.SECRET) {
       const open = props.some(function (p) {
-        return p && p.kind === "secretDoor" && p.x === x && p.y === y && p.revealed;
+        return p && p.kind === "secretDoor" && p.x === x && p.y === y && p.revealed &&
+          (!p.levelId || !level.id || p.levelId === level.id);
       });
-      if (open) return CELL.FLOOR;
+      if (open) return CELL.DOOR;
     }
     return kind;
   }
 
-  function visionRange(pageOrD) {
-    const party = pageOrD.party || {};
-    const cellFt = Number(pageOrD.cellFt) || 5;
-    if (party.darkvision) return Math.max(1, (Number(pageOrD.darkvisionFt) || 60) / cellFt);
-    if (party.torch === false) return 0.5;
-    return Math.max(0.5, (Number(pageOrD.torchFt) || 15) / cellFt);
-  }
-
-  function hasLos(level, x0, y0, x1, y1, pageOrD) {
+  function hasLos(pageOrD, level, x0, y0, x1, y1) {
     let x = x0;
     let y = y0;
     const dx = Math.abs(x1 - x0);
@@ -583,247 +818,310 @@ window.ShirmoDungeon = (function () {
     }
   }
 
-  function secretOpenAt(pageOrD, x, y) {
-    return (pageOrD.props || []).some(function (p) {
-      return p && p.kind === "secretDoor" && p.x === x && p.y === y && p.revealed;
-    });
+  function visionRange(pageOrD) {
+    const party = pageOrD.party || {};
+    const cellFt = Number(pageOrD.cellFt) || 5;
+    if (party.darkvision) return Math.max(1, (Number(pageOrD.darkvisionFt) || 60) / cellFt);
+    if (party.torch === false) return 0.6;
+    return Math.max(0.6, (Number(pageOrD.torchFt) || 15) / cellFt);
   }
 
   function mount(host, ctx) {
     if (!host || !ctx || !ctx.campaign) return;
     const d = ensure(ctx.campaign);
-    let tool = "floor";
+    let tool = "wall";
+    let propKind = d.brushProp || "lever";
     let paint = false;
-    let viewMode = "edit"; /* edit | eyes */
+    let pan = { x: 0, y: 0 };
+    let zoom = 1;
+    let spaceDown = false;
+    let panning = false;
+    let panFrom = null;
+    let localUnder = "";
+
     host.innerHTML =
       '<div class="dung-work">' +
       '<aside class="dung-side">' +
       '<div class="dung-side-head"><h2>Данж</h2>' +
-      '<label class="check" title="Показывать игрокам">Экран<input type="checkbox" data-dung="screen"' + (d.screen ? " checked" : "") + "></label></div>" +
-      '<p class="note">' + esc(d.title) + " · 1кл = " + esc(d.cellFt) + "фт</p>" +
+      '<label class="check">Экран<input type="checkbox" data-dung="screen"' + (d.screen ? " checked" : "") + "></label></div>" +
+      '<input class="dung-title" data-dung="title" type="text" value="' + esc(d.title) + '" title="Название">' +
+
+      '<div class="dung-floors">' +
+      '<div class="dung-floors-head"><span>Этажи</span>' +
+      '<button type="button" data-floor-add title="Новый этаж">+</button></div>' +
+      '<div class="dung-floor-list" data-floor-list></div></div>' +
+
       '<div class="dung-under-box">' +
-      '<p class="dung-under-title">Подложка</p>' +
-      '<label class="dung-upload" title="Загрузить свою картинку карты">' +
-      '<span>Загрузить свою карту</span>' +
-      '<input type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.gif" data-dung-upload>' +
-      "</label>" +
-      '<p class="note" data-dung-upload-status>' + (d.underlay.custom ? "Своя карта в комнате. Можно загрузить снова." : "Жми жёлтую кнопку и выбери файл.") + "</p>" +
-      '<label>Или встроенная<select data-dung="underlay">' +
-      '<option value="custom"' + (d.underlay.custom ? "" : " disabled") + ">Своя загрузка</option>" +
-      '<option value="master">Redbrand мастер</option>' +
-      '<option value="clean">Redbrand чистая</option>' +
-      '<option value="off">Без картинки</option></select></label>' +
-      '<label>Яркость<input data-dung="alpha" type="range" min="30" max="100" value="' + Math.round((d.underlay.alpha || 0.92) * 100) + '"></label>' +
-      "</div>" +
-      '<div class="dung-tools">' +
-      '<button type="button" data-tool="floor" class="is-on">Пол</button>' +
-      '<button type="button" data-tool="wall">Стена</button>' +
-      '<button type="button" data-tool="door">Дверь</button>' +
-      '<button type="button" data-tool="secret">Секрет</button>' +
-      '<button type="button" data-tool="chasm">Пропасть</button>' +
-      '<button type="button" data-tool="bridge">Мост</button>' +
-      '<button type="button" data-tool="erase">Стереть</button>' +
-      '<button type="button" data-tool="party">Партия</button>' +
-      '<button type="button" data-tool="foe">Враг</button>' +
-      '<button type="button" data-tool="secretProp">Рычаг</button>' +
-      "</div>" +
-      '<div class="row dung-view-toggle">' +
-      '<button type="button" data-dung-view="edit" class="is-on">Редактор</button>' +
-      '<button type="button" data-dung-view="eyes">Глаза игрока</button>' +
-      "</div>" +
+      '<p class="dung-under-title">Подложка этажа</p>' +
+      '<label class="dung-upload"><span>Загрузить карту</span>' +
+      '<input type="file" accept="image/*" data-dung-upload></label>' +
+      '<p class="note" data-dung-upload-status>Карта под сеткой для обводки.</p>' +
+      '<label>Яркость<input data-dung="alpha" type="range" min="20" max="100" value="' + Math.round((d.underlay.alpha || 0.85) * 100) + '"></label>' +
+      '<button type="button" data-dung-clear-under>Убрать подложку</button></div>' +
+
+      '<div class="dung-tools" data-tools></div>' +
+
+      '<div class="dung-props" data-prop-palette></div>' +
+
+      '<div class="dung-light">' +
       '<label>Факел,фт<input data-dung="torch" type="number" min="5" max="120" value="' + esc(d.torchFt) + '"></label>' +
-      '<label class="check">Факел у партии<input type="checkbox" data-dung="partyTorch"' + (d.party.torch ? " checked" : "") + "></label>" +
-      '<label class="check">Тёмное зрение<input type="checkbox" data-dung="darkvision"' + (d.party.darkvision ? " checked" : "") + "></label>" +
-      '<div class="dung-move">' +
-      '<button type="button" data-move="left" title="Влево">⟲</button>' +
-      '<button type="button" data-move="forward" title="Вперёд">↑</button>' +
-      '<button type="button" data-move="right" title="Вправо">⟳</button>' +
-      '<button type="button" data-move="back" title="Назад">↓</button>' +
+      '<label class="check">Факел<input type="checkbox" data-dung="partyTorch"' + (d.party.torch ? " checked" : "") + "></label>" +
+      '<label class="check">ТЗ<input type="checkbox" data-dung="darkvision"' + (d.party.darkvision ? " checked" : "") + "></label>" +
       "</div>" +
+
+      '<div class="dung-move">' +
+      '<button type="button" data-move="left">⟲</button>' +
+      '<button type="button" data-move="forward">↑</button>' +
+      '<button type="button" data-move="right">⟳</button>' +
+      '<button type="button" data-move="back">↓</button></div>' +
+
       '<div class="dung-init-host"></div>' +
       '<div class="dung-secret-box" hidden>' +
       '<p class="hero-label">Секрет</p>' +
       '<label>Имя<input data-secret-name type="text"></label>' +
       '<label>DC<input data-secret-dc type="number" min="1" max="30" value="15"></label>' +
       '<button type="button" class="primary" data-secret-check>Проверка</button>' +
-      '<button type="button" data-secret-reveal>Открыть</button>' +
-      "</div>" +
-      '<p class="note">WASD / стрелки — ход. Клик по сетке — кисть. Секрет на стене = скрытая дверь.</p>' +
-      '</aside>' +
+      '<button type="button" data-secret-reveal>Открыть</button></div>' +
+      '<p class="note">Колесо — зум · Пробел+тяни — панорама · WASD — ход</p>' +
+      "</aside>" +
+
       '<div class="dung-main">' +
-      '<div class="dung-edit-wrap">' +
-      '<img class="dung-under-img" alt="подложка" draggable="false">' +
-      '<canvas class="dung-grid" width="840" height="1040"></canvas>' +
-      "</div>" +
-      '<div class="dung-eyes" hidden>' +
-      '<canvas class="dung-fp" width="960" height="540"></canvas>' +
-      '<canvas class="dung-mini" width="220" height="220"></canvas>' +
-      "</div></div></div>";
+      '<div class="dung-board">' +
+      '<div class="dung-edit-wrap" data-edit-wrap>' +
+      '<img class="dung-under-img" alt="" draggable="false" hidden>' +
+      '<canvas class="dung-grid" width="960" height="1120"></canvas></div></div>' +
+      '<div class="dung-preview">' +
+      '<p class="dung-under-title">Вид игрока</p>' +
+      '<canvas class="dung-fp" width="480" height="270"></canvas>' +
+      '<canvas class="dung-mini" width="180" height="180"></canvas></div>' +
+      "</div></div>";
 
     const grid = host.querySelector(".dung-grid");
     const underDom = host.querySelector(".dung-under-img");
-    const eyes = host.querySelector(".dung-eyes");
-    const editWrap = host.querySelector(".dung-edit-wrap");
-    const secretBox = host.querySelector(".dung-secret-box");
+    const editWrap = host.querySelector("[data-edit-wrap]");
+    const board = host.querySelector(".dung-board");
+    const preview = host.querySelector(".dung-preview");
     const statusEl = host.querySelector("[data-dung-upload-status]");
+    const secretBox = host.querySelector(".dung-secret-box");
     let selectedProp = null;
-    let localPreview = "";
     const underImg = new Image();
-    underImg.decoding = "async";
     underImg.onload = function () {
       underDom.hidden = false;
-      paintGrid();
+      underDom.src = underImg.src;
+      paintAll();
     };
     underImg.onerror = function () {
-      if (statusEl) statusEl.textContent = "Карта не открылась. Загрузи файл ещё раз.";
       underDom.hidden = true;
-      paintGrid();
+      if (statusEl) statusEl.textContent = "Карта не открылась — загрузи ещё раз.";
     };
 
     function saveSoon() {
       markExplored(d);
-      const keepPreview = d.underlay.preview;
       delete d.underlay.preview;
+      d.levels.forEach(function (l) {
+        if (String(l.underlay || "").indexOf("blob:") === 0) { /* keep server urls only in save path */ }
+      });
+      const snap = d.levels.map(function (l) { return l.underlay; });
+      /* don't persist blob underlays */
+      d.levels.forEach(function (l) {
+        if (String(l.underlay || "").indexOf("blob:") === 0) l.underlay = l._savedUnder || "";
+      });
       if (ctx.save) ctx.save();
-      if (keepPreview) d.underlay.preview = keepPreview;
+      d.levels.forEach(function (l, i) { l.underlay = snap[i]; });
     }
+
+    function level() { return activeLevel(d); }
 
     function underUrl() {
-      const show = d.underlay.show || "master";
-      if (show === "off") return "";
-      if (show === "custom") return localPreview || d.underlay.custom || "";
-      if (show === "clean") return d.underlay.clean || CLEAN_MAP;
-      return d.underlay.master || MASTER_MAP;
+      const lv = level();
+      if (localUnder) return localUnder;
+      return (lv && lv.underlay) || "";
     }
 
-    function setUnderSrc(url) {
+    function syncUnder() {
+      const url = underUrl();
       if (!url) {
         underImg.removeAttribute("src");
-        underDom.removeAttribute("src");
         underDom.hidden = true;
-        underImg.dataset.url = "";
+        underDom.removeAttribute("src");
         return;
       }
-      if (underImg.dataset.url === url && underImg.naturalWidth) {
-        underDom.src = url;
-        underDom.hidden = false;
-        return;
+      if (underImg.src !== url && underImg.dataset.url !== url) {
+        underImg.dataset.url = url;
+        underImg.src = url;
       }
-      underImg.dataset.url = url;
-      underImg.src = url;
       underDom.src = url;
       underDom.hidden = false;
     }
 
-    function syncUnder() {
-      setUnderSrc(underUrl());
+    function paintFloors() {
+      const box = host.querySelector("[data-floor-list]");
+      box.innerHTML = d.levels.map(function (l) {
+        return '<button type="button" class="dung-floor' + (l.id === d.activeLevelId ? " is-on" : "") + '" data-floor="' + esc(l.id) + '">' +
+          esc(l.name) +
+          (d.levels.length > 1 ? '<span data-floor-del="' + esc(l.id) + '" title="Удалить">×</span>' : "") +
+          "</button>";
+      }).join("");
     }
 
-    function paintGrid() {
-      const level = levelOf(d);
-      const ctx2 = grid.getContext("2d");
-      const cell = Math.min(grid.width / level.w, grid.height / level.h);
-      const ox = (grid.width - level.w * cell) / 2;
-      const oy = (grid.height - level.h * cell) / 2;
-      const mapW = level.w * cell;
-      const mapH = level.h * cell;
-      underDom.style.left = ox + "px";
-      underDom.style.top = oy + "px";
-      underDom.style.width = mapW + "px";
-      underDom.style.height = mapH + "px";
-      underDom.style.opacity = String(Math.max(0.3, Math.min(1, Number(d.underlay.alpha) || 0.92)));
-      ctx2.clearRect(0, 0, grid.width, grid.height);
-      /* подложка — через <img> под canvas; canvas только сетка/кисть */
-      if (!underUrl()) {
-        ctx2.fillStyle = "#15120e";
-        ctx2.fillRect(0, 0, grid.width, grid.height);
-        ctx2.fillStyle = "#c4a35a";
-        ctx2.font = "18px Georgia, serif";
-        ctx2.textAlign = "center";
-        ctx2.fillText("Загрузи карту слева", grid.width / 2, grid.height / 2);
-      }
-      for (let y = 0; y < level.h; y++) {
-        for (let x = 0; x < level.w; x++) {
-          const kind = cellAt(level, x, y);
-          if (kind === CELL.VOID) continue;
-          const colors = {
-            1: "rgba(80,70,55,0.28)",
-            2: "rgba(20,18,14,0.72)",
-            3: "rgba(140,100,40,0.55)",
-            4: "rgba(180,140,50,0.6)",
-            5: "rgba(10,8,12,0.65)",
-            6: "rgba(110,80,40,0.5)"
-          };
-          ctx2.fillStyle = colors[kind] || "rgba(60,60,60,0.4)";
-          ctx2.fillRect(ox + x * cell, oy + y * cell, cell + 0.5, cell + 0.5);
-        }
-      }
-      ctx2.strokeStyle = "rgba(230,195,106,0.35)";
-      ctx2.lineWidth = 1;
-      for (let x = 0; x <= level.w; x++) {
-        ctx2.beginPath();
-        ctx2.moveTo(ox + x * cell, oy);
-        ctx2.lineTo(ox + x * cell, oy + level.h * cell);
-        ctx2.stroke();
-      }
-      for (let y = 0; y <= level.h; y++) {
-        ctx2.beginPath();
-        ctx2.moveTo(ox, oy + y * cell);
-        ctx2.lineTo(ox + level.w * cell, oy + y * cell);
-        ctx2.stroke();
-      }
-      (d.props || []).forEach(function (p) {
-        ctx2.fillStyle = p.revealed ? "#8fce4a" : "#e6c36a";
-        ctx2.beginPath();
-        ctx2.arc(ox + (p.x + 0.5) * cell, oy + (p.y + 0.5) * cell, cell * 0.28, 0, Math.PI * 2);
-        ctx2.fill();
-        if (selectedProp && selectedProp.id === p.id) {
-          ctx2.strokeStyle = "#fff";
-          ctx2.stroke();
-        }
-      });
-      (d.foes || []).forEach(function (f) {
-        ctx2.fillStyle = "#e4533e";
-        ctx2.fillRect(ox + f.x * cell + cell * 0.2, oy + f.y * cell + cell * 0.2, cell * 0.6, cell * 0.6);
-      });
-      const dir = DIRS[d.party.dir || 0];
-      const px = ox + (d.party.x + 0.5) * cell;
-      const py = oy + (d.party.y + 0.5) * cell;
-      ctx2.fillStyle = "#e6c36a";
-      ctx2.beginPath();
-      ctx2.moveTo(px + dir.x * cell * 0.4, py + dir.y * cell * 0.4);
-      ctx2.lineTo(px - dir.x * cell * 0.28 - dir.y * cell * 0.25, py - dir.y * cell * 0.28 + dir.x * cell * 0.25);
-      ctx2.lineTo(px - dir.x * cell * 0.28 + dir.y * cell * 0.25, py - dir.y * cell * 0.28 - dir.x * cell * 0.25);
-      ctx2.closePath();
-      ctx2.fill();
-      grid._cell = cell;
-      grid._ox = ox;
-      grid._oy = oy;
+    function paintTools() {
+      const box = host.querySelector("[data-tools]");
+      box.innerHTML = TOOLS.map(function (t) {
+        return '<button type="button" data-tool="' + t.id + '" class="' + (tool === t.id ? "is-on" : "") + '">' + esc(t.label) + "</button>";
+      }).join("");
     }
 
-    function paintEyes() {
-      const page = project(ctx.campaign);
-      paintView(eyes, page, { master: true });
+    function paintPropPalette() {
+      const box = host.querySelector("[data-prop-palette]");
+      box.innerHTML = '<p class="dung-under-title">Иконки</p><div class="dung-prop-grid">' +
+        PROP_KINDS.map(function (p) {
+          return '<button type="button" class="dung-prop-btn' + (propKind === p.id ? " is-on" : "") + '" data-prop-kind="' + p.id + '" title="' + esc(p.name) + '">' +
+            '<canvas width="36" height="36" data-icon="' + p.id + '"></canvas><span>' + esc(p.name) + "</span></button>";
+        }).join("") + "</div>";
+      box.querySelectorAll("canvas[data-icon]").forEach(function (c) {
+        c.getContext("2d").drawImage(iconOf(c.getAttribute("data-icon"), 36), 0, 0);
+      });
     }
 
     function paintInit() {
       const box = host.querySelector(".dung-init-host");
-      const battle = projectInit(ctx.campaign);
-      box.innerHTML = battle
-        ? initStripHtml(battle, true) + '<div class="row"><button type="button" data-dung-next>След. ход</button></div>'
-        : '<p class="note">Нет актёров в бое. Поставьте врага или героя в модуле Бой.</p>';
+      const page = project(ctx.campaign);
+      box.innerHTML = page.battle
+        ? initStripHtml(page.battle, true) + '<div class="row"><button type="button" data-dung-next>След. ход</button></div>'
+        : '<p class="note">Поставь врага кистью «Враг» или добавь в Бой.</p>';
     }
 
-    function refresh() {
-      syncUnder();
-      paintGrid();
-      paintEyes();
-      paintInit();
+    function paintGrid() {
+      const lv = level();
+      const ctx2 = grid.getContext("2d");
+      const base = Math.min(grid.width / lv.w, grid.height / lv.h);
+      const cell = base * zoom;
+      const ox = (grid.width - lv.w * cell) / 2 + pan.x;
+      const oy = (grid.height - lv.h * cell) / 2 + pan.y;
+      const mapW = lv.w * cell;
+      const mapH = lv.h * cell;
+      underDom.style.left = ox + "px";
+      underDom.style.top = oy + "px";
+      underDom.style.width = mapW + "px";
+      underDom.style.height = mapH + "px";
+      underDom.style.opacity = String(Math.max(0.2, Math.min(1, Number(d.underlay.alpha) || 0.85)));
+
+      ctx2.clearRect(0, 0, grid.width, grid.height);
+      if (!underUrl()) {
+        ctx2.fillStyle = "#12100c";
+        ctx2.fillRect(0, 0, grid.width, grid.height);
+        /* procedural floor hint */
+        const pat = ctx2.createPattern(textures().floor, "repeat");
+        if (pat) {
+          ctx2.globalAlpha = 0.35;
+          ctx2.fillStyle = pat;
+          ctx2.fillRect(ox, oy, mapW, mapH);
+          ctx2.globalAlpha = 1;
+        }
+      }
+
+      for (let y = 0; y < lv.h; y++) {
+        for (let x = 0; x < lv.w; x++) {
+          const kind = cellAt(lv, x, y);
+          if (kind === CELL.VOID) continue;
+          const colors = {
+            1: "rgba(90,80,60,0.25)",
+            2: "rgba(25,22,18,0.78)",
+            3: "rgba(140,100,40,0.55)",
+            4: "rgba(200,160,60,0.55)",
+            5: "rgba(8,6,10,0.75)",
+            6: "rgba(110,80,40,0.5)",
+            7: "rgba(230,195,106,0.45)",
+            8: "rgba(180,140,70,0.45)"
+          };
+          ctx2.fillStyle = colors[kind] || "rgba(60,60,60,0.4)";
+          ctx2.fillRect(ox + x * cell, oy + y * cell, cell + 0.4, cell + 0.4);
+          if (kind === CELL.STAIR_UP || kind === CELL.STAIR_DOWN) {
+            ctx2.fillStyle = "#e6c36a";
+            ctx2.font = Math.max(10, cell * 0.55) + "px Georgia";
+            ctx2.textAlign = "center";
+            ctx2.textBaseline = "middle";
+            ctx2.fillText(kind === CELL.STAIR_UP ? "▲" : "▼", ox + (x + 0.5) * cell, oy + (y + 0.5) * cell);
+          }
+        }
+      }
+
+      ctx2.strokeStyle = "rgba(230,195,106,0.28)";
+      ctx2.lineWidth = 1;
+      for (let x = 0; x <= lv.w; x++) {
+        ctx2.beginPath();
+        ctx2.moveTo(ox + x * cell, oy);
+        ctx2.lineTo(ox + x * cell, oy + mapH);
+        ctx2.stroke();
+      }
+      for (let y = 0; y <= lv.h; y++) {
+        ctx2.beginPath();
+        ctx2.moveTo(ox, oy + y * cell);
+        ctx2.lineTo(ox + mapW, oy + y * cell);
+        ctx2.stroke();
+      }
+
+      (d.props || []).filter(function (p) { return p.levelId === lv.id; }).forEach(function (p) {
+        const ic = iconOf(p.kind || "note", Math.max(16, (cell * 0.85) | 0));
+        ctx2.globalAlpha = p.revealed ? 1 : (p.secret ? 0.85 : 1);
+        ctx2.drawImage(ic, ox + p.x * cell + cell * 0.05, oy + p.y * cell + cell * 0.05, cell * 0.9, cell * 0.9);
+        ctx2.globalAlpha = 1;
+        if (selectedProp && selectedProp.id === p.id) {
+          ctx2.strokeStyle = "#fff";
+          ctx2.lineWidth = 2;
+          ctx2.strokeRect(ox + p.x * cell, oy + p.y * cell, cell, cell);
+        }
+      });
+
+      (d.foes || []).filter(function (f) { return f.levelId === lv.id; }).forEach(function (f) {
+        ctx2.drawImage(iconOf("foe", Math.max(16, (cell * 0.9) | 0)), ox + f.x * cell + cell * 0.05, oy + f.y * cell + cell * 0.05, cell * 0.9, cell * 0.9);
+      });
+
+      if (d.party.levelId === lv.id) {
+        const dir = DIRS[d.party.dir || 0];
+        const px = ox + (d.party.x + 0.5) * cell;
+        const py = oy + (d.party.y + 0.5) * cell;
+        ctx2.fillStyle = "#e6c36a";
+        ctx2.beginPath();
+        ctx2.moveTo(px + dir.x * cell * 0.42, py + dir.y * cell * 0.42);
+        ctx2.lineTo(px - dir.x * cell * 0.28 - dir.y * cell * 0.26, py - dir.y * cell * 0.28 + dir.x * cell * 0.26);
+        ctx2.lineTo(px - dir.x * cell * 0.28 + dir.y * cell * 0.26, py - dir.y * cell * 0.28 - dir.x * cell * 0.26);
+        ctx2.closePath();
+        ctx2.fill();
+      }
+
+      grid._cell = cell;
+      grid._ox = ox;
+      grid._oy = oy;
       secretBox.hidden = !selectedProp;
       if (selectedProp) {
         host.querySelector("[data-secret-name]").value = selectedProp.name || "";
         host.querySelector("[data-secret-dc]").value = String(selectedProp.dc || 15);
       }
+    }
+
+    function paintPreview() {
+      /* temporarily point party view to active floor for preview if same */
+      const page = project(ctx.campaign);
+      if (d.activeLevelId !== d.party.levelId) {
+        const lv = level();
+        page.level = { id: lv.id, name: lv.name, w: lv.w, h: lv.h, cells: lv.cells };
+        page.props = (d.props || []).filter(function (p) { return p.levelId === lv.id; });
+        page.foes = (d.foes || []).filter(function (f) { return f.levelId === lv.id; }).map(function (f) {
+          return { id: f.id, x: f.x, y: f.y, name: f.name || "Враг", dead: false };
+        });
+      }
+      paintView(preview, page, { master: true });
+    }
+
+    function paintAll() {
+      paintFloors();
+      paintTools();
+      paintPropPalette();
+      syncUnder();
+      paintGrid();
+      paintPreview();
+      paintInit();
     }
 
     function cellFromEvent(event) {
@@ -834,19 +1132,20 @@ window.ShirmoDungeon = (function () {
       const my = (event.clientY - rect.top) * scaleY;
       const x = Math.floor((mx - grid._ox) / grid._cell);
       const y = Math.floor((my - grid._oy) / grid._cell);
-      const level = levelOf(d);
-      if (x < 0 || y < 0 || x >= level.w || y >= level.h) return null;
+      const lv = level();
+      if (x < 0 || y < 0 || x >= lv.w || y >= lv.h) return null;
       return { x: x, y: y };
     }
 
     function applyBrush(at) {
       if (!at) return;
-      const level = levelOf(d);
+      const lv = level();
       if (tool === "party") {
         d.party.x = at.x;
         d.party.y = at.y;
+        d.party.levelId = lv.id;
         markExplored(d);
-        refresh();
+        paintAll();
         saveSoon();
         return;
       }
@@ -855,86 +1154,54 @@ window.ShirmoDungeon = (function () {
         let actor = null;
         if (battle) {
           actor = {
-            id: crypto.randomUUID(),
-            name: "Враг",
-            side: "foe",
-            hp: 11,
-            hpMax: 11,
-            ac: 13,
-            init: 10,
-            initBonus: 1,
-            dead: false,
-            weapon: "Скимитар",
-            damage: "1d6+1",
-            bonus: 3,
-            portrait: "",
-            marks: [],
-            note: "Данж"
+            id: uid(), name: "Враг", side: "foe", hp: 11, hpMax: 11, ac: 13,
+            init: 10, initBonus: 1, dead: false, weapon: "Скимитар", damage: "1d6+1",
+            bonus: 3, portrait: "", marks: [], note: "Данж"
           };
           battle.actors.push(actor);
           window.ShirmoBattle.ensure(ctx.campaign);
         }
-        d.foes.push({
-          id: crypto.randomUUID(),
-          x: at.x,
-          y: at.y,
-          z: 0,
-          actorId: actor ? actor.id : "",
-          name: "Враг"
-        });
-        refresh();
+        d.foes.push({ id: uid(), x: at.x, y: at.y, levelId: lv.id, actorId: actor ? actor.id : "", name: "Враг" });
+        paintAll();
         saveSoon();
         return;
       }
-      if (tool === "secretProp") {
+      if (tool === "prop") {
+        const meta = PROP_KINDS.find(function (p) { return p.id === propKind; }) || PROP_KINDS[0];
         const prop = {
-          id: crypto.randomUUID(),
-          x: at.x,
-          y: at.y,
-          z: 0,
-          kind: "lever",
-          name: "Скрытый рычаг",
-          secret: true,
-          revealed: false,
-          dc: 15,
-          skill: "Внимание"
+          id: uid(), x: at.x, y: at.y, levelId: lv.id,
+          kind: meta.id, name: meta.name, secret: !!meta.secret,
+          revealed: !meta.secret, dc: meta.dc || 15, skill: "Внимание"
         };
         d.props.push(prop);
         selectedProp = prop;
-        refresh();
+        if (meta.id === "secretDoor") lv.cells[at.y][at.x] = CELL.SECRET;
+        paintAll();
         saveSoon();
         return;
       }
-      const map = {
-        floor: CELL.FLOOR,
-        wall: CELL.WALL,
-        door: CELL.DOOR,
-        secret: CELL.SECRET,
-        chasm: CELL.CHASM,
-        bridge: CELL.BRIDGE,
-        erase: CELL.VOID
-      };
-      const next = map[tool];
-      if (next == null) return;
-      level.cells[at.y][at.x] = next;
+      const hit = (d.props || []).find(function (p) { return p.levelId === lv.id && p.x === at.x && p.y === at.y; });
+      if (hit && tool !== "erase") {
+        selectedProp = hit;
+        paintGrid();
+        return;
+      }
+      const t = TOOLS.find(function (row) { return row.id === tool; });
+      if (!t || t.cell == null) return;
+      lv.cells[at.y][at.x] = t.cell;
       if (tool === "secret") {
-        const exists = d.props.some(function (p) { return p.kind === "secretDoor" && p.x === at.x && p.y === at.y; });
+        const exists = d.props.some(function (p) {
+          return p.kind === "secretDoor" && p.levelId === lv.id && p.x === at.x && p.y === at.y;
+        });
         if (!exists) {
           d.props.push({
-            id: crypto.randomUUID(),
-            x: at.x,
-            y: at.y,
-            z: 0,
-            kind: "secretDoor",
-            name: "Секретная дверь",
-            secret: true,
-            revealed: false,
-            dc: 15,
-            skill: "Внимание"
+            id: uid(), x: at.x, y: at.y, levelId: lv.id,
+            kind: "secretDoor", name: "Секретная дверь", secret: true, revealed: false, dc: 15, skill: "Внимание"
           });
         }
       }
       paintGrid();
+      paintPreview();
       saveSoon();
     }
 
@@ -942,89 +1209,97 @@ window.ShirmoDungeon = (function () {
       if (turn) d.party.dir = ((d.party.dir + turn) % 4 + 4) % 4;
       if (step) {
         const dir = DIRS[d.party.dir];
+        const lv = partyLevel(d);
         const nx = d.party.x + dir.x * step;
         const ny = d.party.y + dir.y * step;
-        const level = levelOf(d);
-        const kind = effectiveCell(d, level, nx, ny);
-        if (walkable(kind, false)) {
+        const kind = effectiveCell(d, lv, nx, ny);
+        if (walkable(kind)) {
           d.party.x = nx;
           d.party.y = ny;
+          if (kind === CELL.STAIR_UP || kind === CELL.STAIR_DOWN) {
+            const idx = d.levels.findIndex(function (l) { return l.id === lv.id; });
+            const next = kind === CELL.STAIR_UP ? d.levels[idx + 1] : d.levels[idx - 1];
+            if (next) {
+              d.party.levelId = next.id;
+              d.activeLevelId = next.id;
+              d.party.x = Math.min(next.w - 1, d.party.x);
+              d.party.y = Math.min(next.h - 1, d.party.y);
+              localUnder = "";
+            }
+          }
         }
       }
       markExplored(d);
-      refresh();
+      paintAll();
       saveSoon();
     }
 
-    function setView(mode) {
-      viewMode = mode;
-      host.querySelectorAll("[data-dung-view]").forEach(function (btn) {
-        btn.classList.toggle("is-on", btn.getAttribute("data-dung-view") === mode);
-      });
-      editWrap.hidden = mode !== "edit";
-      eyes.hidden = mode !== "eyes";
-      if (mode === "eyes") paintEyes();
-    }
-
-    host.querySelectorAll("[data-tool]").forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        tool = btn.getAttribute("data-tool");
-        host.querySelectorAll("[data-tool]").forEach(function (node) {
-          node.classList.toggle("is-on", node === btn);
-        });
-      });
-    });
-    host.querySelectorAll("[data-dung-view]").forEach(function (btn) {
-      btn.addEventListener("click", function () { setView(btn.getAttribute("data-dung-view")); });
-    });
-    const underSelect = host.querySelector("[data-dung=underlay]");
-    underSelect.value = d.underlay.custom && d.underlay.show === "custom" ? "custom"
-      : (d.underlay.show || "master");
-    if (!d.underlay.custom && underSelect.value === "custom") underSelect.value = "master";
-    underSelect.addEventListener("change", function () {
-      d.underlay.show = this.value;
-      syncUnder();
-      paintGrid();
-      saveSoon();
-    });
-    host.querySelector("[data-dung=alpha]").addEventListener("input", function () {
-      d.underlay.alpha = Math.max(0.3, Math.min(1, Number(this.value) / 100));
-      paintGrid();
-      saveSoon();
-    });
-    host.querySelector("[data-dung-upload]").addEventListener("change", function () {
-      const input = this;
-      const file = input.files && input.files[0];
-      input.value = "";
-      if (!file) return;
-      if (localPreview) {
-        try { URL.revokeObjectURL(localPreview); } catch (err) { /* ignore */ }
+    function revealProp(prop) {
+      if (!prop) return;
+      prop.revealed = true;
+      if (prop.kind === "secretDoor") {
+        const lv = levelById(d, prop.levelId);
+        if (lv && cellAt(lv, prop.x, prop.y) === CELL.SECRET) lv.cells[prop.y][prop.x] = CELL.DOOR;
       }
-      localPreview = URL.createObjectURL(file);
-      d.underlay.show = "custom";
-      const opt = underSelect.querySelector('option[value="custom"]');
-      if (opt) opt.disabled = false;
-      underSelect.value = "custom";
-      setUnderSrc(localPreview);
-      paintGrid();
-      if (statusEl) statusEl.textContent = "Показываю «" + (file.name || "карта") + "». Шлю на сервер…";
-      if (!ctx.upload) {
-        if (statusEl) statusEl.textContent = "Показано локально (нет upload).";
+      d.flash = { text: (prop.name || "Секрет") + "!", at: Date.now() };
+      setTimeout(function () {
+        if (d.flash && Date.now() - d.flash.at > 1500) d.flash = null;
+        saveSoon();
+      }, 2000);
+    }
+
+    /* events */
+    host.querySelector("[data-tools]").addEventListener("click", function (event) {
+      const btn = event.target.closest("[data-tool]");
+      if (!btn) return;
+      tool = btn.getAttribute("data-tool");
+      paintTools();
+    });
+    host.querySelector("[data-prop-palette]").addEventListener("click", function (event) {
+      const btn = event.target.closest("[data-prop-kind]");
+      if (!btn) return;
+      propKind = btn.getAttribute("data-prop-kind");
+      d.brushProp = propKind;
+      tool = "prop";
+      paintTools();
+      paintPropPalette();
+    });
+    host.querySelector("[data-floor-list]").addEventListener("click", function (event) {
+      const del = event.target.closest("[data-floor-del]");
+      if (del) {
+        event.stopPropagation();
+        const id = del.getAttribute("data-floor-del");
+        if (d.levels.length <= 1) return;
+        if (!window.confirm("Удалить этаж?")) return;
+        d.levels = d.levels.filter(function (l) { return l.id !== id; });
+        d.props = d.props.filter(function (p) { return p.levelId !== id; });
+        d.foes = d.foes.filter(function (f) { return f.levelId !== id; });
+        if (d.activeLevelId === id) d.activeLevelId = d.levels[0].id;
+        if (d.party.levelId === id) d.party.levelId = d.levels[0].id;
+        localUnder = "";
+        paintAll();
+        saveSoon();
         return;
       }
-      ctx.upload(file).then(function (url) {
-        d.underlay.custom = url;
-        d.underlay.show = "custom";
-        /* пока localPreview жив — оставляем его на экране; custom для следующего захода */
-        if (statusEl) statusEl.textContent = "Сохранено: " + (file.name || "карта");
-        saveSoon();
-      }).catch(function (error) {
-        if (statusEl) statusEl.textContent = "На экране есть, сервер: " + ((error && error.message) || "ошибка");
-      });
+      const btn = event.target.closest("[data-floor]");
+      if (!btn) return;
+      d.activeLevelId = btn.getAttribute("data-floor");
+      localUnder = "";
+      selectedProp = null;
+      paintAll();
+      saveSoon();
     });
-    host.querySelector("[data-dung=torch]").addEventListener("change", function () {
-      d.torchFt = Math.max(5, Math.min(120, Math.round(Number(this.value) || 15)));
-      refresh();
+    host.querySelector("[data-floor-add]").addEventListener("click", function () {
+      const lv = makeLevel("Этаж " + (d.levels.length + 1));
+      d.levels.push(lv);
+      d.activeLevelId = lv.id;
+      localUnder = "";
+      paintAll();
+      saveSoon();
+    });
+
+    host.querySelector("[data-dung=title]").addEventListener("change", function () {
+      d.title = this.value.trim() || "Данж";
       saveSoon();
     });
     host.querySelector("[data-dung=screen]").addEventListener("change", function () {
@@ -1032,16 +1307,61 @@ window.ShirmoDungeon = (function () {
       if (d.screen && ctx.campaign.battle) ctx.campaign.battle.screen = false;
       saveSoon();
     });
+    host.querySelector("[data-dung=alpha]").addEventListener("input", function () {
+      d.underlay.alpha = Math.max(0.2, Math.min(1, Number(this.value) / 100));
+      paintGrid();
+      saveSoon();
+    });
+    host.querySelector("[data-dung=torch]").addEventListener("change", function () {
+      d.torchFt = Math.max(5, Math.min(120, Math.round(Number(this.value) || 15)));
+      paintAll();
+      saveSoon();
+    });
     host.querySelector("[data-dung=partyTorch]").addEventListener("change", function () {
       d.party.torch = !!this.checked;
-      refresh();
+      paintAll();
       saveSoon();
     });
     host.querySelector("[data-dung=darkvision]").addEventListener("change", function () {
       d.party.darkvision = !!this.checked;
-      refresh();
+      paintAll();
       saveSoon();
     });
+    host.querySelector("[data-dung-clear-under]").addEventListener("click", function () {
+      localUnder = "";
+      level().underlay = "";
+      level()._savedUnder = "";
+      syncUnder();
+      paintGrid();
+      if (statusEl) statusEl.textContent = "Подложка убрана.";
+      saveSoon();
+    });
+
+    host.querySelector("[data-dung-upload]").addEventListener("change", function () {
+      const file = this.files && this.files[0];
+      this.value = "";
+      if (!file) return;
+      if (localUnder && localUnder.indexOf("blob:") === 0) {
+        try { URL.revokeObjectURL(localUnder); } catch (err) { /* */ }
+      }
+      localUnder = URL.createObjectURL(file);
+      underImg.dataset.url = "";
+      underImg.src = localUnder;
+      underDom.src = localUnder;
+      underDom.hidden = false;
+      paintGrid();
+      if (statusEl) statusEl.textContent = "На экране: " + file.name;
+      if (!ctx.upload) return;
+      ctx.upload(file).then(function (url) {
+        level().underlay = url;
+        level()._savedUnder = url;
+        if (statusEl) statusEl.textContent = "Сохранено: " + file.name;
+        saveSoon();
+      }).catch(function (error) {
+        if (statusEl) statusEl.textContent = "На экране есть. Сервер: " + ((error && error.message) || "ошибка");
+      });
+    });
+
     host.querySelectorAll("[data-move]").forEach(function (btn) {
       btn.addEventListener("click", function () {
         const m = btn.getAttribute("data-move");
@@ -1053,27 +1373,32 @@ window.ShirmoDungeon = (function () {
     });
 
     grid.addEventListener("mousedown", function (event) {
-      if (viewMode !== "edit") return;
-      paint = true;
-      const at = cellFromEvent(event);
-      if (tool === "secretProp" || tool === "foe" || tool === "party") applyBrush(at);
-      else {
-        /* select prop if click on one */
-        const hit = (d.props || []).find(function (p) { return at && p.x === at.x && p.y === at.y; });
-        if (hit && tool !== "erase" && event.shiftKey) {
-          selectedProp = hit;
-          refresh();
-          return;
-        }
-        applyBrush(at);
+      if (spaceDown || event.button === 1) {
+        panning = true;
+        panFrom = { x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y };
+        return;
       }
-    });
-    grid.addEventListener("mousemove", function (event) {
-      if (!paint || viewMode !== "edit") return;
-      if (tool === "foe" || tool === "secretProp" || tool === "party") return;
+      paint = true;
       applyBrush(cellFromEvent(event));
     });
-    window.addEventListener("mouseup", function () { paint = false; });
+    grid.addEventListener("mousemove", function (event) {
+      if (panning && panFrom) {
+        pan.x = panFrom.panX + (event.clientX - panFrom.x);
+        pan.y = panFrom.panY + (event.clientY - panFrom.y);
+        paintGrid();
+        return;
+      }
+      if (!paint) return;
+      if (tool === "foe" || tool === "prop" || tool === "party") return;
+      applyBrush(cellFromEvent(event));
+    });
+    window.addEventListener("mouseup", function () { paint = false; panning = false; });
+    board.addEventListener("wheel", function (event) {
+      event.preventDefault();
+      const next = zoom * (event.deltaY < 0 ? 1.1 : 0.9);
+      zoom = Math.max(0.35, Math.min(3, next));
+      paintGrid();
+    }, { passive: false });
 
     host.addEventListener("click", function (event) {
       const next = event.target.closest("[data-dung-next]");
@@ -1086,18 +1411,16 @@ window.ShirmoDungeon = (function () {
           battle.round = Math.max(1, Math.round(Number(battle.round) || 1) + 1);
         }
         battle.turn = turn;
-        refresh();
+        paintInit();
         saveSoon();
         return;
       }
       const tok = event.target.closest("[data-dung-turn]");
-      if (tok) {
-        const battle = ctx.campaign.battle;
-        if (!battle) return;
+      if (tok && ctx.campaign.battle) {
         const id = tok.getAttribute("data-dung-turn");
-        const index = (battle.actors || []).findIndex(function (a) { return a && a.id === id; });
-        if (index >= 0) battle.turn = index;
-        refresh();
+        const index = (ctx.campaign.battle.actors || []).findIndex(function (a) { return a && a.id === id; });
+        if (index >= 0) ctx.campaign.battle.turn = index;
+        paintInit();
         saveSoon();
       }
     });
@@ -1108,23 +1431,18 @@ window.ShirmoDungeon = (function () {
       selectedProp.dc = Math.round(Number(host.querySelector("[data-secret-dc]").value) || 15);
       const dc = selectedProp.dc;
       if (ctx.roll) {
-        ctx.roll({
-          name: (selectedProp.skill || "Проверка") + " (DC " + dc + ")",
-          count: 1,
-          sides: 20,
-          bonus: 0,
-          mode: "normal"
-        }).then(function (data) {
-          const roll = (data && data.event && data.event.roll) || data;
-          const total = roll && roll.total;
-          if (Number(total) >= dc) revealProp(selectedProp);
-          else window.alert("Проверка " + total + " против DC " + dc + " — мимо.");
-          refresh();
-          saveSoon();
-        }).catch(function () { /* ignore */ });
-      } else if (window.confirm("Успех проверки DC " + dc + "?")) {
+        ctx.roll({ name: "Проверка (DC " + dc + ")", count: 1, sides: 20, bonus: 0, mode: "normal" })
+          .then(function (data) {
+            const roll = (data && data.event && data.event.roll) || data;
+            const total = roll && roll.total;
+            if (Number(total) >= dc) revealProp(selectedProp);
+            else window.alert("Проверка " + total + " / DC " + dc);
+            paintAll();
+            saveSoon();
+          });
+      } else if (window.confirm("Успех DC " + dc + "?")) {
         revealProp(selectedProp);
-        refresh();
+        paintAll();
         saveSoon();
       }
     });
@@ -1132,49 +1450,32 @@ window.ShirmoDungeon = (function () {
       if (!selectedProp) return;
       selectedProp.name = host.querySelector("[data-secret-name]").value || selectedProp.name;
       revealProp(selectedProp);
-      refresh();
+      paintAll();
       saveSoon();
     });
-    host.querySelector("[data-secret-name]").addEventListener("change", function () {
-      if (!selectedProp) return;
-      selectedProp.name = this.value;
-      saveSoon();
-    });
-
-    function revealProp(prop) {
-      if (!prop) return;
-      prop.revealed = true;
-      if (prop.kind === "secretDoor") {
-        const level = levelOf(d);
-        if (cellAt(level, prop.x, prop.y) === CELL.SECRET) {
-          level.cells[prop.y][prop.x] = CELL.DOOR;
-        }
-      }
-      d.flash = { text: (prop.name || "Секрет") + "!", at: Date.now() };
-      setTimeout(function () {
-        if (d.flash && d.flash.at && Date.now() - d.flash.at > 1500) d.flash = null;
-        saveSoon();
-      }, 2000);
-    }
 
     function onKey(event) {
       if (host.hidden) return;
+      if (event.code === "Space") spaceDown = true;
       const tag = event.target && event.target.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if (event.key === "ArrowUp" || event.key === "w" || event.key === "W") { event.preventDefault(); tryMove(1, 0); }
       if (event.key === "ArrowDown" || event.key === "s" || event.key === "S") { event.preventDefault(); tryMove(-1, 0); }
       if (event.key === "ArrowLeft" || event.key === "a" || event.key === "A") { event.preventDefault(); tryMove(0, -1); }
       if (event.key === "ArrowRight" || event.key === "d" || event.key === "D") { event.preventDefault(); tryMove(0, 1); }
-      if (event.key === "q" || event.key === "Q") { event.preventDefault(); tryMove(0, -1); }
-      if (event.key === "e" || event.key === "E") { event.preventDefault(); tryMove(0, 1); }
+    }
+    function onKeyUp(event) {
+      if (event.code === "Space") spaceDown = false;
     }
     document.addEventListener("keydown", onKey);
-    host._dungKill = function () { document.removeEventListener("keydown", onKey); };
-    host._refresh = refresh;
+    document.addEventListener("keyup", onKeyUp);
+    host._dungKill = function () {
+      document.removeEventListener("keydown", onKey);
+      document.removeEventListener("keyup", onKeyUp);
+    };
+    host._refresh = paintAll;
 
-    syncUnder();
-    refresh();
-    setView("edit");
+    paintAll();
   }
 
   return {

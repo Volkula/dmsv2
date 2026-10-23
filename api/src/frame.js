@@ -459,8 +459,11 @@ function projectBattle(campaign, battle) {
 function projectDungeon(campaign) {
   const d = campaign && campaign.dungeon;
   if (!d || typeof d !== "object") return null;
-  const level = Array.isArray(d.levels) && d.levels[0] ? d.levels[0] : null;
+  const levels = Array.isArray(d.levels) ? d.levels : [];
+  const partyLevelId = d.party && d.party.levelId;
+  const level = levels.find(function (row) { return row && row.id === partyLevelId; }) || levels[0] || null;
   if (!level || !Array.isArray(level.cells)) return null;
+  const levelId = level.id;
   const battle = campaign.battle;
   const actors = battle && Array.isArray(battle.actors) ? battle.actors : [];
   const turn = Math.max(0, Math.round(Number(battle && battle.turn) || 0));
@@ -473,17 +476,22 @@ function projectDungeon(campaign) {
     party: {
       x: Math.round(Number(d.party && d.party.x) || 0),
       y: Math.round(Number(d.party && d.party.y) || 0),
-      z: Math.round(Number(d.party && d.party.z) || 0),
+      levelId: levelId,
       dir: ((Math.round(Number(d.party && d.party.dir) || 0) % 4) + 4) % 4,
       torch: !!(d.party && d.party.torch !== false),
       darkvision: !!(d.party && d.party.darkvision)
     },
     level: {
+      id: levelId,
+      name: level.name || "Этаж",
       w: Math.round(Number(level.w) || (level.cells[0] && level.cells[0].length) || 0),
       h: Math.round(Number(level.h) || level.cells.length || 0),
       cells: level.cells
     },
-    props: Array.isArray(d.props) ? d.props.map(function (p) {
+    levels: levels.map(function (row) { return { id: row.id, name: row.name || "Этаж" }; }),
+    props: Array.isArray(d.props) ? d.props.filter(function (p) {
+      return p && (!p.levelId || p.levelId === levelId);
+    }).map(function (p) {
       return {
         id: p.id,
         x: p.x,
@@ -494,7 +502,9 @@ function projectDungeon(campaign) {
         secret: !!p.secret
       };
     }) : [],
-    foes: Array.isArray(d.foes) ? d.foes.map(function (f) {
+    foes: Array.isArray(d.foes) ? d.foes.filter(function (f) {
+      return f && (!f.levelId || f.levelId === levelId);
+    }).map(function (f) {
       const actor = actors.find(function (a) { return a && a.id === f.actorId; });
       return {
         id: f.id,
