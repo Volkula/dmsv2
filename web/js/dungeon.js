@@ -1041,7 +1041,9 @@ window.ShirmoDungeon = (function () {
     let spaceDown = false;
     let panning = false;
     let panFrom = null;
+    let underDrag = null;
     let localUnder = "";
+    let underSaveTimer = 0;
 
     host.innerHTML =
       '<div class="dung-work">' +
@@ -1067,9 +1069,21 @@ window.ShirmoDungeon = (function () {
       '<input type="file" accept="image/*" data-dung-upload></label>' +
       '<p class="note" data-dung-upload-status>СКМ — колесо инструментов · Пробел+тяни — панорама.</p>' +
       '<label>Яркость<input data-dung="alpha" type="range" min="20" max="100" value="' + Math.round((d.underlay.alpha || 0.88) * 100) + '"></label>' +
-      '<label>Масштаб<input data-dung="under-scale" type="range" min="40" max="200" value="100"></label>' +
-      '<label>Сдвиг X<input data-dung="under-x" type="range" min="-40" max="40" value="0"></label>' +
-      '<label>Сдвиг Y<input data-dung="under-y" type="range" min="-40" max="40" value="0"></label>' +
+      '<div class="dung-under-fine">' +
+      '<label>Масштаб %<input data-dung="under-scale" type="number" min="25" max="300" step="0.5" value="100"></label>' +
+      '<label>X кл<input data-dung="under-x" type="number" step="0.05" value="0"></label>' +
+      '<label>Y кл<input data-dung="under-y" type="number" step="0.05" value="0"></label>' +
+      "</div>" +
+      '<div class="dung-under-nudge" data-under-nudge>' +
+      '<button type="button" data-nudge="scale:-1" title="Мельче">−</button>' +
+      '<button type="button" data-nudge="scale:1" title="Крупнее">+</button>' +
+      '<button type="button" data-nudge="x:-1" title="Влево">←</button>' +
+      '<button type="button" data-nudge="x:1" title="Вправо">→</button>' +
+      '<button type="button" data-nudge="y:-1" title="Вверх">↑</button>' +
+      '<button type="button" data-nudge="y:1" title="Вниз">↓</button>' +
+      '<button type="button" data-nudge="reset" title="Сброс">⟲</button>' +
+      "</div>" +
+      '<p class="note">Alt+тяни подложку · Alt+колёсико — масштаб</p>' +
       '<button type="button" data-dung-clear-under>Убрать</button></div>' +
 
       '<div class="dung-tool-panel" data-tools></div>' +
@@ -1156,9 +1170,19 @@ window.ShirmoDungeon = (function () {
       const scale = host.querySelector("[data-dung=under-scale]");
       const ux = host.querySelector("[data-dung=under-x]");
       const uy = host.querySelector("[data-dung=under-y]");
-      if (scale) scale.value = String(Math.round((Number(lv.underScale) || 1) * 100));
-      if (ux) ux.value = String(Math.round(Number(lv.underX) || 0));
-      if (uy) uy.value = String(Math.round(Number(lv.underY) || 0));
+      if (scale) scale.value = String(Math.round((Number(lv.underScale) || 1) * 1000) / 10);
+      if (ux) ux.value = String(Math.round((Number(lv.underX) || 0) * 100) / 100);
+      if (uy) uy.value = String(Math.round((Number(lv.underY) || 0) * 100) / 100);
+    }
+
+    function setUnderTransform(patch, soft) {
+      const lv = level();
+      if (patch.scale != null) lv.underScale = Math.max(0.25, Math.min(3, Number(patch.scale) || 1));
+      if (patch.x != null) lv.underX = Math.round((Number(patch.x) || 0) * 100) / 100;
+      if (patch.y != null) lv.underY = Math.round((Number(patch.y) || 0) * 100) / 100;
+      syncUnderSliders();
+      paintGrid();
+      if (!soft) saveSoon();
     }
 
     function underUrl() {
@@ -1310,7 +1334,7 @@ window.ShirmoDungeon = (function () {
       const oy = (grid.height - lv.h * cell) / 2 + pan.y;
       const mapW = lv.w * cell;
       const mapH = lv.h * cell;
-      const us = Math.max(0.4, Math.min(2, Number(lv.underScale) || 1));
+      const us = Math.max(0.25, Math.min(3, Number(lv.underScale) || 1));
       const uox = (Number(lv.underX) || 0) * cell;
       const uoy = (Number(lv.underY) || 0) * cell;
       underDom.style.left = ox + uox - (mapW * (us - 1)) / 2 + "px";
@@ -1736,20 +1760,41 @@ window.ShirmoDungeon = (function () {
       paintGrid();
       saveSoon();
     });
-    host.querySelector("[data-dung=under-scale]").addEventListener("input", function () {
-      level().underScale = Math.max(0.4, Math.min(2, Number(this.value) / 100));
-      paintGrid();
-      saveSoon();
+    host.querySelector("[data-dung=under-scale]").addEventListener("change", function () {
+      setUnderTransform({ scale: Number(this.value) / 100 });
     });
-    host.querySelector("[data-dung=under-x]").addEventListener("input", function () {
-      level().underX = Math.round(Number(this.value) || 0);
-      paintGrid();
-      saveSoon();
+    host.querySelector("[data-dung=under-x]").addEventListener("change", function () {
+      setUnderTransform({ x: Number(this.value) || 0 });
     });
-    host.querySelector("[data-dung=under-y]").addEventListener("input", function () {
-      level().underY = Math.round(Number(this.value) || 0);
-      paintGrid();
-      saveSoon();
+    host.querySelector("[data-dung=under-y]").addEventListener("change", function () {
+      setUnderTransform({ y: Number(this.value) || 0 });
+    });
+    ["under-scale", "under-x", "under-y"].forEach(function (name) {
+      host.querySelector("[data-dung=" + name + "]").addEventListener("keydown", function (event) {
+        if (event.key !== "Enter") return;
+        this.blur();
+      });
+    });
+    host.querySelector("[data-under-nudge]").addEventListener("click", function (event) {
+      const btn = event.target.closest("[data-nudge]");
+      if (!btn) return;
+      const code = btn.getAttribute("data-nudge");
+      const lv = level();
+      if (code === "reset") {
+        setUnderTransform({ scale: 1, x: 0, y: 0 });
+        return;
+      }
+      const parts = code.split(":");
+      const axis = parts[0];
+      const dir = Number(parts[1]) || 0;
+      const fine = event.shiftKey;
+      if (axis === "scale") {
+        setUnderTransform({ scale: (Number(lv.underScale) || 1) + dir * (fine ? 0.005 : 0.02) });
+      } else if (axis === "x") {
+        setUnderTransform({ x: (Number(lv.underX) || 0) + dir * (fine ? 0.05 : 0.25) });
+      } else if (axis === "y") {
+        setUnderTransform({ y: (Number(lv.underY) || 0) + dir * (fine ? 0.05 : 0.25) });
+      }
     });
     host.querySelectorAll("[data-asset-upload]").forEach(function (input) {
       input.addEventListener("change", function () {
@@ -1864,6 +1909,18 @@ window.ShirmoDungeon = (function () {
         }
         hideRadial();
       }
+      if (event.altKey && event.button === 0) {
+        event.preventDefault();
+        const lv = level();
+        underDrag = {
+          x: event.clientX,
+          y: event.clientY,
+          underX: Number(lv.underX) || 0,
+          underY: Number(lv.underY) || 0,
+          cell: grid._cell || 1
+        };
+        return;
+      }
       if (spaceDown) {
         panning = true;
         panFrom = { x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y };
@@ -1879,6 +1936,17 @@ window.ShirmoDungeon = (function () {
           radialIndex = next;
           paintRadial(radialIndex >= 0 ? radialIndex : -1);
         }
+        return;
+      }
+      if (underDrag) {
+        const dx = (event.clientX - underDrag.x) / underDrag.cell;
+        const dy = (event.clientY - underDrag.y) / underDrag.cell;
+        setUnderTransform({
+          x: underDrag.underX + dx,
+          y: underDrag.underY + dy
+        }, true);
+        clearTimeout(underSaveTimer);
+        underSaveTimer = setTimeout(function () { saveSoon(); }, 400);
         return;
       }
       if (panning && panFrom) {
@@ -1898,14 +1966,28 @@ window.ShirmoDungeon = (function () {
         else hideRadial();
         paint = false;
         panning = false;
+        underDrag = null;
         return;
+      }
+      if (underDrag) {
+        underDrag = null;
+        saveSoon();
       }
       paint = false;
       panning = false;
     });
     board.addEventListener("wheel", function (event) {
       event.preventDefault();
-      const next = zoom * (event.deltaY < 0 ? 1.1 : 0.9);
+      if (event.altKey) {
+        const lv = level();
+        const step = event.shiftKey ? 0.005 : 0.02;
+        const next = (Number(lv.underScale) || 1) + (event.deltaY < 0 ? step : -step);
+        setUnderTransform({ scale: next }, true);
+        clearTimeout(underSaveTimer);
+        underSaveTimer = setTimeout(function () { saveSoon(); }, 400);
+        return;
+      }
+      const next = zoom * (event.deltaY < 0 ? 1.08 : 0.92);
       zoom = Math.max(0.35, Math.min(3, next));
       paintGrid();
     }, { passive: false });
