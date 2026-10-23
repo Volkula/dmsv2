@@ -169,6 +169,7 @@
     const page = frame && frame.page;
     if (!page) return '<div class="stage" style="background:#16130f"></div>';
     if (page.kind === "map" && window.ShirmoMap) return window.ShirmoMap.html(page, false);
+    if (page.kind === "dungeon" && window.ShirmoDungeon) return window.ShirmoDungeon.playerHtml(page);
     if (page.kind === "battle" && window.ShirmoBattle) return window.ShirmoBattle.playerHtml(page);
     const image = page.image ? "url('" + esc(page.image) + "')" : "none";
     const look = textLook(page);
@@ -816,6 +817,9 @@
       bindShopFonts(view);
       if (window.ShirmoMap && window.ShirmoMap.bindImages) window.ShirmoMap.bindImages(view);
       fit(view);
+      if (window.ShirmoDungeon && window.ShirmoDungeon.paintView && frame && frame.page && frame.page.kind === "dungeon") {
+        window.ShirmoDungeon.paintView(view, frame.page, { master: false });
+      }
       if (window.ShirmoBattle && window.ShirmoBattle.revealActive) window.ShirmoBattle.revealActive(view);
       if (event) {
         clearTimeout(flashTimer);
@@ -1194,6 +1198,7 @@
       '<button type="button" id="mod-map" title="Карта" aria-label="Карта">' + glyph('<path d="M12 21s6-5.2 6-10a6 6 0 1 0-12 0c0 4.8 6 10 6 10z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="11" r="1.6" fill="currentColor"/>') + "</button>" +
       '<button type="button" id="mod-codex" title="Справочник" aria-label="Справочник">' + glyph('<path d="M5 5.5h5.5A2.5 2.5 0 0113 8v11H8a3 3 0 00-3 3zM19 5.5h-5.5A2.5 2.5 0 0011 8v11h5a3 3 0 013 3z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>') + "</button>" +
       '<button type="button" id="mod-battle" title="Бой" aria-label="Бой">' + glyph('<path d="M14.5 3.5l6 6M4.5 13.5l6 6M9.5 16.5l7-7M16.5 9.5l2-2M8.5 17.5l-2 2M5 19l2-2M19 5l-2 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "</button>" +
+      '<button type="button" id="mod-dungeon" title="Данж" aria-label="Данж">' + glyph('<path d="M4 20V9l8-5 8 5v11H4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 20v-6h6v6M12 4v5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "</button>" +
       "</nav>" +
       '<input id="title" class="room-title" type="text" value="' + esc(state.title) + '" aria-label="Название комнаты" title="Название комнаты">' +
       "</div>" +
@@ -1214,7 +1219,7 @@
       '<label title="Текст заметки вместо своего текста">Заметка<select id="page-note"></select></label>' +
       '<p class="note">В режиме «Сразу» правки этой страницы уходят игрокам сами. «Показать» публикует кадр в любом режиме. Бросок виден игрокам карточкой с кубиком и остаётся в истории.</p>' +
       '<p class="error" id="err"></p></aside>' +
-      '<div class="stage-wrap" id="preview"></div></div><div class="work" id="work-map" hidden></div><div class="work" id="work-codex" hidden></div><div class="work" id="work-battle" hidden></div></section>';
+      '<div class="stage-wrap" id="preview"></div></div><div class="work" id="work-map" hidden></div><div class="work" id="work-codex" hidden></div><div class="work" id="work-battle" hidden></div><div class="work" id="work-dungeon" hidden></div></section>';
 
     const err = app.querySelector("#err");
     const preview = app.querySelector("#preview");
@@ -1373,16 +1378,21 @@
       const mapHost = app.querySelector("#work-map");
       const codexHost = app.querySelector("#work-codex");
       const battleHost = app.querySelector("#work-battle");
+      const dungeonHost = app.querySelector("#work-dungeon");
       if (kind !== "codex" && codexHost._codexFlush) codexHost._codexFlush();
+      if (kind !== "dungeon" && dungeonHost && dungeonHost._dungKill) dungeonHost._dungKill();
       if (kind !== "battle" && state.campaign.battle) state.campaign.battle.screen = false;
+      if (kind !== "dungeon" && state.campaign.dungeon) state.campaign.dungeon.screen = false;
       app.querySelector("#work-scene").hidden = kind !== "scene";
       mapHost.hidden = kind !== "map";
       codexHost.hidden = kind !== "codex";
       battleHost.hidden = kind !== "battle";
+      dungeonHost.hidden = kind !== "dungeon";
       app.querySelector("#mod-scene").classList.toggle("is-on", kind === "scene");
       app.querySelector("#mod-map").classList.toggle("is-on", kind === "map");
       app.querySelector("#mod-codex").classList.toggle("is-on", kind === "codex");
       app.querySelector("#mod-battle").classList.toggle("is-on", kind === "battle");
+      app.querySelector("#mod-dungeon").classList.toggle("is-on", kind === "dungeon");
       if (kind === "codex") {
         window.ShirmoCodex.mount(codexHost, {
           campaign: state.campaign,
@@ -1404,6 +1414,19 @@
           upload: function (file) { return uploadFile(id, key, file); },
           roll: publishRoll,
           place: placeFoes
+        });
+        save();
+        return;
+      }
+      if (kind === "dungeon" && window.ShirmoDungeon) {
+        const dung = window.ShirmoDungeon.ensure(state.campaign);
+        if (dung.screen == null) dung.screen = true;
+        dung.screen = true;
+        if (state.campaign.battle) state.campaign.battle.screen = false;
+        window.ShirmoDungeon.mount(dungeonHost, {
+          campaign: state.campaign,
+          save: save,
+          roll: publishRoll
         });
         save();
         return;
@@ -1479,6 +1502,7 @@
     app.querySelector("#mod-map").addEventListener("click", function () { showModule("map"); });
     app.querySelector("#mod-codex").addEventListener("click", function () { showModule("codex"); });
     app.querySelector("#mod-battle").addEventListener("click", function () { showModule("battle"); });
+    app.querySelector("#mod-dungeon").addEventListener("click", function () { showModule("dungeon"); });
 
     function markMode() {
       app.querySelector("#mode-live").classList.toggle("is-on", state.publishMode === "live");
@@ -1497,6 +1521,11 @@
     app.querySelector("#show").addEventListener("click", async function () {
       clearTimeout(timer);
       if (app.querySelector("#work-battle").hidden && state.campaign.battle) state.campaign.battle.screen = false;
+      if (app.querySelector("#work-dungeon").hidden && state.campaign.dungeon) state.campaign.dungeon.screen = false;
+      if (!app.querySelector("#work-dungeon").hidden && state.campaign.dungeon) {
+        state.campaign.dungeon.screen = true;
+        if (state.campaign.battle) state.campaign.battle.screen = false;
+      }
       state.campaign.shownPageId = state.campaign.activePageId;
       await save();
       try {
@@ -1573,7 +1602,7 @@
     let open = page().kind === "map" ? "map" : "scene";
     try {
       const saved = sessionStorage.getItem("shirmo-mod-" + id);
-      if (saved === "scene" || saved === "map" || saved === "codex" || saved === "battle") open = saved;
+      if (saved === "scene" || saved === "map" || saved === "codex" || saved === "battle" || saved === "dungeon") open = saved;
     } catch (err) { /* нет хранилища */ }
     showModule(open);
   }

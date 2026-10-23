@@ -456,9 +456,91 @@ function projectBattle(campaign, battle) {
   };
 }
 
+function projectDungeon(campaign) {
+  const d = campaign && campaign.dungeon;
+  if (!d || typeof d !== "object") return null;
+  const level = Array.isArray(d.levels) && d.levels[0] ? d.levels[0] : null;
+  if (!level || !Array.isArray(level.cells)) return null;
+  const battle = campaign.battle;
+  const actors = battle && Array.isArray(battle.actors) ? battle.actors : [];
+  const turn = Math.max(0, Math.round(Number(battle && battle.turn) || 0));
+  return {
+    kind: "dungeon",
+    title: d.title || "Данж",
+    cellFt: Number(d.cellFt) || 5,
+    torchFt: Number(d.torchFt) || 15,
+    darkvisionFt: Number(d.darkvisionFt) || 60,
+    party: {
+      x: Math.round(Number(d.party && d.party.x) || 0),
+      y: Math.round(Number(d.party && d.party.y) || 0),
+      z: Math.round(Number(d.party && d.party.z) || 0),
+      dir: ((Math.round(Number(d.party && d.party.dir) || 0) % 4) + 4) % 4,
+      torch: !!(d.party && d.party.torch !== false),
+      darkvision: !!(d.party && d.party.darkvision)
+    },
+    level: {
+      w: Math.round(Number(level.w) || (level.cells[0] && level.cells[0].length) || 0),
+      h: Math.round(Number(level.h) || level.cells.length || 0),
+      cells: level.cells
+    },
+    props: Array.isArray(d.props) ? d.props.map(function (p) {
+      return {
+        id: p.id,
+        x: p.x,
+        y: p.y,
+        kind: p.kind,
+        name: p.name || "",
+        revealed: !!p.revealed,
+        secret: !!p.secret
+      };
+    }) : [],
+    foes: Array.isArray(d.foes) ? d.foes.map(function (f) {
+      const actor = actors.find(function (a) { return a && a.id === f.actorId; });
+      return {
+        id: f.id,
+        x: f.x,
+        y: f.y,
+        actorId: f.actorId || "",
+        name: (actor && actor.name) || f.name || "Враг",
+        portrait: (actor && actor.portrait) || f.portrait || "",
+        dead: !!(actor && actor.dead)
+      };
+    }) : [],
+    explored: d.explored && typeof d.explored === "object" ? d.explored : {},
+    flash: d.flash || null,
+    battle: actors.length ? {
+      round: Math.max(1, Math.round(Number(battle.round) || 1)),
+      turn: turn,
+      actors: actors.filter(function (actor) {
+        return actor && String(actor.name || "").trim();
+      }).map(function (actor, index) {
+        return {
+          id: actor.id,
+          name: actor.name || "—",
+          side: actor.side === "player" ? "player" : "foe",
+          portrait: actor.portrait || "",
+          dead: !!actor.dead,
+          active: index === turn
+        };
+      })
+    } : null
+  };
+}
+
 export function projectFrame(campaign) {
   const pages = Array.isArray(campaign.pages) ? campaign.pages : [];
   const page = pages.find(function (item) { return item.id === campaign.shownPageId; }) || pages[0] || null;
+  const dungeon = campaign.dungeon;
+  if (dungeon && dungeon.screen) {
+    const dungPage = projectDungeon(campaign);
+    if (dungPage) {
+      return {
+        stage: campaign.stage || { width: 1368, height: 786 },
+        page: dungPage,
+        at: Date.now()
+      };
+    }
+  }
   const battle = campaign.battle;
   const fight = battle && battle.screen !== false && Array.isArray(battle.actors) && battle.actors.some(function (actor) {
     return actor && String(actor.name || "").trim();
