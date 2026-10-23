@@ -1,7 +1,11 @@
 #work-dungeon.work {
-  display: block !important;
-  overflow: hidden !important;
+  display: block;
+  overflow: hidden;
   min-height: 0;
+}
+
+#work-dungeon.work[hidden] {
+  display: none !important;
 }
 
 .dung-work {
@@ -148,23 +152,121 @@
   cursor: pointer;
 }
 
-.dung-tools {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+.dung-sites { margin-bottom: 2px; }
+
+.dung-tool-panel { display: flex; flex-direction: column; gap: 8px; }
+
+.dung-tool-group { display: flex; flex-direction: column; gap: 4px; }
+
+.dung-icon-row {
+  display: flex;
+  flex-wrap: wrap;
   gap: 5px;
 }
 
-.dung-tools button {
-  padding: 7px 6px;
-  font-size: 13px;
+.dung-icon-btn {
+  width: 48px;
+  min-height: 48px;
+  padding: 4px 2px 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  font: inherit;
+  color: #cfc3a8;
+  background: #221c14;
+  border: 1px solid rgba(230, 195, 106, 0.3);
+  border-radius: 3px;
+  cursor: pointer;
 }
 
-.dung-tools button.is-on,
-.dung-prop-btn.is-on {
+.dung-icon-btn em {
+  font-style: normal;
+  font-size: 9px;
+  line-height: 1.1;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dung-icon-btn canvas { image-rendering: pixelated; }
+
+.dung-icon-btn.is-on,
+.dung-prop-btn.is-on,
+.dung-chip.is-on {
   background: #3a3020;
   border-color: #e6c36a;
   color: #e6c36a;
 }
+
+.dung-chip {
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: #f3ead8;
+  background: #221c14;
+  border: 1px solid rgba(230, 195, 106, 0.3);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.dung-autowall { margin: 0; }
+
+.dung-assets {
+  border: 1px solid rgba(230, 195, 106, 0.28);
+  background: rgba(28, 22, 14, 0.65);
+  padding: 6px 8px;
+}
+
+.dung-assets summary {
+  cursor: pointer;
+  color: #e6c36a;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dung-upload.slim { padding: 8px; margin-top: 6px; font-size: 13px; }
+
+.dung-asset-list { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+
+.dung-asset-row {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  gap: 6px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.dung-asset-row img {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border: 1px solid rgba(230, 195, 106, 0.25);
+}
+
+.dung-radial {
+  position: absolute;
+  z-index: 20;
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(40, 32, 20, 0.95), rgba(12, 10, 8, 0.92));
+  border: 1px solid rgba(230, 195, 106, 0.45);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.65);
+  pointer-events: auto;
+}
+
+.dung-radial[hidden] { display: none !important; }
+
+.dung-radial .dung-icon-btn {
+  position: absolute;
+  width: 44px;
+  min-height: 44px;
+}
+
+.dung-board { position: relative; }
 
 .dung-prop-grid {
   display: grid;

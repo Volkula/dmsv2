@@ -6,9 +6,16 @@ window.ShirmoDungeon = (function () {
     { x: 0, y: 1, name: "Ю" },
     { x: -1, y: 0, name: "З" }
   ];
+  const NEIGH = [[0, -1], [1, 0], [0, 1], [-1, 0]];
   const DEFAULT_W = 48;
   const DEFAULT_H = 56;
   const TEX = 64;
+  const DOOR_TYPES = [
+    { id: "wood", name: "Дерево" },
+    { id: "iron", name: "Железо" },
+    { id: "locked", name: "Замок" },
+    { id: "bars", name: "Решётка" }
+  ];
 
   const PROP_KINDS = [
     { id: "lever", name: "Рычаг", secret: true, dc: 15 },
@@ -17,23 +24,42 @@ window.ShirmoDungeon = (function () {
     { id: "trap", name: "Ловушка", secret: true, dc: 14 },
     { id: "note", name: "Записка", secret: false, dc: 10 },
     { id: "altar", name: "Алтарь", secret: false, dc: 0 },
-    { id: "secretDoor", name: "Секретная дверь", secret: true, dc: 15 }
+    { id: "secretDoor", name: "Секрет", secret: true, dc: 15 }
   ];
 
-  const TOOLS = [
-    { id: "floor", label: "Пол", cell: CELL.FLOOR },
-    { id: "wall", label: "Стена", cell: CELL.WALL },
-    { id: "door", label: "Дверь", cell: CELL.DOOR },
-    { id: "secret", label: "Секрет", cell: CELL.SECRET },
-    { id: "chasm", label: "Яма", cell: CELL.CHASM },
-    { id: "bridge", label: "Мост", cell: CELL.BRIDGE },
-    { id: "stair_up", label: "↑ Этаж", cell: CELL.STAIR_UP },
-    { id: "stair_down", label: "↓ Этаж", cell: CELL.STAIR_DOWN },
-    { id: "erase", label: "Стереть", cell: CELL.VOID },
-    { id: "party", label: "Партия", cell: null },
-    { id: "foe", label: "Враг", cell: null },
-    { id: "prop", label: "Предмет", cell: null }
+  const TOOL_GROUPS = [
+    {
+      id: "terrain",
+      label: "Клетки",
+      tools: [
+        { id: "floor", label: "Пол", cell: CELL.FLOOR, icon: "floor" },
+        { id: "wall", label: "Стена", cell: CELL.WALL, icon: "wall" },
+        { id: "erase", label: "Стереть", cell: CELL.VOID, icon: "erase" },
+        { id: "chasm", label: "Яма", cell: CELL.CHASM, icon: "chasm" },
+        { id: "bridge", label: "Мост", cell: CELL.BRIDGE, icon: "bridge" }
+      ]
+    },
+    {
+      id: "doors",
+      label: "Двери",
+      tools: [
+        { id: "door", label: "Дверь", cell: CELL.DOOR, icon: "door" },
+        { id: "secret", label: "Тайная", cell: CELL.SECRET, icon: "secret" },
+        { id: "stair_up", label: "Вверх", cell: CELL.STAIR_UP, icon: "up" },
+        { id: "stair_down", label: "Вниз", cell: CELL.STAIR_DOWN, icon: "down" }
+      ]
+    },
+    {
+      id: "actors",
+      label: "Фигуры",
+      tools: [
+        { id: "party", label: "Партия", cell: null, icon: "party" },
+        { id: "foe", label: "Враг", cell: null, icon: "foe" },
+        { id: "prop", label: "Объект", cell: null, icon: "prop" }
+      ]
+    }
   ];
+  const TOOLS = TOOL_GROUPS.reduce(function (list, group) { return list.concat(group.tools); }, []);
 
   function esc(value) {
     return String(value == null ? "" : value)
@@ -224,7 +250,72 @@ window.ShirmoDungeon = (function () {
     c.height = size;
     const g = c.getContext("2d");
     g.clearRect(0, 0, size, size);
-    if (kind === "lever") {
+    if (kind === "floor") {
+      g.fillStyle = "#5a4a32";
+      g.fillRect(4, 4, size - 8, size - 8);
+      g.strokeStyle = "#e6c36a";
+      g.strokeRect(4.5, 4.5, size - 9, size - 9);
+      g.beginPath();
+      g.moveTo(size / 2, 4); g.lineTo(size / 2, size - 4);
+      g.moveTo(4, size / 2); g.lineTo(size - 4, size / 2);
+      g.stroke();
+    } else if (kind === "wall") {
+      g.fillStyle = "#2a2620";
+      g.fillRect(3, 3, size - 6, size - 6);
+      g.strokeStyle = "#8a8070";
+      g.strokeRect(6, 10, size - 12, 8);
+      g.strokeRect(6, 20, size - 12, 8);
+    } else if (kind === "erase") {
+      g.strokeStyle = "#e07a6a";
+      g.lineWidth = 3;
+      g.beginPath();
+      g.moveTo(8, 8); g.lineTo(size - 8, size - 8);
+      g.moveTo(size - 8, 8); g.lineTo(8, size - 8);
+      g.stroke();
+    } else if (kind === "chasm") {
+      g.fillStyle = "#0a080c";
+      g.beginPath();
+      g.moveTo(6, 10); g.lineTo(size - 6, 8); g.lineTo(size - 8, size - 6); g.lineTo(8, size - 8);
+      g.closePath();
+      g.fill();
+    } else if (kind === "bridge") {
+      g.fillStyle = "#8a5a22";
+      g.fillRect(4, size * 0.4, size - 8, size * 0.22);
+      g.strokeStyle = "#3a2410";
+      g.strokeRect(4.5, size * 0.4, size - 9, size * 0.22);
+    } else if (kind === "door") {
+      g.fillStyle = "#6a3a14";
+      g.fillRect(size * 0.28, 6, size * 0.44, size - 12);
+      g.fillStyle = "#c4a35a";
+      g.beginPath();
+      g.arc(size * 0.62, size * 0.5, 2.5, 0, Math.PI * 2);
+      g.fill();
+    } else if (kind === "secret") {
+      g.fillStyle = "#3a342c";
+      g.fillRect(6, 6, size - 12, size - 12);
+      g.fillStyle = "#e6c36a";
+      g.font = "bold " + Math.floor(size * 0.45) + "px Georgia";
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      g.fillText("S", size / 2, size / 2 + 1);
+    } else if (kind === "up" || kind === "down") {
+      g.fillStyle = "#e6c36a";
+      g.beginPath();
+      if (kind === "up") {
+        g.moveTo(size / 2, 6); g.lineTo(size - 6, size - 8); g.lineTo(6, size - 8);
+      } else {
+        g.moveTo(6, 8); g.lineTo(size - 6, 8); g.lineTo(size / 2, size - 6);
+      }
+      g.closePath();
+      g.fill();
+    } else if (kind === "prop") {
+      g.fillStyle = "#5a6a7a";
+      g.beginPath();
+      g.arc(size / 2, size / 2, size * 0.28, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = "#e6c36a";
+      g.stroke();
+    } else if (kind === "lever") {
       g.fillStyle = "#6a5430";
       g.fillRect(size * 0.35, size * 0.55, size * 0.3, size * 0.35);
       g.strokeStyle = "#e6c36a";
@@ -314,9 +405,77 @@ window.ShirmoDungeon = (function () {
       w: w || DEFAULT_W,
       h: h || DEFAULT_H,
       cells: cells,
+      doors: {},
       underlay: "",
+      underScale: 1,
+      underX: 0,
+      underY: 0,
       start: start
     };
+  }
+
+  function makeSite(name) {
+    const level = makeLevel("Этаж 1");
+    return {
+      id: uid(),
+      name: name || "Убежище",
+      levels: [level],
+      activeLevelId: level.id,
+      props: [],
+      foes: [],
+      explored: {},
+      party: {
+        x: level.start.x,
+        y: level.start.y,
+        levelId: level.id,
+        dir: 0,
+        torch: true,
+        darkvision: false
+      }
+    };
+  }
+
+  function flushSite(d) {
+    const site = activeSite(d);
+    if (!site) return;
+    site.levels = d.levels;
+    site.activeLevelId = d.activeLevelId;
+    site.props = d.props;
+    site.foes = d.foes;
+    site.explored = d.explored;
+    site.party = d.party;
+  }
+
+  function loadSite(d, siteId) {
+    flushSite(d);
+    const site = (d.sites || []).find(function (s) { return s.id === siteId; });
+    if (!site) return;
+    d.activeSiteId = site.id;
+    d.levels = site.levels;
+    d.activeLevelId = site.activeLevelId;
+    d.props = site.props;
+    d.foes = site.foes;
+    d.explored = site.explored;
+    d.party = site.party;
+    d.title = site.name;
+  }
+
+  function activeSite(d) {
+    return (d.sites || []).find(function (s) { return s && s.id === d.activeSiteId; }) || (d.sites || [])[0] || null;
+  }
+
+  function normalizeLevel(level, i) {
+    if (!level.id) level.id = uid();
+    if (!level.name) level.name = "Этаж " + (i + 1);
+    if (!level.w) level.w = (level.cells && level.cells[0] && level.cells[0].length) || DEFAULT_W;
+    if (!level.h) level.h = (level.cells && level.cells.length) || DEFAULT_H;
+    if (!level.cells || !level.cells.length) level.cells = blankCells(level.w, level.h, CELL.VOID);
+    if (!level.doors || typeof level.doors !== "object") level.doors = {};
+    if (level.underlay == null) level.underlay = "";
+    if (String(level.underlay).indexOf("blob:") === 0) level.underlay = "";
+    if (!Number.isFinite(Number(level.underScale)) || Number(level.underScale) <= 0) level.underScale = 1;
+    if (!Number.isFinite(Number(level.underX))) level.underX = 0;
+    if (!Number.isFinite(Number(level.underY))) level.underY = 0;
   }
 
   function ensure(campaign) {
@@ -327,37 +486,71 @@ window.ShirmoDungeon = (function () {
     if (!Number.isFinite(Number(d.torchFt))) d.torchFt = 15;
     if (!Number.isFinite(Number(d.darkvisionFt))) d.darkvisionFt = 60;
     if (d.screen == null) d.screen = false;
-    if (!d.underlay || typeof d.underlay !== "object") d.underlay = { alpha: 0.85 };
-    if (!Number.isFinite(Number(d.underlay.alpha))) d.underlay.alpha = 0.85;
+    if (!d.underlay || typeof d.underlay !== "object") d.underlay = { alpha: 0.88 };
+    if (!Number.isFinite(Number(d.underlay.alpha))) d.underlay.alpha = 0.88;
     delete d.underlay.preview;
     if (String(d.underlay.custom || "").indexOf("blob:") === 0) d.underlay.custom = "";
+    if (!Array.isArray(d.assets)) d.assets = [];
+    if (!d.doorType) d.doorType = "wood";
+    if (d.autoWalls == null) d.autoWalls = true;
+    if (!d.brushProp) d.brushProp = "lever";
 
-    if (!Array.isArray(d.levels) || !d.levels.length) {
-      const level = makeLevel("Этаж 1");
-      d.levels = [level];
-      d.activeLevelId = level.id;
-      d.party = {
-        x: level.start.x,
-        y: level.start.y,
-        levelId: level.id,
-        dir: 0,
-        torch: true,
-        darkvision: false
-      };
+    /* migrate flat levels → sites (убежища) */
+    if (!Array.isArray(d.sites) || !d.sites.length) {
+      if (!Array.isArray(d.levels) || !d.levels.length) {
+        d.sites = [makeSite(d.title || "Убежище 1")];
+      } else {
+        d.sites = [{
+          id: uid(),
+          name: d.title || "Убежище 1",
+          levels: d.levels,
+          activeLevelId: d.activeLevelId || d.levels[0].id,
+          props: Array.isArray(d.props) ? d.props : [],
+          foes: Array.isArray(d.foes) ? d.foes : [],
+          explored: d.explored && typeof d.explored === "object" ? d.explored : {},
+          party: d.party || null
+        }];
+      }
+      d.activeSiteId = d.sites[0].id;
     }
-    d.levels.forEach(function (level, i) {
-      if (!level.id) level.id = uid();
-      if (!level.name) level.name = "Этаж " + (i + 1);
-      if (!level.w) level.w = (level.cells && level.cells[0] && level.cells[0].length) || DEFAULT_W;
-      if (!level.h) level.h = (level.cells && level.cells.length) || DEFAULT_H;
-      if (!level.cells || !level.cells.length) level.cells = blankCells(level.w, level.h, CELL.VOID);
-      if (level.underlay == null) level.underlay = "";
-      if (String(level.underlay).indexOf("blob:") === 0) level.underlay = "";
+    d.sites.forEach(function (site, si) {
+      if (!site.id) site.id = uid();
+      if (!site.name) site.name = "Убежище " + (si + 1);
+      if (!Array.isArray(site.levels) || !site.levels.length) site.levels = [makeLevel("Этаж 1")];
+      site.levels.forEach(normalizeLevel);
+      if (!site.activeLevelId || !site.levels.some(function (l) { return l.id === site.activeLevelId; })) {
+        site.activeLevelId = site.levels[0].id;
+      }
+      site.props = Array.isArray(site.props) ? site.props : [];
+      site.foes = Array.isArray(site.foes) ? site.foes : [];
+      if (!site.explored || typeof site.explored !== "object") site.explored = {};
+      if (!site.party || typeof site.party !== "object") {
+        const start = site.levels[0];
+        site.party = {
+          x: (start.start && start.start.x) || 1,
+          y: (start.start && start.start.y) || 1,
+          levelId: start.id,
+          dir: 0,
+          torch: true,
+          darkvision: false
+        };
+      }
     });
-    if (!d.activeLevelId || !d.levels.some(function (l) { return l.id === d.activeLevelId; })) {
-      d.activeLevelId = d.levels[0].id;
+    if (!d.activeSiteId || !d.sites.some(function (s) { return s.id === d.activeSiteId; })) {
+      d.activeSiteId = d.sites[0].id;
     }
-    if (!d.party || typeof d.party !== "object") d.party = {};
+    const site = activeSite(d);
+    d.levels = site.levels;
+    d.activeLevelId = site.activeLevelId;
+    d.props = site.props;
+    d.foes = site.foes;
+    d.explored = site.explored;
+    d.party = site.party;
+    d.title = site.name;
+
+    if (d.underlay.custom && d.levels[0] && !d.levels[0].underlay) {
+      d.levels[0].underlay = d.underlay.custom;
+    }
     if (!d.party.levelId || !d.levels.some(function (l) { return l.id === d.party.levelId; })) {
       d.party.levelId = d.activeLevelId;
     }
@@ -367,14 +560,6 @@ window.ShirmoDungeon = (function () {
     d.party.dir = ((Math.round(Number(d.party.dir) || 0) % 4) + 4) % 4;
     if (d.party.torch == null) d.party.torch = true;
     if (d.party.darkvision == null) d.party.darkvision = false;
-    d.props = Array.isArray(d.props) ? d.props : [];
-    d.foes = Array.isArray(d.foes) ? d.foes : [];
-    if (!d.explored || typeof d.explored !== "object") d.explored = {};
-    if (!d.brushProp) d.brushProp = "lever";
-    /* migrate old single underlay */
-    if (d.underlay.custom && d.levels[0] && !d.levels[0].underlay) {
-      d.levels[0].underlay = d.underlay.custom;
-    }
     markExplored(d);
     textures();
     return d;
@@ -390,6 +575,25 @@ window.ShirmoDungeon = (function () {
 
   function partyLevel(d) {
     return levelById(d, d.party.levelId) || activeLevel(d);
+  }
+
+  function doorKey(x, y) { return x + "," + y; }
+
+  function stampFloor(lv, x, y, autoWalls) {
+    lv.cells[y][x] = CELL.FLOOR;
+    if (!autoWalls) return;
+    NEIGH.forEach(function (n) {
+      const nx = x + n[0];
+      const ny = y + n[1];
+      if (nx < 0 || ny < 0 || nx >= lv.w || ny >= lv.h) return;
+      if (lv.cells[ny][nx] === CELL.VOID) lv.cells[ny][nx] = CELL.WALL;
+    });
+  }
+
+  function stampDoor(lv, x, y, doorType) {
+    lv.cells[y][x] = CELL.DOOR;
+    if (!lv.doors) lv.doors = {};
+    lv.doors[doorKey(x, y)] = doorType || "wood";
   }
 
   function cellAt(level, x, y) {
@@ -829,7 +1033,7 @@ window.ShirmoDungeon = (function () {
   function mount(host, ctx) {
     if (!host || !ctx || !ctx.campaign) return;
     const d = ensure(ctx.campaign);
-    let tool = "wall";
+    let tool = "floor";
     let propKind = d.brushProp || "lever";
     let paint = false;
     let pan = { x: 0, y: 0 };
@@ -843,8 +1047,14 @@ window.ShirmoDungeon = (function () {
       '<div class="dung-work">' +
       '<aside class="dung-side">' +
       '<div class="dung-side-head"><h2>Данж</h2>' +
-      '<label class="check">Экран<input type="checkbox" data-dung="screen"' + (d.screen ? " checked" : "") + "></label></div>" +
-      '<input class="dung-title" data-dung="title" type="text" value="' + esc(d.title) + '" title="Название">' +
+      '<label class="check" title="Экран игроков">Экран<input type="checkbox" data-dung="screen"' + (d.screen ? " checked" : "") + "></label></div>" +
+
+      '<div class="dung-sites">' +
+      '<div class="dung-floors-head"><span>Убежища</span>' +
+      '<button type="button" data-site-add title="Новое убежище">+</button></div>' +
+      '<div class="dung-site-list" data-site-list></div>' +
+      '<input class="dung-title" data-dung="title" type="text" value="' + esc(d.title) + '" title="Имя убежища">' +
+      "</div>" +
 
       '<div class="dung-floors">' +
       '<div class="dung-floors-head"><span>Этажи</span>' +
@@ -852,28 +1062,40 @@ window.ShirmoDungeon = (function () {
       '<div class="dung-floor-list" data-floor-list></div></div>' +
 
       '<div class="dung-under-box">' +
-      '<p class="dung-under-title">Подложка этажа</p>' +
+      '<p class="dung-under-title">Подложка</p>' +
       '<label class="dung-upload"><span>Загрузить карту</span>' +
       '<input type="file" accept="image/*" data-dung-upload></label>' +
-      '<p class="note" data-dung-upload-status>Карта под сеткой для обводки.</p>' +
-      '<label>Яркость<input data-dung="alpha" type="range" min="20" max="100" value="' + Math.round((d.underlay.alpha || 0.85) * 100) + '"></label>' +
-      '<button type="button" data-dung-clear-under>Убрать подложку</button></div>' +
+      '<p class="note" data-dung-upload-status>ПКМ по сетке — радиальное меню.</p>' +
+      '<label>Яркость<input data-dung="alpha" type="range" min="20" max="100" value="' + Math.round((d.underlay.alpha || 0.88) * 100) + '"></label>' +
+      '<label>Масштаб<input data-dung="under-scale" type="range" min="40" max="200" value="100"></label>' +
+      '<label>Сдвиг X<input data-dung="under-x" type="range" min="-40" max="40" value="0"></label>' +
+      '<label>Сдвиг Y<input data-dung="under-y" type="range" min="-40" max="40" value="0"></label>' +
+      '<button type="button" data-dung-clear-under>Убрать</button></div>' +
 
-      '<div class="dung-tools" data-tools></div>' +
-
+      '<div class="dung-tool-panel" data-tools></div>' +
+      '<label class="check dung-autowall">Автостены у пола<input type="checkbox" data-dung="autowalls"' + (d.autoWalls !== false ? " checked" : "") + "></label>" +
+      '<div class="dung-door-types" data-door-types></div>' +
       '<div class="dung-props" data-prop-palette></div>' +
 
+      '<details class="dung-assets">' +
+      '<summary>Ассеты / текстуры</summary>' +
+      '<p class="note">Свои PNG/WebP. Оригиналы Heretic/Hexen — коммерческие; свободный IWAD: Blasphemer (0BSD). Сюда грузишь wall/floor.</p>' +
+      '<label class="dung-upload slim"><span>Wall</span><input type="file" accept="image/*" data-asset-upload="wall"></label>' +
+      '<label class="dung-upload slim"><span>Floor</span><input type="file" accept="image/*" data-asset-upload="floor"></label>' +
+      '<label class="dung-upload slim"><span>Door</span><input type="file" accept="image/*" data-asset-upload="door"></label>' +
+      '<div data-asset-list class="dung-asset-list"></div></details>' +
+
       '<div class="dung-light">' +
-      '<label>Факел,фт<input data-dung="torch" type="number" min="5" max="120" value="' + esc(d.torchFt) + '"></label>' +
-      '<label class="check">Факел<input type="checkbox" data-dung="partyTorch"' + (d.party.torch ? " checked" : "") + "></label>" +
+      '<label>Факел<input data-dung="torch" type="number" min="5" max="120" value="' + esc(d.torchFt) + '"></label>' +
+      '<label class="check">Огонь<input type="checkbox" data-dung="partyTorch"' + (d.party.torch ? " checked" : "") + "></label>" +
       '<label class="check">ТЗ<input type="checkbox" data-dung="darkvision"' + (d.party.darkvision ? " checked" : "") + "></label>" +
       "</div>" +
 
       '<div class="dung-move">' +
-      '<button type="button" data-move="left">⟲</button>' +
-      '<button type="button" data-move="forward">↑</button>' +
-      '<button type="button" data-move="right">⟳</button>' +
-      '<button type="button" data-move="back">↓</button></div>' +
+      '<button type="button" data-move="left" title="Влево">⟲</button>' +
+      '<button type="button" data-move="forward" title="Вперёд">↑</button>' +
+      '<button type="button" data-move="right" title="Вправо">⟳</button>' +
+      '<button type="button" data-move="back" title="Назад">↓</button></div>' +
 
       '<div class="dung-init-host"></div>' +
       '<div class="dung-secret-box" hidden>' +
@@ -882,14 +1104,14 @@ window.ShirmoDungeon = (function () {
       '<label>DC<input data-secret-dc type="number" min="1" max="30" value="15"></label>' +
       '<button type="button" class="primary" data-secret-check>Проверка</button>' +
       '<button type="button" data-secret-reveal>Открыть</button></div>' +
-      '<p class="note">Колесо — зум · Пробел+тяни — панорама · WASD — ход</p>' +
       "</aside>" +
 
       '<div class="dung-main">' +
       '<div class="dung-board">' +
       '<div class="dung-edit-wrap" data-edit-wrap>' +
       '<img class="dung-under-img" alt="" draggable="false" hidden>' +
-      '<canvas class="dung-grid" width="960" height="1120"></canvas></div></div>' +
+      '<canvas class="dung-grid" width="960" height="1120"></canvas></div>' +
+      '<div class="dung-radial" data-radial hidden></div></div>' +
       '<div class="dung-preview">' +
       '<p class="dung-under-title">Вид игрока</p>' +
       '<canvas class="dung-fp" width="480" height="270"></canvas>' +
@@ -917,12 +1139,9 @@ window.ShirmoDungeon = (function () {
 
     function saveSoon() {
       markExplored(d);
+      flushSite(d);
       delete d.underlay.preview;
-      d.levels.forEach(function (l) {
-        if (String(l.underlay || "").indexOf("blob:") === 0) { /* keep server urls only in save path */ }
-      });
       const snap = d.levels.map(function (l) { return l.underlay; });
-      /* don't persist blob underlays */
       d.levels.forEach(function (l) {
         if (String(l.underlay || "").indexOf("blob:") === 0) l.underlay = l._savedUnder || "";
       });
@@ -931,6 +1150,16 @@ window.ShirmoDungeon = (function () {
     }
 
     function level() { return activeLevel(d); }
+
+    function syncUnderSliders() {
+      const lv = level();
+      const scale = host.querySelector("[data-dung=under-scale]");
+      const ux = host.querySelector("[data-dung=under-x]");
+      const uy = host.querySelector("[data-dung=under-y]");
+      if (scale) scale.value = String(Math.round((Number(lv.underScale) || 1) * 100));
+      if (ux) ux.value = String(Math.round(Number(lv.underX) || 0));
+      if (uy) uy.value = String(Math.round(Number(lv.underY) || 0));
+    }
 
     function underUrl() {
       const lv = level();
@@ -954,6 +1183,17 @@ window.ShirmoDungeon = (function () {
       underDom.hidden = false;
     }
 
+    function paintSites() {
+      const box = host.querySelector("[data-site-list]");
+      box.innerHTML = d.sites.map(function (s) {
+        return '<button type="button" class="dung-floor' + (s.id === d.activeSiteId ? " is-on" : "") + '" data-site="' + esc(s.id) + '">' +
+          esc(s.name) +
+          (d.sites.length > 1 ? '<span data-site-del="' + esc(s.id) + '" title="Удалить">×</span>' : "") +
+          "</button>";
+      }).join("");
+      host.querySelector("[data-dung=title]").value = d.title || "";
+    }
+
     function paintFloors() {
       const box = host.querySelector("[data-floor-list]");
       box.innerHTML = d.levels.map(function (l) {
@@ -964,23 +1204,62 @@ window.ShirmoDungeon = (function () {
       }).join("");
     }
 
+    function toolButtonHtml(t, radial) {
+      return '<button type="button" class="dung-icon-btn' + (tool === t.id ? " is-on" : "") + '" data-tool="' + t.id + '" title="' + esc(t.label) + '">' +
+        '<canvas width="28" height="28" data-tool-icon="' + esc(t.icon || t.id) + '"></canvas>' +
+        (radial ? "" : "<em>" + esc(t.label) + "</em>") + "</button>";
+    }
+
     function paintTools() {
       const box = host.querySelector("[data-tools]");
-      box.innerHTML = TOOLS.map(function (t) {
-        return '<button type="button" data-tool="' + t.id + '" class="' + (tool === t.id ? "is-on" : "") + '">' + esc(t.label) + "</button>";
+      box.innerHTML = TOOL_GROUPS.map(function (group) {
+        return '<div class="dung-tool-group"><p class="dung-under-title">' + esc(group.label) + "</p>" +
+          '<div class="dung-icon-row">' + group.tools.map(function (t) { return toolButtonHtml(t, false); }).join("") + "</div></div>";
       }).join("");
+      box.querySelectorAll("canvas[data-tool-icon]").forEach(function (c) {
+        c.getContext("2d").drawImage(iconOf(c.getAttribute("data-tool-icon"), 28), 0, 0);
+      });
+      host.querySelector("[data-door-types]").innerHTML = '<p class="dung-under-title">Тип двери</p><div class="dung-icon-row">' +
+        DOOR_TYPES.map(function (door) {
+          return '<button type="button" class="dung-chip' + (d.doorType === door.id ? " is-on" : "") + '" data-door-type="' + door.id + '">' + esc(door.name) + "</button>";
+        }).join("") + "</div>";
+    }
+
+    function paintRadial() {
+      const radial = host.querySelector("[data-radial]");
+      radial.innerHTML = TOOLS.map(function (t) { return toolButtonHtml(t, true); }).join("");
+      radial.querySelectorAll("canvas[data-tool-icon]").forEach(function (c) {
+        c.getContext("2d").drawImage(iconOf(c.getAttribute("data-tool-icon"), 28), 0, 0);
+      });
+      const buttons = radial.querySelectorAll("[data-tool]");
+      const n = buttons.length;
+      const radius = 78;
+      buttons.forEach(function (btn, i) {
+        const ang = -Math.PI / 2 + (i / n) * Math.PI * 2;
+        btn.style.left = 90 + Math.cos(ang) * radius - 22 + "px";
+        btn.style.top = 90 + Math.sin(ang) * radius - 22 + "px";
+      });
     }
 
     function paintPropPalette() {
       const box = host.querySelector("[data-prop-palette]");
-      box.innerHTML = '<p class="dung-under-title">Иконки</p><div class="dung-prop-grid">' +
+      box.innerHTML = '<p class="dung-under-title">Объекты</p><div class="dung-prop-grid">' +
         PROP_KINDS.map(function (p) {
           return '<button type="button" class="dung-prop-btn' + (propKind === p.id ? " is-on" : "") + '" data-prop-kind="' + p.id + '" title="' + esc(p.name) + '">' +
-            '<canvas width="36" height="36" data-icon="' + p.id + '"></canvas><span>' + esc(p.name) + "</span></button>";
+            '<canvas width="36" height="36" data-icon="' + p.id + '"></canvas></button>';
         }).join("") + "</div>";
       box.querySelectorAll("canvas[data-icon]").forEach(function (c) {
         c.getContext("2d").drawImage(iconOf(c.getAttribute("data-icon"), 36), 0, 0);
       });
+    }
+
+    function paintAssets() {
+      const box = host.querySelector("[data-asset-list]");
+      if (!box) return;
+      box.innerHTML = (d.assets || []).map(function (a) {
+        return '<div class="dung-asset-row"><img alt="" src="' + esc(a.url) + '"><span>' + esc(a.role) + " · " + esc(a.name || "") +
+          '</span><button type="button" data-asset-del="' + esc(a.id) + '">×</button></div>';
+      }).join("") || '<p class="note">Пока пусто.</p>';
     }
 
     function paintInit() {
@@ -1000,17 +1279,19 @@ window.ShirmoDungeon = (function () {
       const oy = (grid.height - lv.h * cell) / 2 + pan.y;
       const mapW = lv.w * cell;
       const mapH = lv.h * cell;
-      underDom.style.left = ox + "px";
-      underDom.style.top = oy + "px";
-      underDom.style.width = mapW + "px";
-      underDom.style.height = mapH + "px";
-      underDom.style.opacity = String(Math.max(0.2, Math.min(1, Number(d.underlay.alpha) || 0.85)));
+      const us = Math.max(0.4, Math.min(2, Number(lv.underScale) || 1));
+      const uox = (Number(lv.underX) || 0) * cell;
+      const uoy = (Number(lv.underY) || 0) * cell;
+      underDom.style.left = ox + uox - (mapW * (us - 1)) / 2 + "px";
+      underDom.style.top = oy + uoy - (mapH * (us - 1)) / 2 + "px";
+      underDom.style.width = mapW * us + "px";
+      underDom.style.height = mapH * us + "px";
+      underDom.style.opacity = String(Math.max(0.2, Math.min(1, Number(d.underlay.alpha) || 0.88)));
 
       ctx2.clearRect(0, 0, grid.width, grid.height);
       if (!underUrl()) {
         ctx2.fillStyle = "#12100c";
         ctx2.fillRect(0, 0, grid.width, grid.height);
-        /* procedural floor hint */
         const pat = ctx2.createPattern(textures().floor, "repeat");
         if (pat) {
           ctx2.globalAlpha = 0.35;
@@ -1025,17 +1306,22 @@ window.ShirmoDungeon = (function () {
           const kind = cellAt(lv, x, y);
           if (kind === CELL.VOID) continue;
           const colors = {
-            1: "rgba(90,80,60,0.25)",
-            2: "rgba(25,22,18,0.78)",
-            3: "rgba(140,100,40,0.55)",
-            4: "rgba(200,160,60,0.55)",
-            5: "rgba(8,6,10,0.75)",
-            6: "rgba(110,80,40,0.5)",
-            7: "rgba(230,195,106,0.45)",
-            8: "rgba(180,140,70,0.45)"
+            1: "rgba(210, 180, 100, 0.42)",
+            2: "rgba(18, 16, 14, 0.82)",
+            3: "rgba(160, 110, 40, 0.7)",
+            4: "rgba(230, 195, 80, 0.65)",
+            5: "rgba(5, 4, 8, 0.85)",
+            6: "rgba(120, 85, 40, 0.65)",
+            7: "rgba(230,195,106,0.55)",
+            8: "rgba(180,140,70,0.55)"
           };
           ctx2.fillStyle = colors[kind] || "rgba(60,60,60,0.4)";
           ctx2.fillRect(ox + x * cell, oy + y * cell, cell + 0.4, cell + 0.4);
+          if (kind === CELL.DOOR) {
+            const dtype = (lv.doors && lv.doors[doorKey(x, y)]) || "wood";
+            ctx2.fillStyle = dtype === "iron" ? "#8a949a" : (dtype === "bars" ? "#6a7080" : (dtype === "locked" ? "#c46b2a" : "#a07840"));
+            ctx2.fillRect(ox + x * cell + cell * 0.3, oy + y * cell + cell * 0.15, cell * 0.4, cell * 0.7);
+          }
           if (kind === CELL.STAIR_UP || kind === CELL.STAIR_DOWN) {
             ctx2.fillStyle = "#e6c36a";
             ctx2.font = Math.max(10, cell * 0.55) + "px Georgia";
@@ -1046,7 +1332,7 @@ window.ShirmoDungeon = (function () {
         }
       }
 
-      ctx2.strokeStyle = "rgba(230,195,106,0.28)";
+      ctx2.strokeStyle = "rgba(230,195,106,0.55)";
       ctx2.lineWidth = 1;
       for (let x = 0; x <= lv.w; x++) {
         ctx2.beginPath();
@@ -1115,9 +1401,13 @@ window.ShirmoDungeon = (function () {
     }
 
     function paintAll() {
+      paintSites();
       paintFloors();
       paintTools();
+      paintRadial();
       paintPropPalette();
+      paintAssets();
+      syncUnderSliders();
       syncUnder();
       paintGrid();
       paintPreview();
@@ -1188,7 +1478,16 @@ window.ShirmoDungeon = (function () {
       }
       const t = TOOLS.find(function (row) { return row.id === tool; });
       if (!t || t.cell == null) return;
-      lv.cells[at.y][at.x] = t.cell;
+      if (tool === "floor") {
+        stampFloor(lv, at.x, at.y, d.autoWalls !== false);
+      } else if (tool === "door") {
+        stampDoor(lv, at.x, at.y, d.doorType || "wood");
+      } else if (tool === "erase") {
+        lv.cells[at.y][at.x] = CELL.VOID;
+        if (lv.doors) delete lv.doors[doorKey(at.x, at.y)];
+      } else {
+        lv.cells[at.y][at.x] = t.cell;
+      }
       if (tool === "secret") {
         const exists = d.props.some(function (p) {
           return p.kind === "secretDoor" && p.levelId === lv.id && p.x === at.x && p.y === at.y;
@@ -1249,20 +1548,80 @@ window.ShirmoDungeon = (function () {
     }
 
     /* events */
-    host.querySelector("[data-tools]").addEventListener("click", function (event) {
-      const btn = event.target.closest("[data-tool]");
-      if (!btn) return;
-      tool = btn.getAttribute("data-tool");
+    function setTool(next) {
+      tool = next;
       paintTools();
+      paintRadial();
+      hideRadial();
+    }
+
+    function hideRadial() {
+      const radial = host.querySelector("[data-radial]");
+      if (radial) radial.hidden = true;
+    }
+
+    function showRadial(clientX, clientY) {
+      const radial = host.querySelector("[data-radial]");
+      const boardRect = board.getBoundingClientRect();
+      radial.hidden = false;
+      radial.style.left = Math.max(0, clientX - boardRect.left - 90) + "px";
+      radial.style.top = Math.max(0, clientY - boardRect.top - 90) + "px";
+      paintRadial();
+    }
+
+    host.addEventListener("click", function (event) {
+      const toolBtn = event.target.closest("[data-tool]");
+      if (toolBtn && (host.querySelector("[data-tools]").contains(toolBtn) || host.querySelector("[data-radial]").contains(toolBtn))) {
+        setTool(toolBtn.getAttribute("data-tool"));
+        return;
+      }
+      const doorBtn = event.target.closest("[data-door-type]");
+      if (doorBtn) {
+        d.doorType = doorBtn.getAttribute("data-door-type");
+        tool = "door";
+        paintTools();
+        return;
+      }
     });
     host.querySelector("[data-prop-palette]").addEventListener("click", function (event) {
       const btn = event.target.closest("[data-prop-kind]");
       if (!btn) return;
       propKind = btn.getAttribute("data-prop-kind");
       d.brushProp = propKind;
-      tool = "prop";
-      paintTools();
+      setTool("prop");
       paintPropPalette();
+    });
+    host.querySelector("[data-site-list]").addEventListener("click", function (event) {
+      const del = event.target.closest("[data-site-del]");
+      if (del) {
+        event.stopPropagation();
+        if (d.sites.length <= 1) return;
+        if (!window.confirm("Удалить убежище?")) return;
+        const id = del.getAttribute("data-site-del");
+        flushSite(d);
+        d.sites = d.sites.filter(function (s) { return s.id !== id; });
+        loadSite(d, d.sites[0].id);
+        localUnder = "";
+        paintAll();
+        saveSoon();
+        return;
+      }
+      const btn = event.target.closest("[data-site]");
+      if (!btn) return;
+      loadSite(d, btn.getAttribute("data-site"));
+      localUnder = "";
+      selectedProp = null;
+      paintAll();
+      saveSoon();
+    });
+    host.querySelector("[data-site-add]").addEventListener("click", function () {
+      flushSite(d);
+      const site = makeSite("Убежище " + (d.sites.length + 1));
+      d.sites.push(site);
+      loadSite(d, site.id);
+      localUnder = "";
+      paintAll();
+      saveSoon();
     });
     host.querySelector("[data-floor-list]").addEventListener("click", function (event) {
       const del = event.target.closest("[data-floor-del]");
@@ -1299,7 +1658,14 @@ window.ShirmoDungeon = (function () {
     });
 
     host.querySelector("[data-dung=title]").addEventListener("change", function () {
-      d.title = this.value.trim() || "Данж";
+      d.title = this.value.trim() || "Убежище";
+      const site = activeSite(d);
+      if (site) site.name = d.title;
+      paintSites();
+      saveSoon();
+    });
+    host.querySelector("[data-dung=autowalls]").addEventListener("change", function () {
+      d.autoWalls = !!this.checked;
       saveSoon();
     });
     host.querySelector("[data-dung=screen]").addEventListener("change", function () {
@@ -1310,6 +1676,57 @@ window.ShirmoDungeon = (function () {
     host.querySelector("[data-dung=alpha]").addEventListener("input", function () {
       d.underlay.alpha = Math.max(0.2, Math.min(1, Number(this.value) / 100));
       paintGrid();
+      saveSoon();
+    });
+    host.querySelector("[data-dung=under-scale]").addEventListener("input", function () {
+      level().underScale = Math.max(0.4, Math.min(2, Number(this.value) / 100));
+      paintGrid();
+      saveSoon();
+    });
+    host.querySelector("[data-dung=under-x]").addEventListener("input", function () {
+      level().underX = Math.round(Number(this.value) || 0);
+      paintGrid();
+      saveSoon();
+    });
+    host.querySelector("[data-dung=under-y]").addEventListener("input", function () {
+      level().underY = Math.round(Number(this.value) || 0);
+      paintGrid();
+      saveSoon();
+    });
+    host.querySelectorAll("[data-asset-upload]").forEach(function (input) {
+      input.addEventListener("change", function () {
+        const file = this.files && this.files[0];
+        const role = this.getAttribute("data-asset-upload");
+        this.value = "";
+        if (!file || !ctx.upload) return;
+        ctx.upload(file).then(function (url) {
+          d.assets.push({ id: uid(), name: file.name, url: url, role: role });
+          if (role === "wall") {
+            const img = new Image();
+            img.onload = function () { TEX_SET.wall = img; TEX_SET.brick = img; paintPreview(); };
+            img.src = url;
+          }
+          if (role === "floor") {
+            const img = new Image();
+            img.onload = function () { TEX_SET.floor = img; paintPreview(); };
+            img.src = url;
+          }
+          if (role === "door") {
+            const img = new Image();
+            img.onload = function () { TEX_SET.door = img; paintPreview(); };
+            img.src = url;
+          }
+          paintAssets();
+          saveSoon();
+        });
+      });
+    });
+    host.querySelector("[data-asset-list]").addEventListener("click", function (event) {
+      const del = event.target.closest("[data-asset-del]");
+      if (!del) return;
+      const id = del.getAttribute("data-asset-del");
+      d.assets = d.assets.filter(function (a) { return a.id !== id; });
+      paintAssets();
       saveSoon();
     });
     host.querySelector("[data-dung=torch]").addEventListener("change", function () {
@@ -1372,7 +1789,13 @@ window.ShirmoDungeon = (function () {
       });
     });
 
+    grid.addEventListener("contextmenu", function (event) {
+      event.preventDefault();
+      showRadial(event.clientX, event.clientY);
+    });
     grid.addEventListener("mousedown", function (event) {
+      if (event.button === 2) return;
+      hideRadial();
       if (spaceDown || event.button === 1) {
         panning = true;
         panFrom = { x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y };

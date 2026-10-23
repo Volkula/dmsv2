@@ -1380,7 +1380,12 @@
       const battleHost = app.querySelector("#work-battle");
       const dungeonHost = app.querySelector("#work-dungeon");
       if (kind !== "codex" && codexHost._codexFlush) codexHost._codexFlush();
-      if (kind !== "dungeon" && dungeonHost && dungeonHost._dungKill) dungeonHost._dungKill();
+      if (kind !== "dungeon" && dungeonHost) {
+        if (dungeonHost._dungKill) dungeonHost._dungKill();
+        dungeonHost.innerHTML = "";
+        dungeonHost._dungKill = null;
+        dungeonHost._refresh = null;
+      }
       if (kind !== "battle" && state.campaign.battle) state.campaign.battle.screen = false;
       if (kind !== "dungeon" && state.campaign.dungeon) state.campaign.dungeon.screen = false;
       app.querySelector("#work-scene").hidden = kind !== "scene";
@@ -1388,6 +1393,7 @@
       codexHost.hidden = kind !== "codex";
       battleHost.hidden = kind !== "battle";
       dungeonHost.hidden = kind !== "dungeon";
+      dungeonHost.setAttribute("aria-hidden", kind === "dungeon" ? "false" : "true");
       app.querySelector("#mod-scene").classList.toggle("is-on", kind === "scene");
       app.querySelector("#mod-map").classList.toggle("is-on", kind === "map");
       app.querySelector("#mod-codex").classList.toggle("is-on", kind === "codex");
