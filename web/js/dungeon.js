@@ -57,12 +57,13 @@ window.ShirmoDungeon = (function () {
     if (!Number.isFinite(Number(d.darkvisionFt))) d.darkvisionFt = 60;
     if (d.screen == null) d.screen = false;
     if (!d.underlay || typeof d.underlay !== "object") {
-      d.underlay = { master: MASTER_MAP, clean: CLEAN_MAP, show: "master", alpha: 0.55 };
+      d.underlay = { master: MASTER_MAP, clean: CLEAN_MAP, show: "master", alpha: 0.92 };
     }
     if (!d.underlay.master) d.underlay.master = MASTER_MAP;
     if (!d.underlay.clean) d.underlay.clean = CLEAN_MAP;
     if (!d.underlay.show) d.underlay.show = "master";
-    if (!Number.isFinite(Number(d.underlay.alpha))) d.underlay.alpha = 0.55;
+    if (!Number.isFinite(Number(d.underlay.alpha))) d.underlay.alpha = 0.92;
+    if (Number(d.underlay.alpha) < 0.4) d.underlay.alpha = 0.92;
     if (!Array.isArray(d.levels) || !d.levels.length) {
       const cells = blankCells(DEFAULT_W, DEFAULT_H, CELL.VOID);
       const start = seedStart(cells);
@@ -594,6 +595,14 @@ window.ShirmoDungeon = (function () {
       '<div class="dung-side-head"><h2>Данж</h2>' +
       '<label class="check" title="Показывать игрокам">Экран<input type="checkbox" data-dung="screen"' + (d.screen ? " checked" : "") + "></label></div>" +
       '<p class="note">' + esc(d.title) + " · 1кл = " + esc(d.cellFt) + "фт</p>" +
+      '<div class="dung-under-box">' +
+      '<label>Подложка карты<select data-dung="underlay">' +
+      '<option value="master">Мастер (с секретами)</option>' +
+      '<option value="clean">Чистая</option>' +
+      '<option value="off">Без картинки</option></select></label>' +
+      '<label>Яркость подложки<input data-dung="alpha" type="range" min="30" max="100" value="' + Math.round((d.underlay.alpha || 0.92) * 100) + '"></label>' +
+      '<p class="note">Карта рисуется под сеткой. Обводи стены кистью «Стена».</p>' +
+      "</div>" +
       '<div class="dung-tools">' +
       '<button type="button" data-tool="floor" class="is-on">Пол</button>' +
       '<button type="button" data-tool="wall">Стена</button>' +
@@ -610,11 +619,6 @@ window.ShirmoDungeon = (function () {
       '<button type="button" data-dung-view="edit" class="is-on">Редактор</button>' +
       '<button type="button" data-dung-view="eyes">Глаза игрока</button>' +
       "</div>" +
-      '<label>Подложка<select data-dung="underlay">' +
-      '<option value="master">Мастер (секреты)</option>' +
-      '<option value="clean">Чистая</option>' +
-      '<option value="off">Выкл</option></select></label>' +
-      '<label>Прозрачность<input data-dung="alpha" type="range" min="15" max="90" value="' + Math.round((d.underlay.alpha || 0.55) * 100) + '"></label>' +
       '<label>Факел,фт<input data-dung="torch" type="number" min="5" max="120" value="' + esc(d.torchFt) + '"></label>' +
       '<label class="check">Факел у партии<input type="checkbox" data-dung="partyTorch"' + (d.party.torch ? " checked" : "") + "></label>" +
       '<label class="check">Тёмное зрение<input type="checkbox" data-dung="darkvision"' + (d.party.darkvision ? " checked" : "") + "></label>" +
@@ -637,7 +641,6 @@ window.ShirmoDungeon = (function () {
       '<div class="dung-main">' +
       '<div class="dung-edit-wrap">' +
       '<canvas class="dung-grid" width="840" height="1040"></canvas>' +
-      '<img class="dung-under" alt="" draggable="false">' +
       "</div>" +
       '<div class="dung-eyes" hidden>' +
       '<canvas class="dung-fp" width="960" height="540"></canvas>' +
@@ -645,11 +648,17 @@ window.ShirmoDungeon = (function () {
       "</div></div></div>";
 
     const grid = host.querySelector(".dung-grid");
-    const under = host.querySelector(".dung-under");
     const eyes = host.querySelector(".dung-eyes");
     const editWrap = host.querySelector(".dung-edit-wrap");
     const secretBox = host.querySelector(".dung-secret-box");
     let selectedProp = null;
+    const underImg = new Image();
+    underImg.decoding = "async";
+    underImg.onload = function () { paintGrid(); };
+    underImg.onerror = function () {
+      const note = host.querySelector(".dung-under-box .note");
+      if (note) note.textContent = "Карта не загрузилась: " + (underImg.dataset.url || "");
+    };
 
     function saveSoon() {
       markExplored(d);
@@ -657,14 +666,17 @@ window.ShirmoDungeon = (function () {
     }
 
     function syncUnder() {
-      const show = d.underlay.show;
+      const show = d.underlay.show || "master";
       if (show === "off") {
-        under.hidden = true;
+        underImg.dataset.url = "";
+        underImg.removeAttribute("src");
         return;
       }
-      under.hidden = false;
-      under.src = show === "clean" ? d.underlay.clean : d.underlay.master;
-      under.style.opacity = String(d.underlay.alpha || 0.55);
+      const url = show === "clean" ? (d.underlay.clean || CLEAN_MAP) : (d.underlay.master || MASTER_MAP);
+      if (underImg.dataset.url !== url) {
+        underImg.dataset.url = url;
+        underImg.src = url;
+      }
     }
 
     function paintGrid() {
@@ -673,26 +685,33 @@ window.ShirmoDungeon = (function () {
       const cell = Math.min(grid.width / level.w, grid.height / level.h);
       const ox = (grid.width - level.w * cell) / 2;
       const oy = (grid.height - level.h * cell) / 2;
-      under.style.width = level.w * cell + "px";
-      under.style.height = level.h * cell + "px";
-      under.style.left = ox + "px";
-      under.style.top = oy + "px";
       ctx2.clearRect(0, 0, grid.width, grid.height);
-      ctx2.fillStyle = "rgba(8,6,4,0.25)";
+      ctx2.fillStyle = "#15120e";
       ctx2.fillRect(0, 0, grid.width, grid.height);
+      if (d.underlay.show !== "off" && underImg.complete && underImg.naturalWidth) {
+        ctx2.save();
+        ctx2.globalAlpha = Math.max(0.3, Math.min(1, Number(d.underlay.alpha) || 0.92));
+        ctx2.drawImage(underImg, ox, oy, level.w * cell, level.h * cell);
+        ctx2.restore();
+      } else if (d.underlay.show !== "off") {
+        ctx2.fillStyle = "#c4a35a";
+        ctx2.font = "16px Georgia, serif";
+        ctx2.textAlign = "center";
+        ctx2.fillText("Загрузка карты…", grid.width / 2, grid.height / 2);
+      }
       for (let y = 0; y < level.h; y++) {
         for (let x = 0; x < level.w; x++) {
           const kind = cellAt(level, x, y);
           if (kind === CELL.VOID) continue;
           const colors = {
-            1: "rgba(80,70,55,0.55)",
-            2: "rgba(30,28,24,0.85)",
-            3: "rgba(140,100,40,0.7)",
-            4: "rgba(180,140,50,0.75)",
-            5: "rgba(10,8,12,0.8)",
-            6: "rgba(110,80,40,0.7)"
+            1: "rgba(80,70,55,0.28)",
+            2: "rgba(20,18,14,0.72)",
+            3: "rgba(140,100,40,0.55)",
+            4: "rgba(180,140,50,0.6)",
+            5: "rgba(10,8,12,0.65)",
+            6: "rgba(110,80,40,0.5)"
           };
-          ctx2.fillStyle = colors[kind] || "rgba(60,60,60,0.5)";
+          ctx2.fillStyle = colors[kind] || "rgba(60,60,60,0.4)";
           ctx2.fillRect(ox + x * cell, oy + y * cell, cell + 0.5, cell + 0.5);
         }
       }
@@ -918,12 +937,13 @@ window.ShirmoDungeon = (function () {
     host.querySelector("[data-dung=underlay]").value = d.underlay.show || "master";
     host.querySelector("[data-dung=underlay]").addEventListener("change", function () {
       d.underlay.show = this.value;
-      refresh();
+      syncUnder();
+      paintGrid();
       saveSoon();
     });
     host.querySelector("[data-dung=alpha]").addEventListener("input", function () {
-      d.underlay.alpha = Math.max(0.1, Math.min(0.95, Number(this.value) / 100));
-      syncUnder();
+      d.underlay.alpha = Math.max(0.3, Math.min(1, Number(this.value) / 100));
+      paintGrid();
       saveSoon();
     });
     host.querySelector("[data-dung=torch]").addEventListener("change", function () {
@@ -1077,7 +1097,6 @@ window.ShirmoDungeon = (function () {
     host._refresh = refresh;
 
     syncUnder();
-    under.onload = function () { paintGrid(); };
     refresh();
     setView("edit");
   }

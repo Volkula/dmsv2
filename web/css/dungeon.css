@@ -83,6 +83,17 @@
     #0a0806;
 }
 
+.dung-under-box {
+  padding: 8px;
+  border: 1px solid rgba(230, 195, 106, 0.35);
+  background: rgba(40, 32, 18, 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dung-under-box label { margin: 0; }
+
 .dung-edit-wrap {
   position: relative;
   width: max-content;
@@ -91,18 +102,10 @@
 
 .dung-grid {
   display: block;
-  position: relative;
-  z-index: 2;
   cursor: crosshair;
-  image-rendering: pixelated;
-}
-
-.dung-under {
-  position: absolute;
-  z-index: 1;
-  pointer-events: none;
-  object-fit: fill;
   image-rendering: auto;
+  background: #15120e;
+  border: 1px solid rgba(230, 195, 106, 0.25);
 }
 
 .dung-eyes {
