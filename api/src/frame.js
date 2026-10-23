@@ -225,7 +225,7 @@ function projectMap(page, campaign) {
       ? places.find(function (row) { return row && row.id === item.placeId; })
       : null;
     const face = item.portrait || (place && place.portrait) || "";
-    const portrait = face ? clip(face, 300) : "";
+    const portrait = picture(face);
     const source = item.portrait ? item : (place || {});
     return Object.assign({
       id: clip(item.id, 80),
@@ -262,10 +262,17 @@ function projectMap(page, campaign) {
     const npc = (item.kind === "npc" || item.kind === "foe") && personId
       ? npcs.find(function (row) { return row && row.id === personId; })
       : null;
-    const face = item.kind === "foe"
-      ? { portrait: item.portrait || (npc && npc.portrait) || "", x: 50, y: 50, zoom: 1 }
-      : activeFace(npc);
-    const portrait = face.portrait ? clip(face.portrait, 300) : "";
+    const hero = item.heroId && campaign && campaign.codex && Array.isArray(campaign.codex.heroes)
+      ? campaign.codex.heroes.find(function (row) { return row && row.id === item.heroId; })
+      : null;
+    const npcFace = activeFace(npc);
+    const face = {
+      portrait: item.portrait || (hero && hero.portrait) || npcFace.portrait || "",
+      x: item.portrait ? axis(item.portraitX) : npcFace.x,
+      y: item.portrait ? axis(item.portraitY) : npcFace.y,
+      zoom: item.portrait ? zoomOf(item.portraitZoom) : npcFace.zoom
+    };
+    const portrait = picture(face.portrait);
     const kind = item.kind === "npc" ? "npc" : (item.kind === "foe" ? "foe" : "mark");
     return Object.assign({
       id: clip(item.id, 80),
@@ -308,7 +315,7 @@ function projectMap(page, campaign) {
     talk = {
       name: clip(talkMarker.name || (npc && npc.name) || "НПС", 80),
       line: clip(chosen ? (chosen.text || "...") : (fallback || "..."), 800),
-      portrait: face.portrait ? clip(face.portrait, 300) : "",
+      portrait: picture(face.portrait),
       figure: { x: figure.x, y: figure.y, h: figure.h },
       shop: shop,
       goods: shop ? saleRows(npc, campaign) : null,
@@ -366,9 +373,32 @@ function hex(value, fallback) {
 }
 
 function picture(value) {
-  const text = clip(value, 240);
-  if (!text.startsWith("/") || text.indexOf("..") >= 0) return "";
-  return text;
+  const text = String(value || "").trim();
+  if (!text) return "";
+  if (text.indexOf("data:image/") === 0) {
+    return text.length > 900000 ? "" : text;
+  }
+  if (text.indexOf("..") >= 0) return "";
+  if (text.charAt(0) === "/") return clip(text, 500);
+  if (/^https?:\/\//i.test(text)) return clip(text, 800);
+  return "";
+}
+
+function actorFace(campaign, actor) {
+  if (!actor) return "";
+  const own = picture(actor.portrait);
+  if (own) return own;
+  const heroes = campaign && campaign.codex && Array.isArray(campaign.codex.heroes) ? campaign.codex.heroes : [];
+  if (actor.heroId) {
+    const hero = heroes.find(function (row) { return row && row.id === actor.heroId; });
+    if (hero) return picture(hero.portrait);
+  }
+  const npcs = campaign && campaign.codex && Array.isArray(campaign.codex.npcs) ? campaign.codex.npcs : [];
+  if (actor.codexId) {
+    const npc = npcs.find(function (row) { return row && row.id === actor.codexId; });
+    if (npc) return picture(npc.portrait);
+  }
+  return "";
 }
 
 function placeImage(campaign) {
@@ -445,7 +475,7 @@ function projectBattle(campaign, battle) {
         init: Math.round(Number(actor.init) || 0),
         hp: hp,
         hpMax: hpMax,
-        portrait: picture(actor.portrait),
+        portrait: actorFace(campaign, actor),
         color: hex(actor.color, ""),
         dead: !!actor.dead || hp <= 0,
         boss: actor.boss === true ? true : actor.boss === false ? false : undefined,

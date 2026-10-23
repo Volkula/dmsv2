@@ -1292,6 +1292,7 @@
       readForm();
       if (window.ShirmoCodex) window.ShirmoCodex.adopt(state.campaign);
       try {
+        await stashPortraits(state.campaign, function (file) { return uploadFile(id, key, file); });
         await api("/api/rooms/" + id + "/campaign", {
           method: "PUT",
           headers: headers,
@@ -1615,6 +1616,84 @@
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "ошибка");
     return data.url;
+  }
+
+  function dataUrlBlob(text) {
+    const match = String(text || "").match(/^data:(image\/[a-z0-9.+-]+);base64,([\s\S]+)$/i);
+    if (!match) return null;
+    try {
+      const bin = atob(match[2].replace(/\s/g, ""));
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      return new Blob([bytes], { type: match[1] });
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function localPicture(value) {
+    const text = String(value || "").trim();
+    return text.charAt(0) === "/" && text.indexOf("..") < 0 ? text : "";
+  }
+
+  async function stashPortraits(campaign, upload) {
+    if (!campaign || !upload) return;
+    const cache = {};
+    async function toFile(value, label) {
+      const text = String(value || "").trim();
+      if (!text) return "";
+      const local = localPicture(text);
+      if (local) return local;
+      if (cache[text]) return cache[text];
+      cache[text] = (async function () {
+        let blob = null;
+        if (text.indexOf("data:image/") === 0) blob = dataUrlBlob(text);
+        else if (/^https?:\/\//i.test(text)) {
+          try {
+            const res = await fetch(text);
+            if (res.ok) blob = await res.blob();
+          } catch (err) { blob = null; }
+        }
+        if (!blob) return text;
+        const type = blob.type && blob.type.indexOf("image/") === 0 ? blob.type : "image/jpeg";
+        const ext = (type.split("/")[1] || "jpg").replace("jpeg", "jpg");
+        try {
+          return await upload(new File([blob], (label || "portrait") + "." + ext, { type: type }));
+        } catch (err) {
+          return text;
+        }
+      })();
+      return cache[text];
+    }
+    function queue(row, key, label) {
+      if (!row || !row[key]) return Promise.resolve();
+      if (localPicture(row[key])) return Promise.resolve();
+      return toFile(row[key], label).then(function (url) {
+        if (url) row[key] = url;
+      });
+    }
+    const book = campaign.codex || {};
+    const heroes = book.heroes || [];
+    (campaign.battle && campaign.battle.actors || []).forEach(function (actor) {
+      if (!actor || actor.portrait) return;
+      const hero = actor.heroId && heroes.find(function (row) { return row && row.id === actor.heroId; });
+      const npc = actor.codexId && (book.npcs || []).find(function (row) { return row && row.id === actor.codexId; });
+      actor.portrait = (hero && hero.portrait) || (npc && npc.portrait) || "";
+    });
+    const jobs = [];
+    heroes.forEach(function (row, i) { jobs.push(queue(row, "portrait", (row && row.name) || ("hero-" + i))); });
+    (book.npcs || []).forEach(function (row, i) { jobs.push(queue(row, "portrait", (row && row.name) || ("npc-" + i))); });
+    ((campaign.battle && campaign.battle.actors) || []).forEach(function (row, i) {
+      jobs.push(queue(row, "portrait", (row && row.name) || ("actor-" + i)));
+    });
+    (campaign.pages || []).forEach(function (page) {
+      (page.views || []).forEach(function (view) {
+        (view.markers || []).forEach(function (row, i) {
+          jobs.push(queue(row, "portrait", (row && row.name) || ("mark-" + i)));
+        });
+      });
+    });
+    await Promise.all(jobs);
   }
 
   function mountLibrary(host, ctx) {
