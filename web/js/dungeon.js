@@ -57,11 +57,12 @@ window.ShirmoDungeon = (function () {
     if (!Number.isFinite(Number(d.darkvisionFt))) d.darkvisionFt = 60;
     if (d.screen == null) d.screen = false;
     if (!d.underlay || typeof d.underlay !== "object") {
-      d.underlay = { master: MASTER_MAP, clean: CLEAN_MAP, show: "master", alpha: 0.92 };
+      d.underlay = { master: MASTER_MAP, clean: CLEAN_MAP, custom: "", show: "master", alpha: 0.92 };
     }
     if (!d.underlay.master) d.underlay.master = MASTER_MAP;
     if (!d.underlay.clean) d.underlay.clean = CLEAN_MAP;
-    if (!d.underlay.show) d.underlay.show = "master";
+    if (d.underlay.custom == null) d.underlay.custom = "";
+    if (!d.underlay.show) d.underlay.show = d.underlay.custom ? "custom" : "master";
     if (!Number.isFinite(Number(d.underlay.alpha))) d.underlay.alpha = 0.92;
     if (Number(d.underlay.alpha) < 0.4) d.underlay.alpha = 0.92;
     if (!Array.isArray(d.levels) || !d.levels.length) {
@@ -596,12 +597,18 @@ window.ShirmoDungeon = (function () {
       '<label class="check" title="Показывать игрокам">Экран<input type="checkbox" data-dung="screen"' + (d.screen ? " checked" : "") + "></label></div>" +
       '<p class="note">' + esc(d.title) + " · 1кл = " + esc(d.cellFt) + "фт</p>" +
       '<div class="dung-under-box">' +
-      '<label>Подложка карты<select data-dung="underlay">' +
-      '<option value="master">Мастер (с секретами)</option>' +
-      '<option value="clean">Чистая</option>' +
+      '<p class="dung-under-title">Подложка</p>' +
+      '<label class="dung-upload primary-like" title="Загрузить свою картинку карты">' +
+      'Загрузить свою карту' +
+      '<input type="file" accept="image/*" data-dung-upload hidden>' +
+      "</label>" +
+      '<p class="note" data-dung-upload-status>' + (d.underlay.custom ? "Своя карта загружена." : "Жми сюда и выбери файл карты.") + "</p>" +
+      '<label>Или встроенная<select data-dung="underlay">' +
+      '<option value="custom"' + (d.underlay.custom ? "" : " disabled") + ">Своя загрузка</option>" +
+      '<option value="master">Redbrand мастер</option>' +
+      '<option value="clean">Redbrand чистая</option>' +
       '<option value="off">Без картинки</option></select></label>' +
-      '<label>Яркость подложки<input data-dung="alpha" type="range" min="30" max="100" value="' + Math.round((d.underlay.alpha || 0.92) * 100) + '"></label>' +
-      '<p class="note">Карта рисуется под сеткой. Обводи стены кистью «Стена».</p>' +
+      '<label>Яркость<input data-dung="alpha" type="range" min="30" max="100" value="' + Math.round((d.underlay.alpha || 0.92) * 100) + '"></label>' +
       "</div>" +
       '<div class="dung-tools">' +
       '<button type="button" data-tool="floor" class="is-on">Пол</button>' +
@@ -665,14 +672,21 @@ window.ShirmoDungeon = (function () {
       if (ctx.save) ctx.save();
     }
 
-    function syncUnder() {
+    function underUrl() {
       const show = d.underlay.show || "master";
-      if (show === "off") {
+      if (show === "off") return "";
+      if (show === "custom") return d.underlay.custom || "";
+      if (show === "clean") return d.underlay.clean || CLEAN_MAP;
+      return d.underlay.master || MASTER_MAP;
+    }
+
+    function syncUnder() {
+      const url = underUrl();
+      if (!url) {
         underImg.dataset.url = "";
         underImg.removeAttribute("src");
         return;
       }
-      const url = show === "clean" ? (d.underlay.clean || CLEAN_MAP) : (d.underlay.master || MASTER_MAP);
       if (underImg.dataset.url !== url) {
         underImg.dataset.url = url;
         underImg.src = url;
@@ -688,16 +702,21 @@ window.ShirmoDungeon = (function () {
       ctx2.clearRect(0, 0, grid.width, grid.height);
       ctx2.fillStyle = "#15120e";
       ctx2.fillRect(0, 0, grid.width, grid.height);
-      if (d.underlay.show !== "off" && underImg.complete && underImg.naturalWidth) {
+      if (underUrl() && underImg.complete && underImg.naturalWidth) {
         ctx2.save();
         ctx2.globalAlpha = Math.max(0.3, Math.min(1, Number(d.underlay.alpha) || 0.92));
         ctx2.drawImage(underImg, ox, oy, level.w * cell, level.h * cell);
         ctx2.restore();
-      } else if (d.underlay.show !== "off") {
+      } else if (underUrl()) {
         ctx2.fillStyle = "#c4a35a";
         ctx2.font = "16px Georgia, serif";
         ctx2.textAlign = "center";
         ctx2.fillText("Загрузка карты…", grid.width / 2, grid.height / 2);
+      } else {
+        ctx2.fillStyle = "#c4a35a";
+        ctx2.font = "16px Georgia, serif";
+        ctx2.textAlign = "center";
+        ctx2.fillText("Загрузи карту слева → «Загрузить свою карту»", grid.width / 2, grid.height / 2);
       }
       for (let y = 0; y < level.h; y++) {
         for (let x = 0; x < level.w; x++) {
@@ -934,8 +953,11 @@ window.ShirmoDungeon = (function () {
     host.querySelectorAll("[data-dung-view]").forEach(function (btn) {
       btn.addEventListener("click", function () { setView(btn.getAttribute("data-dung-view")); });
     });
-    host.querySelector("[data-dung=underlay]").value = d.underlay.show || "master";
-    host.querySelector("[data-dung=underlay]").addEventListener("change", function () {
+    const underSelect = host.querySelector("[data-dung=underlay]");
+    underSelect.value = d.underlay.custom && d.underlay.show === "custom" ? "custom"
+      : (d.underlay.show || "master");
+    if (!d.underlay.custom && underSelect.value === "custom") underSelect.value = "master";
+    underSelect.addEventListener("change", function () {
       d.underlay.show = this.value;
       syncUnder();
       paintGrid();
@@ -945,6 +967,30 @@ window.ShirmoDungeon = (function () {
       d.underlay.alpha = Math.max(0.3, Math.min(1, Number(this.value) / 100));
       paintGrid();
       saveSoon();
+    });
+    host.querySelector("[data-dung-upload]").addEventListener("change", function () {
+      const file = this.files && this.files[0];
+      this.value = "";
+      if (!file) return;
+      const status = host.querySelector("[data-dung-upload-status]");
+      if (!ctx.upload) {
+        if (status) status.textContent = "Загрузка недоступна.";
+        return;
+      }
+      if (status) status.textContent = "Гружу…";
+      ctx.upload(file).then(function (url) {
+        d.underlay.custom = url;
+        d.underlay.show = "custom";
+        const opt = underSelect.querySelector('option[value="custom"]');
+        if (opt) opt.disabled = false;
+        underSelect.value = "custom";
+        if (status) status.textContent = "Готово: " + (file.name || "карта");
+        syncUnder();
+        paintGrid();
+        saveSoon();
+      }).catch(function (error) {
+        if (status) status.textContent = (error && error.message) || "Ошибка загрузки";
+      });
     });
     host.querySelector("[data-dung=torch]").addEventListener("change", function () {
       d.torchFt = Math.max(5, Math.min(120, Math.round(Number(this.value) || 15)));

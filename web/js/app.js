@@ -1426,7 +1426,8 @@
         window.ShirmoDungeon.mount(dungeonHost, {
           campaign: state.campaign,
           save: save,
-          roll: publishRoll
+          roll: publishRoll,
+          upload: function (file) { return uploadFile(id, key, file); }
         });
         save();
         return;
