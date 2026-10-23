@@ -522,6 +522,13 @@ const server = http.createServer(async function (req, res) {
       send(res, 404, { error: "not found" });
       return;
     }
+    if (room.campaign && room.campaign.dungeon) {
+      delete room.campaign.dungeon;
+      if (room.frame && room.frame.page && room.frame.page.kind === "dungeon") {
+        room.frame = projectFrame(room.campaign);
+      }
+      writeRoom(room);
+    }
 
     const tail = parts.slice(3).join("/");
 
@@ -653,13 +660,14 @@ const server = http.createServer(async function (req, res) {
           return;
         }
         room.campaign = body.campaign;
+        if (room.campaign.dungeon) delete room.campaign.dungeon;
       }
       const shown = room.campaign.activePageId === room.campaign.shownPageId;
       const nextFrame = projectFrame(room.campaign);
       const nextKind = nextFrame && nextFrame.page && nextFrame.page.kind;
       const prevKind = room.frame && room.frame.page && room.frame.page.kind;
-      const overlay = nextKind === "dungeon" || nextKind === "battle";
-      const wasOverlay = prevKind === "dungeon" || prevKind === "battle";
+      const overlay = nextKind === "battle";
+      const wasOverlay = prevKind === "battle";
       if (room.publishMode === "live" && (shown || overlay || wasOverlay)) {
         room.frame = nextFrame;
       }
