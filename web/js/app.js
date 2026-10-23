@@ -1184,7 +1184,7 @@
       '<div class="kebab-menu" id="kebab-menu" hidden>' +
       '<button type="button" id="roll" title="Бросок с преимуществом или помехой, закреплённые и история">Броски</button>' +
       '<button type="button" id="roll-look" title="Скорость, цвет и текстура кубика">Кубик</button>' +
-      '<button type="button" id="library" title="Шрифты, картинки и заметки комнаты">Библиотека</button>' +
+      '<button type="button" id="library" title="Открыть библиотеку файлов">Библиотека</button>' +
       '<div class="kebab-gap"></div>' +
       '<button type="button" id="backup" title="Скачать кампанию и файлы">Выгрузка</button>' +
       '<button type="button" id="pass" title="Сменить пароль мастера этой комнаты">Пароль</button>' +
@@ -1199,6 +1199,7 @@
       '<button type="button" id="mod-codex" title="Справочник" aria-label="Справочник">' + glyph('<path d="M5 5.5h5.5A2.5 2.5 0 0113 8v11H8a3 3 0 00-3 3zM19 5.5h-5.5A2.5 2.5 0 0011 8v11h5a3 3 0 013 3z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>') + "</button>" +
       '<button type="button" id="mod-battle" title="Бой" aria-label="Бой">' + glyph('<path d="M14.5 3.5l6 6M4.5 13.5l6 6M9.5 16.5l7-7M16.5 9.5l2-2M8.5 17.5l-2 2M5 19l2-2M19 5l-2 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "</button>" +
       '<button type="button" id="mod-dungeon" title="Данж" aria-label="Данж">' + glyph('<path d="M4 20V9l8-5 8 5v11H4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 20v-6h6v6M12 4v5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "</button>" +
+      '<button type="button" id="mod-library" title="Библиотека" aria-label="Библиотека">' + glyph('<path d="M4 6h16v12H4zM8 6V4h8v2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 10h8M8 14h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "</button>" +
       "</nav>" +
       '<input id="title" class="room-title" type="text" value="' + esc(state.title) + '" aria-label="Название комнаты" title="Название комнаты">' +
       "</div>" +
@@ -1219,7 +1220,7 @@
       '<label title="Текст заметки вместо своего текста">Заметка<select id="page-note"></select></label>' +
       '<p class="note">В режиме «Сразу» правки этой страницы уходят игрокам сами. «Показать» публикует кадр в любом режиме. Бросок виден игрокам карточкой с кубиком и остаётся в истории.</p>' +
       '<p class="error" id="err"></p></aside>' +
-      '<div class="stage-wrap" id="preview"></div></div><div class="work" id="work-map" hidden></div><div class="work" id="work-codex" hidden></div><div class="work" id="work-battle" hidden></div><div class="work" id="work-dungeon" hidden></div></section>';
+      '<div class="stage-wrap" id="preview"></div></div><div class="work" id="work-map" hidden></div><div class="work" id="work-codex" hidden></div><div class="work" id="work-battle" hidden></div><div class="work" id="work-dungeon" hidden></div><div class="work" id="work-library" hidden></div></section>';
 
     const err = app.querySelector("#err");
     const preview = app.querySelector("#preview");
@@ -1379,6 +1380,7 @@
       const codexHost = app.querySelector("#work-codex");
       const battleHost = app.querySelector("#work-battle");
       const dungeonHost = app.querySelector("#work-dungeon");
+      const libraryHost = app.querySelector("#work-library");
       if (kind !== "codex" && codexHost._codexFlush) codexHost._codexFlush();
       if (kind !== "dungeon" && dungeonHost) {
         if (dungeonHost._dungKill) dungeonHost._dungKill();
@@ -1394,11 +1396,27 @@
       battleHost.hidden = kind !== "battle";
       dungeonHost.hidden = kind !== "dungeon";
       dungeonHost.setAttribute("aria-hidden", kind === "dungeon" ? "false" : "true");
+      libraryHost.hidden = kind !== "library";
       app.querySelector("#mod-scene").classList.toggle("is-on", kind === "scene");
       app.querySelector("#mod-map").classList.toggle("is-on", kind === "map");
       app.querySelector("#mod-codex").classList.toggle("is-on", kind === "codex");
       app.querySelector("#mod-battle").classList.toggle("is-on", kind === "battle");
       app.querySelector("#mod-dungeon").classList.toggle("is-on", kind === "dungeon");
+      app.querySelector("#mod-library").classList.toggle("is-on", kind === "library");
+      if (kind === "library") {
+        mountLibrary(libraryHost, {
+          shelf: shelf,
+          save: save,
+          fill: fill,
+          err: err,
+          upload: function (file) { return uploadFile(id, key, file); },
+          sectionOf: function (image) {
+            const npcs = (state.campaign.codex && state.campaign.codex.npcs) || [];
+            return window.ShirmoLib ? window.ShirmoLib.title(image, npcs) : "Общее";
+          }
+        });
+        return;
+      }
       if (kind === "codex") {
         window.ShirmoCodex.mount(codexHost, {
           campaign: state.campaign,
@@ -1499,17 +1517,13 @@
       if (!app.querySelector("#page-title").value) app.querySelector("#page-title").value = note.name || "";
       schedule();
     });
-    app.querySelector("#library").addEventListener("click", function () {
-      openLibrary(id, key, shelf, save, fill, err, function (image) {
-        const npcs = (state.campaign.codex && state.campaign.codex.npcs) || [];
-        return window.ShirmoLib ? window.ShirmoLib.title(image, npcs) : "Общее";
-      });
-    });
+    app.querySelector("#library").addEventListener("click", function () { showModule("library"); });
     app.querySelector("#mod-scene").addEventListener("click", function () { showModule("scene"); });
     app.querySelector("#mod-map").addEventListener("click", function () { showModule("map"); });
     app.querySelector("#mod-codex").addEventListener("click", function () { showModule("codex"); });
     app.querySelector("#mod-battle").addEventListener("click", function () { showModule("battle"); });
     app.querySelector("#mod-dungeon").addEventListener("click", function () { showModule("dungeon"); });
+    app.querySelector("#mod-library").addEventListener("click", function () { showModule("library"); });
 
     function markMode() {
       app.querySelector("#mode-live").classList.toggle("is-on", state.publishMode === "live");
@@ -1609,7 +1623,7 @@
     let open = page().kind === "map" ? "map" : "scene";
     try {
       const saved = sessionStorage.getItem("shirmo-mod-" + id);
-      if (saved === "scene" || saved === "map" || saved === "codex" || saved === "battle" || saved === "dungeon") open = saved;
+      if (saved === "scene" || saved === "map" || saved === "codex" || saved === "battle" || saved === "dungeon" || saved === "library") open = saved;
     } catch (err) { /* нет хранилища */ }
     showModule(open);
   }
@@ -1636,125 +1650,236 @@
     return data.url;
   }
 
-  function openLibrary(roomId, key, shelf, save, fill, err, sectionOf) {
-    const old = document.getElementById("pop");
-    if (old) old.remove();
-    const pop = document.createElement("div");
-    pop.id = "pop";
-    pop.className = "pop";
-    document.body.appendChild(pop);
-    function close() { pop.remove(); }
-    function row(item, kind) {
-      const thumb = kind === "images" && item.url ? '<img class="lib-thumb" alt="" src="' + esc(item.url) + '">' : "";
-      return '<div class="lib-row">' + thumb + "<span>" + esc(item.name) + "</span>" +
-        '<button type="button" data-del="' + kind + ":" + esc(item.id) + '" title="Убрать из библиотеки">×</button></div>';
+  function mountLibrary(host, ctx) {
+    if (!host || !ctx) return;
+    let kind = host._libKind || "images";
+    let folder = host._libFolder || "Все";
+    let query = host._libQuery || "";
+    let sort = host._libSort || "name";
+    let selected = host._libSelected || "";
+
+    function sectionName(item) {
+      if (kind !== "images") return "Все";
+      return ctx.sectionOf ? ctx.sectionOf(item) : (item.section || "Общее");
     }
-    function imageBlocks(images) {
-      const groups = [];
-      const index = {};
-      (images || []).forEach(function (item) {
-        const name = sectionOf ? sectionOf(item) : (item.section || "Общее");
-        if (!index[name]) {
-          index[name] = [];
-          groups.push(name);
-        }
-        index[name].push(item);
-      });
-      groups.sort(function (a, b) {
+
+    function foldersOf(lib) {
+      if (kind === "fonts") return ["Все"];
+      if (kind === "notes") return ["Все"];
+      const set = {};
+      (lib.images || []).forEach(function (item) { set[sectionName(item)] = true; });
+      const names = Object.keys(set).sort(function (a, b) {
         function rank(name) {
           if (name === "Общее") return 2;
           if (name === "Иконки товаров") return 1;
           return 0;
         }
-        const gap = rank(a) - rank(b);
-        return gap || a.localeCompare(b, "ru");
+        return (rank(a) - rank(b)) || a.localeCompare(b, "ru");
       });
-      if (!groups.length) return '<p class="roll-empty">Пусто</p>';
-      return groups.map(function (name) {
-        return '<h4 class="lib-section">' + esc(name) + "</h4>" + index[name].map(function (item) { return row(item, "images"); }).join("");
-      }).join("");
+      return ["Все"].concat(names);
     }
+
+    function listItems(lib) {
+      const raw = kind === "fonts" ? (lib.fonts || []) : (kind === "notes" ? (lib.notes || []) : (lib.images || []));
+      const q = String(query || "").trim().toLowerCase();
+      let rows = raw.filter(function (item) {
+        if (folder && folder !== "Все" && sectionName(item) !== folder) return false;
+        if (!q) return true;
+        const hay = [item.name, item.section, item.text, sectionName(item)].join(" ").toLowerCase();
+        return hay.indexOf(q) >= 0;
+      });
+      rows = rows.slice().sort(function (a, b) {
+        if (sort === "section") {
+          const gap = sectionName(a).localeCompare(sectionName(b), "ru");
+          return gap || String(a.name || "").localeCompare(String(b.name || ""), "ru");
+        }
+        if (sort === "new") return String(b.id || "").localeCompare(String(a.id || ""));
+        return String(a.name || "").localeCompare(String(b.name || ""), "ru");
+      });
+      return rows;
+    }
+
     function paint() {
-      const lib = shelf();
-      pop.innerHTML = '<div class="pop-card" role="dialog" aria-label="Библиотека">' +
-        '<div class="pop-head"><h2>Библиотека</h2><button type="button" data-pop-close title="Закрыть">×</button></div>' +
-        '<p class="note">Один раз кладёте сюда. На странице потом выбираете из меню. Загрузки персонажа сами попадают в его раздел.</p>' +
-        '<section class="lib-block"><h3>Шрифты</h3>' +
-        '<div class="lib-row"><input id="font-name" type="text" placeholder="Название" title="Как шрифт будет называться в списках">' + filePick("font-file", ".woff,.woff2,.ttf,.otf,font/woff,font/woff2,font/ttf,font/otf", "Шрифт") + "</div>" +
-        '<button type="button" id="font-add" title="Сохранить шрифт в библиотеке">Добавить шрифт</button>' +
-        (lib.fonts.map(function (item) { return row(item, "fonts"); }).join("") || '<p class="roll-empty">Пусто</p>') +
-        "</section>" +
-        '<section class="lib-block"><h3>Изображения</h3>' +
-        '<div class="lib-row"><input id="image-name" type="text" placeholder="Название" title="Как картинка будет называться в списках">' + filePick("image-file", "image/*", "Изображение") + "</div>" +
-        '<button type="button" id="image-add" title="Сохранить картинку в библиотеке">Добавить изображение</button>' +
-        imageBlocks(lib.images) +
-        "</section>" +
-        '<section class="lib-block"><h3>Заметки</h3>' +
-        '<div class="lib-row"><input id="note-name" type="text" placeholder="Название" title="Как заметка будет называться в списках"></div>' +
-        '<textarea id="note-text" placeholder="Текст заметки" title="Текст, который можно выбрать на сцене"></textarea>' +
-        '<button type="button" id="note-add" title="Сохранить заметку в библиотеке">Добавить заметку</button>' +
-        (lib.notes.map(function (item) { return row(item, "notes"); }).join("") || '<p class="roll-empty">Пусто</p>') +
-        "</section></div>";
-      pop.querySelector("[data-pop-close]").addEventListener("click", close);
-      pop.querySelectorAll("input[type=file]").forEach(function (input) {
-        input.addEventListener("change", function () {
-          const file = input.files[0];
-          const slot = pop.querySelector("#" + input.id + "-name");
-          if (slot) slot.textContent = file ? file.name : "";
-          const title = pop.querySelector("#" + input.id.replace("-file", "-name"));
-          if (title && file) title.value = file.name.replace(/\.[^.]+$/, "");
+      const lib = ctx.shelf();
+      const folders = foldersOf(lib);
+      if (folder !== "Все" && folders.indexOf(folder) < 0) folder = "Все";
+      const rows = listItems(lib);
+      if (selected && !rows.some(function (row) { return row.id === selected; })) selected = rows[0] ? rows[0].id : "";
+      const picked = rows.find(function (row) { return row.id === selected; }) || null;
+      host._libKind = kind;
+      host._libFolder = folder;
+      host._libQuery = query;
+      host._libSort = sort;
+      host._libSelected = selected;
+
+      const tree = folders.map(function (name) {
+        const count = name === "Все"
+          ? (kind === "fonts" ? (lib.fonts || []).length : kind === "notes" ? (lib.notes || []).length : (lib.images || []).length)
+          : (lib.images || []).filter(function (item) { return sectionName(item) === name; }).length;
+        return '<button type="button" class="libx-folder' + (folder === name ? " is-on" : "") + '" data-folder="' + esc(name) + '">' +
+          "<span>" + esc(name) + "</span><em>" + count + "</em></button>";
+      }).join("");
+
+      const cards = rows.map(function (item) {
+        const thumb = kind === "images" && item.url
+          ? '<img alt="" src="' + esc(item.url) + '">'
+          : (kind === "fonts"
+            ? '<span class="libx-glyph" style="font-family:' + esc(item.name) + ', Georgia, serif">Aa</span>'
+            : '<span class="libx-glyph">≡</span>');
+        return '<button type="button" class="libx-card' + (selected === item.id ? " is-on" : "") + '" data-id="' + esc(item.id) + '" title="' + esc(item.name) + '">' +
+          '<div class="libx-thumb">' + thumb + "</div>" +
+          "<strong>" + esc(item.name || "Без имени") + "</strong>" +
+          (kind === "images" ? "<small>" + esc(sectionName(item)) + "</small>" : "") +
+          "</button>";
+      }).join("") || '<p class="roll-empty libx-empty">Пусто</p>';
+
+      let preview = '<div class="libx-preview-empty">Выбери файл</div>';
+      if (picked) {
+        if (kind === "images" && picked.url) {
+          preview = '<img class="libx-preview-img" alt="" src="' + esc(picked.url) + '">' +
+            "<h3>" + esc(picked.name) + "</h3>" +
+            "<p>" + esc(sectionName(picked)) + "</p>" +
+            '<a href="' + esc(picked.url) + '" target="_blank" rel="noopener">Открыть оригинал</a>';
+        } else if (kind === "fonts") {
+          preview = '<p class="libx-font-demo" style="font-family:\'' + esc(picked.name) + '\', Georgia, serif">Съешь ещё этих мягких французских булок</p>' +
+            "<h3>" + esc(picked.name) + "</h3>";
+        } else {
+          preview = "<h3>" + esc(picked.name) + "</h3><pre class=\"libx-note\">" + esc(picked.text || "") + "</pre>";
+        }
+        preview += '<button type="button" class="danger" data-lib-del="' + esc(picked.id) + '">Удалить</button>';
+      }
+
+      const accept = kind === "fonts"
+        ? ".woff,.woff2,.ttf,.otf,font/woff,font/woff2,font/ttf,font/otf"
+        : "image/*";
+      const addBlock = kind === "notes"
+        ? '<div class="libx-add"><input id="lib-note-name" type="text" placeholder="Название заметки">' +
+          '<textarea id="lib-note-text" placeholder="Текст"></textarea>' +
+          '<button type="button" id="lib-add" class="primary">Добавить заметку</button></div>'
+        : '<div class="libx-add"><input id="lib-item-name" type="text" placeholder="Название">' +
+          filePick("lib-upload", accept, kind === "fonts" ? "Шрифт" : "Изображение") +
+          '<button type="button" id="lib-add" class="primary">Загрузить</button></div>';
+
+      host.innerHTML =
+        '<div class="libx">' +
+        '<header class="libx-bar">' +
+        '<div class="libx-tabs">' +
+        '<button type="button" data-kind="images"' + (kind === "images" ? ' class="is-on"' : "") + ">Изображения</button>" +
+        '<button type="button" data-kind="fonts"' + (kind === "fonts" ? ' class="is-on"' : "") + ">Шрифты</button>" +
+        '<button type="button" data-kind="notes"' + (kind === "notes" ? ' class="is-on"' : "") + ">Заметки</button>" +
+        "</div>" +
+        '<input id="lib-search" type="search" placeholder="Поиск…" value="' + esc(query) + '" aria-label="Поиск">' +
+        '<label class="libx-sort">Сортировка<select id="lib-sort">' +
+        '<option value="name"' + (sort === "name" ? " selected" : "") + ">Имя</option>" +
+        '<option value="section"' + (sort === "section" ? " selected" : "") + ">Раздел</option>" +
+        '<option value="new"' + (sort === "new" ? " selected" : "") + ">Новые</option>" +
+        "</select></label>" +
+        '<span class="libx-count">' + rows.length + "</span>" +
+        "</header>" +
+        '<aside class="libx-tree">' + tree + "</aside>" +
+        '<div class="libx-grid">' + cards + "</div>" +
+        '<aside class="libx-preview">' + preview + addBlock + "</aside>" +
+        "</div>";
+
+      host.querySelectorAll("[data-kind]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          kind = btn.getAttribute("data-kind");
+          folder = "Все";
+          selected = "";
+          paint();
         });
       });
-      pop.querySelectorAll("[data-del]").forEach(function (button) {
-        button.addEventListener("click", function () {
-          const bits = button.getAttribute("data-del").split(":");
-          const lib = shelf();
-          lib[bits[0]] = lib[bits[0]].filter(function (item) { return item.id !== bits[1]; });
-          save();
-          fill();
+      host.querySelectorAll("[data-folder]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          folder = btn.getAttribute("data-folder");
+          selected = "";
           paint();
         });
       });
-      pop.querySelector("#font-add").addEventListener("click", async function () {
-        const file = pop.querySelector("#font-file").files[0];
-        const name = pop.querySelector("#font-name").value.trim();
-        if (!file || !name) return;
-        try {
-          const url = await uploadFile(roomId, key, file);
-          shelf().fonts.push({ id: crypto.randomUUID(), name: name, url: url });
-          await save();
-          fill();
+      host.querySelectorAll("[data-id]").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          selected = btn.getAttribute("data-id");
           paint();
-        } catch (error) {
-          err.textContent = error.message;
-        }
+        });
       });
-      pop.querySelector("#image-add").addEventListener("click", async function () {
-        const file = pop.querySelector("#image-file").files[0];
-        const name = pop.querySelector("#image-name").value.trim();
-        if (!file || !name) return;
-        try {
-          const url = await uploadFile(roomId, key, file);
-          shelf().images.push({ id: crypto.randomUUID(), name: name, url: url });
-          await save();
-          fill();
+      const search = host.querySelector("#lib-search");
+      if (search) {
+        search.addEventListener("input", function () {
+          query = search.value;
           paint();
-        } catch (error) {
-          err.textContent = error.message;
-        }
-      });
-      pop.querySelector("#note-add").addEventListener("click", async function () {
-        const name = pop.querySelector("#note-name").value.trim();
-        const text = pop.querySelector("#note-text").value;
-        if (!name) return;
-        shelf().notes.push({ id: crypto.randomUUID(), name: name, text: text });
-        await save();
-        fill();
-        paint();
-      });
+          const again = host.querySelector("#lib-search");
+          if (again) {
+            again.focus();
+            const end = again.value.length;
+            try { again.setSelectionRange(end, end); } catch (e) { /* ignore */ }
+          }
+        });
+      }
+      const sortEl = host.querySelector("#lib-sort");
+      if (sortEl) {
+        sortEl.addEventListener("change", function () {
+          sort = sortEl.value;
+          paint();
+        });
+      }
+      const del = host.querySelector("[data-lib-del]");
+      if (del) {
+        del.addEventListener("click", function () {
+          const id = del.getAttribute("data-lib-del");
+          const shelf = ctx.shelf();
+          shelf[kind] = (shelf[kind] || []).filter(function (item) { return item.id !== id; });
+          selected = "";
+          ctx.save();
+          if (ctx.fill) ctx.fill();
+          paint();
+        });
+      }
+      const file = host.querySelector("#lib-upload");
+      if (file) {
+        file.addEventListener("change", function () {
+          const pickedFile = file.files[0];
+          const title = host.querySelector("#lib-item-name");
+          const slot = host.querySelector("#lib-upload-name");
+          if (slot) slot.textContent = pickedFile ? pickedFile.name : "";
+          if (title && pickedFile && !title.value) title.value = pickedFile.name.replace(/\.[^.]+$/, "");
+        });
+      }
+      const add = host.querySelector("#lib-add");
+      if (add) {
+        add.addEventListener("click", async function () {
+          try {
+            if (kind === "notes") {
+              const name = (host.querySelector("#lib-note-name").value || "").trim();
+              const text = host.querySelector("#lib-note-text").value || "";
+              if (!name) return;
+              ctx.shelf().notes.push({ id: crypto.randomUUID(), name: name, text: text });
+              selected = ctx.shelf().notes[ctx.shelf().notes.length - 1].id;
+            } else {
+              const pickedFile = host.querySelector("#lib-upload").files[0];
+              const name = (host.querySelector("#lib-item-name").value || "").trim();
+              if (!pickedFile || !name) return;
+              const url = await ctx.upload(pickedFile);
+              const row = { id: crypto.randomUUID(), name: name, url: url };
+              if (kind === "images") {
+                ctx.shelf().images.push(row);
+                selected = row.id;
+              } else {
+                ctx.shelf().fonts.push(row);
+                selected = row.id;
+              }
+            }
+            await ctx.save();
+            if (ctx.fill) ctx.fill();
+            paint();
+          } catch (error) {
+            if (ctx.err) ctx.err.textContent = error.message;
+          }
+        });
+      }
     }
-    pop.addEventListener("click", function (event) { if (event.target === pop) close(); });
+
     paint();
+    host._refresh = paint;
   }
 
   let popLayer = 30;

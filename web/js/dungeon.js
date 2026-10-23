@@ -99,10 +99,14 @@ window.ShirmoDungeon = (function () {
     return { x: cx, y: cy };
   }
 
-  /* ——— процедурные текстуры в стиле старого Doom ——— */
+  /* ——— холодный сланец / сталь (не таверна) ——— */
   function noise(x, y, seed) {
     const n = Math.sin(x * 127.1 + y * 311.7 + seed * 74.7) * 43758.5453;
     return n - Math.floor(n);
+  }
+
+  function rgb(r, g, b) {
+    return "rgb(" + (r | 0) + "," + (g | 0) + "," + (b | 0) + ")";
   }
 
   function makeTex(paint) {
@@ -115,16 +119,17 @@ window.ShirmoDungeon = (function () {
   }
 
   function texStone(g, s) {
-    g.fillStyle = "#3a342c";
+    g.fillStyle = "#1a222c";
     g.fillRect(0, 0, s, s);
-    for (let i = 0; i < 900; i++) {
+    for (let i = 0; i < 1100; i++) {
       const x = Math.floor(noise(i, 1, 3) * s);
       const y = Math.floor(noise(i, 2, 5) * s);
-      const v = 40 + noise(i, 3, 7) * 50;
-      g.fillStyle = "rgb(" + (v | 0) + "," + ((v * 0.9) | 0) + "," + ((v * 0.75) | 0) + ")";
+      const v = 48 + noise(i, 3, 7) * 55;
+      g.fillStyle = rgb(v * 0.72, v * 0.82, v);
       g.fillRect(x, y, 1 + (noise(i, 4, 1) * 2 | 0), 1);
     }
-    g.strokeStyle = "rgba(0,0,0,0.35)";
+    g.strokeStyle = "rgba(8,12,18,0.55)";
+    g.lineWidth = 1;
     for (let row = 0; row < 4; row++) {
       const yy = row * 16 + 8;
       g.beginPath();
@@ -139,24 +144,31 @@ window.ShirmoDungeon = (function () {
         g.stroke();
       }
     }
-    g.fillStyle = "rgba(255,220,160,0.04)";
-    g.fillRect(0, 0, s, s / 3);
+    /* мох / сырость */
+    for (let i = 0; i < 40; i++) {
+      const x = noise(i, 20, 1) * s | 0;
+      const y = (noise(i, 21, 2) * s * 0.55 + s * 0.4) | 0;
+      g.fillStyle = "rgba(45,160,110," + (0.08 + noise(i, 22, 3) * 0.18) + ")";
+      g.fillRect(x, y, 2 + (noise(i, 23, 4) * 4 | 0), 1 + (noise(i, 24, 5) * 3 | 0));
+    }
+    g.fillStyle = "rgba(120,200,255,0.05)";
+    g.fillRect(0, 0, s, s / 4);
   }
 
   function texBrick(g, s) {
-    g.fillStyle = "#4a2e24";
+    g.fillStyle = "#121820";
     g.fillRect(0, 0, s, s);
     const bh = 10;
     const bw = 20;
     for (let y = 0; y < s; y += bh) {
       const shift = ((y / bh) | 0) % 2 ? bw / 2 : 0;
       for (let x = -bw; x < s + bw; x += bw) {
-        const shade = 90 + noise(x, y, 9) * 40;
-        g.fillStyle = "rgb(" + (shade | 0) + "," + ((shade * 0.55) | 0) + "," + ((shade * 0.4) | 0) + ")";
+        const shade = 70 + noise(x, y, 9) * 45;
+        g.fillStyle = rgb(shade * 0.7, shade * 0.78, shade);
         g.fillRect(x + shift + 1, y + 1, bw - 2, bh - 2);
       }
     }
-    g.strokeStyle = "rgba(20,10,8,0.6)";
+    g.strokeStyle = "rgba(6,10,16,0.7)";
     g.lineWidth = 1;
     for (let y = 0; y <= s; y += bh) {
       g.beginPath(); g.moveTo(0, y); g.lineTo(s, y); g.stroke();
@@ -164,30 +176,36 @@ window.ShirmoDungeon = (function () {
   }
 
   function texWood(g, s) {
-    g.fillStyle = "#5a3a1e";
+    /* стальные панели вместо дерева */
+    g.fillStyle = "#2a323c";
     g.fillRect(0, 0, s, s);
-    for (let x = 0; x < s; x++) {
-      const v = 70 + noise(x, 0, 2) * 40 + Math.sin(x * 0.4) * 8;
-      g.fillStyle = "rgb(" + (v | 0) + "," + ((v * 0.65) | 0) + "," + ((v * 0.35) | 0) + ")";
-      g.fillRect(x, 0, 1, s);
+    for (let y = 0; y < s; y++) {
+      const v = 55 + noise(0, y, 2) * 35 + Math.sin(y * 0.35) * 6;
+      g.fillStyle = rgb(v * 0.75, v * 0.82, v);
+      g.fillRect(0, y, s, 1);
     }
-    g.strokeStyle = "rgba(0,0,0,0.35)";
-    for (let y = 16; y < s; y += 16) {
-      g.beginPath(); g.moveTo(0, y); g.lineTo(s, y); g.stroke();
+    g.strokeStyle = "rgba(0,0,0,0.4)";
+    for (let x = 16; x < s; x += 16) {
+      g.beginPath(); g.moveTo(x, 0); g.lineTo(x, s); g.stroke();
     }
+    g.fillStyle = "rgba(90,220,180,0.08)";
+    g.fillRect(0, 0, s, 4);
   }
 
   function texFloor(g, s) {
-    g.fillStyle = "#2a241c";
+    g.fillStyle = "#10161c";
     g.fillRect(0, 0, s, s);
-    for (let i = 0; i < 500; i++) {
-      const x = noise(i, 8, 1) * s | 0;
-      const y = noise(i, 9, 2) * s | 0;
-      const v = 35 + noise(i, 10, 3) * 35;
-      g.fillStyle = "rgb(" + (v | 0) + "," + ((v * 0.88) | 0) + "," + ((v * 0.7) | 0) + ")";
-      g.fillRect(x, y, 2, 2);
+    const tile = 16;
+    for (let ty = 0; ty < s; ty += tile) {
+      for (let tx = 0; tx < s; tx += tile) {
+        const odd = ((tx / tile) + (ty / tile)) % 2;
+        const v = odd ? 38 : 52;
+        const n = noise(tx, ty, 11) * 12;
+        g.fillStyle = rgb((v + n) * 0.65, (v + n) * 0.85, v + n + 8);
+        g.fillRect(tx + 1, ty + 1, tile - 2, tile - 2);
+      }
     }
-    g.strokeStyle = "rgba(0,0,0,0.25)";
+    g.strokeStyle = "rgba(8,14,20,0.55)";
     for (let i = 0; i <= 4; i++) {
       g.beginPath(); g.moveTo(i * 16, 0); g.lineTo(i * 16, s); g.stroke();
       g.beginPath(); g.moveTo(0, i * 16); g.lineTo(s, i * 16); g.stroke();
@@ -195,29 +213,38 @@ window.ShirmoDungeon = (function () {
   }
 
   function texCeil(g, s) {
-    g.fillStyle = "#1a1612";
+    g.fillStyle = "#0a0e14";
     g.fillRect(0, 0, s, s);
-    for (let i = 0; i < 300; i++) {
+    for (let i = 0; i < 280; i++) {
       const x = noise(i, 11, 4) * s | 0;
       const y = noise(i, 12, 5) * s | 0;
-      g.fillStyle = "rgba(0,0,0," + (0.15 + noise(i, 13, 6) * 0.4) + ")";
+      g.fillStyle = "rgba(0,0,0," + (0.2 + noise(i, 13, 6) * 0.45) + ")";
       g.fillRect(x, y, 3, 3);
     }
+    g.fillStyle = "rgba(40,80,120,0.08)";
+    g.fillRect(0, 0, s, s);
   }
 
   function texDoor(g, s) {
     texWood(g, s);
-    g.fillStyle = "rgba(0,0,0,0.35)";
-    g.fillRect(s * 0.15, s * 0.1, s * 0.7, s * 0.8);
-    g.fillStyle = "#c4a35a";
+    g.fillStyle = "rgba(0,0,0,0.4)";
+    g.fillRect(s * 0.12, s * 0.08, s * 0.76, s * 0.84);
+    g.strokeStyle = "rgba(90,220,180,0.35)";
+    g.strokeRect(s * 0.18, s * 0.14, s * 0.64, s * 0.72);
+    g.fillStyle = "#5ee0c0";
     g.beginPath();
     g.arc(s * 0.72, s * 0.5, 3, 0, Math.PI * 2);
     g.fill();
+    for (let i = 0; i < 4; i++) {
+      g.fillStyle = "#8a96a4";
+      g.fillRect(s * 0.22, s * (0.22 + i * 0.16), 3, 3);
+      g.fillRect(s * 0.72, s * (0.22 + i * 0.16), 3, 3);
+    }
   }
 
   function texSecret(g, s) {
     texStone(g, s);
-    g.strokeStyle = "rgba(230,195,106,0.35)";
+    g.strokeStyle = "rgba(94,224,192,0.4)";
     g.strokeRect(8, 8, s - 16, s - 16);
   }
 
@@ -249,57 +276,61 @@ window.ShirmoDungeon = (function () {
     c.width = size;
     c.height = size;
     const g = c.getContext("2d");
+    const accent = "#5ee0c0";
+    const ink = "#c8d6e4";
     g.clearRect(0, 0, size, size);
     if (kind === "floor") {
-      g.fillStyle = "#5a4a32";
+      g.fillStyle = "#243040";
       g.fillRect(4, 4, size - 8, size - 8);
-      g.strokeStyle = "#e6c36a";
+      g.strokeStyle = accent;
       g.strokeRect(4.5, 4.5, size - 9, size - 9);
       g.beginPath();
       g.moveTo(size / 2, 4); g.lineTo(size / 2, size - 4);
       g.moveTo(4, size / 2); g.lineTo(size - 4, size / 2);
       g.stroke();
     } else if (kind === "wall") {
-      g.fillStyle = "#2a2620";
+      g.fillStyle = "#161c24";
       g.fillRect(3, 3, size - 6, size - 6);
-      g.strokeStyle = "#8a8070";
+      g.strokeStyle = "#7a90a8";
       g.strokeRect(6, 10, size - 12, 8);
       g.strokeRect(6, 20, size - 12, 8);
     } else if (kind === "erase") {
-      g.strokeStyle = "#e07a6a";
+      g.strokeStyle = "#ff6b7a";
       g.lineWidth = 3;
       g.beginPath();
       g.moveTo(8, 8); g.lineTo(size - 8, size - 8);
       g.moveTo(size - 8, 8); g.lineTo(8, size - 8);
       g.stroke();
     } else if (kind === "chasm") {
-      g.fillStyle = "#0a080c";
+      g.fillStyle = "#04060a";
       g.beginPath();
       g.moveTo(6, 10); g.lineTo(size - 6, 8); g.lineTo(size - 8, size - 6); g.lineTo(8, size - 8);
       g.closePath();
       g.fill();
+      g.strokeStyle = "rgba(94,224,192,0.35)";
+      g.stroke();
     } else if (kind === "bridge") {
-      g.fillStyle = "#8a5a22";
+      g.fillStyle = "#4a5a6a";
       g.fillRect(4, size * 0.4, size - 8, size * 0.22);
-      g.strokeStyle = "#3a2410";
+      g.strokeStyle = accent;
       g.strokeRect(4.5, size * 0.4, size - 9, size * 0.22);
     } else if (kind === "door") {
-      g.fillStyle = "#6a3a14";
+      g.fillStyle = "#3a4654";
       g.fillRect(size * 0.28, 6, size * 0.44, size - 12);
-      g.fillStyle = "#c4a35a";
+      g.fillStyle = accent;
       g.beginPath();
       g.arc(size * 0.62, size * 0.5, 2.5, 0, Math.PI * 2);
       g.fill();
     } else if (kind === "secret") {
-      g.fillStyle = "#3a342c";
+      g.fillStyle = "#1c2430";
       g.fillRect(6, 6, size - 12, size - 12);
-      g.fillStyle = "#e6c36a";
-      g.font = "bold " + Math.floor(size * 0.45) + "px Georgia";
+      g.fillStyle = accent;
+      g.font = "bold " + Math.floor(size * 0.45) + "px Bahnschrift, Segoe UI, sans-serif";
       g.textAlign = "center";
       g.textBaseline = "middle";
       g.fillText("S", size / 2, size / 2 + 1);
     } else if (kind === "up" || kind === "down") {
-      g.fillStyle = "#e6c36a";
+      g.fillStyle = accent;
       g.beginPath();
       if (kind === "up") {
         g.moveTo(size / 2, 6); g.lineTo(size - 6, size - 8); g.lineTo(6, size - 8);
@@ -309,36 +340,36 @@ window.ShirmoDungeon = (function () {
       g.closePath();
       g.fill();
     } else if (kind === "prop") {
-      g.fillStyle = "#5a6a7a";
+      g.fillStyle = "#3a4a5a";
       g.beginPath();
       g.arc(size / 2, size / 2, size * 0.28, 0, Math.PI * 2);
       g.fill();
-      g.strokeStyle = "#e6c36a";
+      g.strokeStyle = accent;
       g.stroke();
     } else if (kind === "lever") {
-      g.fillStyle = "#6a5430";
+      g.fillStyle = "#2a3440";
       g.fillRect(size * 0.35, size * 0.55, size * 0.3, size * 0.35);
-      g.strokeStyle = "#e6c36a";
+      g.strokeStyle = ink;
       g.lineWidth = 3;
       g.beginPath();
       g.moveTo(size * 0.5, size * 0.55);
       g.lineTo(size * 0.25, size * 0.2);
       g.stroke();
-      g.fillStyle = "#e4533e";
+      g.fillStyle = "#ff6b7a";
       g.beginPath();
       g.arc(size * 0.25, size * 0.2, 4, 0, Math.PI * 2);
       g.fill();
     } else if (kind === "chest") {
-      g.fillStyle = "#8a5a22";
+      g.fillStyle = "#3a4858";
       g.fillRect(size * 0.15, size * 0.35, size * 0.7, size * 0.45);
-      g.fillStyle = "#c4a35a";
+      g.fillStyle = accent;
       g.fillRect(size * 0.45, size * 0.5, size * 0.1, size * 0.15);
-      g.strokeStyle = "#3a2410";
+      g.strokeStyle = "#0a1018";
       g.strokeRect(size * 0.15, size * 0.35, size * 0.7, size * 0.45);
     } else if (kind === "torch") {
-      g.fillStyle = "#5a3a1e";
+      g.fillStyle = "#2a3440";
       g.fillRect(size * 0.45, size * 0.4, size * 0.1, size * 0.45);
-      g.fillStyle = "#e6a020";
+      g.fillStyle = "#7ef0d0";
       g.beginPath();
       g.moveTo(size * 0.5, size * 0.15);
       g.lineTo(size * 0.35, size * 0.45);
@@ -346,7 +377,7 @@ window.ShirmoDungeon = (function () {
       g.closePath();
       g.fill();
     } else if (kind === "trap") {
-      g.strokeStyle = "#e4533e";
+      g.strokeStyle = "#ff6b7a";
       g.lineWidth = 2;
       g.strokeRect(size * 0.2, size * 0.2, size * 0.6, size * 0.6);
       g.beginPath();
@@ -356,16 +387,16 @@ window.ShirmoDungeon = (function () {
       g.lineTo(size * 0.3, size * 0.7);
       g.stroke();
     } else if (kind === "foe") {
-      g.fillStyle = "#6b2a22";
+      g.fillStyle = "#5a2030";
       g.beginPath();
       g.arc(size * 0.5, size * 0.4, size * 0.22, 0, Math.PI * 2);
       g.fill();
       g.fillRect(size * 0.32, size * 0.55, size * 0.36, size * 0.3);
-      g.fillStyle = "#e07a6a";
+      g.fillStyle = "#ff8a9a";
       g.fillRect(size * 0.4, size * 0.35, 3, 3);
       g.fillRect(size * 0.55, size * 0.35, 3, 3);
     } else if (kind === "party") {
-      g.fillStyle = "#e6c36a";
+      g.fillStyle = accent;
       g.beginPath();
       g.moveTo(size * 0.5, size * 0.15);
       g.lineTo(size * 0.8, size * 0.8);
@@ -373,15 +404,22 @@ window.ShirmoDungeon = (function () {
       g.closePath();
       g.fill();
     } else if (kind === "secretDoor") {
-      g.fillStyle = "#4a4338";
+      g.fillStyle = "#1c2430";
       g.fillRect(size * 0.2, size * 0.15, size * 0.6, size * 0.7);
-      g.fillStyle = "#e6c36a";
-      g.font = "bold " + Math.floor(size * 0.45) + "px Georgia";
+      g.fillStyle = accent;
+      g.font = "bold " + Math.floor(size * 0.45) + "px Bahnschrift, Segoe UI, sans-serif";
       g.textAlign = "center";
       g.textBaseline = "middle";
       g.fillText("S", size * 0.5, size * 0.5);
+    } else if (kind === "note" || kind === "altar") {
+      g.fillStyle = kind === "altar" ? "#3a4a5a" : "#2a3848";
+      g.beginPath();
+      g.arc(size * 0.5, size * 0.5, size * 0.28, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = accent;
+      g.stroke();
     } else {
-      g.fillStyle = "#5a6a7a";
+      g.fillStyle = "#3a4a5a";
       g.beginPath();
       g.arc(size * 0.5, size * 0.5, size * 0.28, 0, Math.PI * 2);
       g.fill();
@@ -394,6 +432,71 @@ window.ShirmoDungeon = (function () {
     const key = kind + ":" + size;
     if (!ICON_CACHE[key]) ICON_CACHE[key] = iconCanvas(kind, size);
     return ICON_CACHE[key];
+  }
+
+  const PORTRAIT_CACHE = {};
+  function portraitOf(url, onReady) {
+    if (!url) return null;
+    const hit = PORTRAIT_CACHE[url];
+    if (hit) {
+      if (hit.ready && hit.img.naturalWidth) return hit.img;
+      if (onReady && hit.waiters.indexOf(onReady) < 0) hit.waiters.push(onReady);
+      return hit.ready ? hit.img : null;
+    }
+    const img = new Image();
+    const entry = { img: img, ready: false, waiters: onReady ? [onReady] : [] };
+    PORTRAIT_CACHE[url] = entry;
+    img.onload = function () {
+      entry.ready = true;
+      entry.waiters.splice(0).forEach(function (fn) { try { fn(); } catch (e) { /* ignore */ } });
+    };
+    img.onerror = function () { entry.ready = false; entry.waiters = []; };
+    img.src = url;
+    return null;
+  }
+
+  function defaultPropName(kind) {
+    const meta = PROP_KINDS.find(function (p) { return p.id === kind; });
+    return meta ? meta.name : "";
+  }
+
+  function spriteLabel(sp) {
+    if (!sp || !sp.label) return "";
+    if (sp.kind === "foe") return sp.label;
+    if (sp.secret) return "";
+    if (sp.label === defaultPropName(sp.kind)) return "";
+    return sp.label;
+  }
+
+  function codexEnemies(campaign) {
+    const book = campaign && campaign.codex;
+    const npcs = (book && Array.isArray(book.npcs) ? book.npcs : []).filter(function (row) {
+      return row && row.role === "enemy" && String(row.name || "").trim();
+    });
+    return npcs;
+  }
+
+  function actorFromEnemy(person) {
+    const hpMax = Math.max(1, Math.round(Number(person.hpMax) || Number(person.hp) || 11));
+    const hp = Math.max(0, Math.min(hpMax, Math.round(Number(person.hp) || hpMax)));
+    return {
+      id: uid(),
+      name: person.name || "Враг",
+      side: "foe",
+      hp: hp,
+      hpMax: hpMax,
+      ac: Math.round(Number(person.ac) || 12),
+      init: 0,
+      initBonus: 0,
+      dead: hp <= 0,
+      weapon: person.weapon || "Атака",
+      damage: person.damage || "1d6",
+      bonus: Math.round(Number(person.bonus) || 0),
+      portrait: person.portrait || "",
+      marks: [],
+      note: person.note || "",
+      codexId: person.id || ""
+    };
   }
 
   function makeLevel(name, w, h) {
@@ -722,7 +825,7 @@ window.ShirmoDungeon = (function () {
         return {
           id: f.id, x: f.x, y: f.y, actorId: f.actorId || "",
           name: (actor && actor.name) || f.name || "Враг",
-          portrait: (actor && actor.portrait) || "",
+          portrait: (actor && actor.portrait) || f.portrait || "",
           dead: !!(actor && actor.dead)
         };
       }),
@@ -775,6 +878,7 @@ window.ShirmoDungeon = (function () {
 
   function renderFp(canvas, page, opts) {
     const master = !!(opts && opts.master);
+    const onReady = opts && opts.onReady;
     const ctx = canvas.getContext("2d");
     const w = canvas.width;
     const h = canvas.height;
@@ -791,18 +895,18 @@ window.ShirmoDungeon = (function () {
     const planeX = -rdy * planeScale;
     const planeY = rdx * planeScale;
 
-    ctx.fillStyle = "#050403";
+    ctx.fillStyle = "#05080c";
     ctx.fillRect(0, 0, w, h);
 
-    /* потолок / пол градиентом + намёк текстур */
     const ceil = ctx.createLinearGradient(0, 0, 0, h / 2);
-    ceil.addColorStop(0, "#14110e");
-    ceil.addColorStop(1, "#0a0806");
+    ceil.addColorStop(0, "#0c121a");
+    ceil.addColorStop(1, "#06090e");
     ctx.fillStyle = ceil;
     ctx.fillRect(0, 0, w, h / 2);
     const floor = ctx.createLinearGradient(0, h / 2, 0, h);
-    floor.addColorStop(0, "#2a2218");
-    floor.addColorStop(1, "#100e0a");
+    floor.addColorStop(0, "#1a2834");
+    floor.addColorStop(0.55, "#101820");
+    floor.addColorStop(1, "#070b10");
     ctx.fillStyle = floor;
     ctx.fillRect(0, h / 2, w, h / 2);
 
@@ -864,11 +968,11 @@ window.ShirmoDungeon = (function () {
         ctx.drawImage(tex, texX, 0, 1, TEX, col, drawStart, 1, drawEnd - drawStart + 1);
         ctx.globalAlpha = 1;
         if (kind === CELL.STAIR_UP || kind === CELL.STAIR_DOWN) {
-          ctx.fillStyle = "rgba(230,195,106," + (0.25 * (1 - fog)) + ")";
+          ctx.fillStyle = "rgba(94,224,192," + (0.28 * (1 - fog)) + ")";
           ctx.fillRect(col, drawStart, 1, drawEnd - drawStart + 1);
         }
       } else if (!master) {
-        ctx.fillStyle = "rgba(0,0,0,0.85)";
+        ctx.fillStyle = "rgba(2,6,12,0.88)";
         ctx.fillRect(col, 0, 1, h);
       }
     }
@@ -908,22 +1012,32 @@ window.ShirmoDungeon = (function () {
       const drawY = (h / 2 - spriteH / 2) | 0;
       const fog = Math.min(1, sp.dist / Math.max(range, 0.5));
       ctx.globalAlpha = (master && sp.secret ? 0.55 : 1) * (1 - fog * 0.7);
-      const ic = iconOf(sp.kind === "foe" ? "foe" : sp.kind, Math.max(32, Math.min(128, spriteW)));
-      ctx.drawImage(ic, drawX, drawY, spriteW, spriteH);
+      const face = sp.portrait ? portraitOf(sp.portrait, onReady) : null;
+      if (face) {
+        const pad = Math.max(2, (spriteW * 0.08) | 0);
+        ctx.fillStyle = "rgba(6,12,18,0.55)";
+        ctx.fillRect(drawX, drawY, spriteW, spriteH);
+        ctx.drawImage(face, drawX + pad, drawY + pad, spriteW - pad * 2, spriteH - pad * 2);
+      } else {
+        const ic = iconOf(sp.kind === "foe" ? "foe" : sp.kind, Math.max(32, Math.min(128, spriteW)));
+        ctx.drawImage(ic, drawX, drawY, spriteW, spriteH);
+      }
       ctx.globalAlpha = 1;
-      if (spriteH > 36 && sp.label) {
-        ctx.fillStyle = "rgba(243,234,216," + (0.9 - fog * 0.5) + ")";
-        ctx.font = "12px Georgia, serif";
+      const tag = spriteLabel(sp);
+      if (spriteH > 36 && tag) {
+        ctx.fillStyle = "rgba(200,214,228," + (0.92 - fog * 0.5) + ")";
+        ctx.font = "12px Bahnschrift, Segoe UI, sans-serif";
         ctx.textAlign = "center";
-        ctx.fillText(sp.label, screenX, drawY - 4);
+        ctx.fillText(tag, screenX, drawY - 4);
       }
     });
 
     if (!master) {
-      const g = ctx.createRadialGradient(w / 2, h * 0.55, h * 0.05, w / 2, h * 0.55, h * 0.75);
-      g.addColorStop(0, "rgba(255,180,80,0.06)");
-      g.addColorStop(0.35, "rgba(0,0,0,0)");
-      g.addColorStop(1, "rgba(0,0,0," + (page.party.torch || page.party.darkvision ? 0.78 : 0.95) + ")");
+      const lit = page.party.torch || page.party.darkvision;
+      const g = ctx.createRadialGradient(w / 2, h * 0.55, h * 0.04, w / 2, h * 0.55, h * 0.78);
+      g.addColorStop(0, lit ? "rgba(120,255,210,0.07)" : "rgba(0,0,0,0)");
+      g.addColorStop(0.32, "rgba(0,0,0,0)");
+      g.addColorStop(1, "rgba(2,6,12," + (lit ? 0.82 : 0.96) + ")");
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, w, h);
     }
@@ -931,6 +1045,7 @@ window.ShirmoDungeon = (function () {
 
   function renderMini(canvas, page, opts) {
     const master = !!(opts && opts.master);
+    const onReady = opts && opts.onReady;
     const ctx = canvas.getContext("2d");
     const level = page.level;
     const party = page.party;
@@ -939,32 +1054,35 @@ window.ShirmoDungeon = (function () {
     const cell = Math.min(tw / level.w, th / level.h);
     const ox = (tw - level.w * cell) / 2;
     const oy = (th - level.h * cell) / 2;
-    ctx.fillStyle = "#0a0806";
+    const explored = page.explored || {};
+    ctx.fillStyle = "#06090e";
     ctx.fillRect(0, 0, tw, th);
     for (let y = 0; y < level.h; y++) {
       for (let x = 0; x < level.w; x++) {
-        const seen = master || page.explored[keyOf(level.id, x, y)];
+        const seen = master || explored[keyOf(level.id, x, y)];
         if (!seen) continue;
         const kind = effectiveCell(page, level, x, y);
         if (kind === CELL.VOID) continue;
-        if (kind === CELL.WALL || kind === CELL.SECRET) ctx.fillStyle = "#5a5248";
-        else if (kind === CELL.DOOR) ctx.fillStyle = "#a07840";
-        else if (kind === CELL.CHASM) ctx.fillStyle = "#120c0a";
-        else if (kind === CELL.BRIDGE) ctx.fillStyle = "#6a5230";
-        else if (kind === CELL.STAIR_UP || kind === CELL.STAIR_DOWN) ctx.fillStyle = "#c4a35a";
-        else ctx.fillStyle = "#2e2a22";
+        if (kind === CELL.WALL || kind === CELL.SECRET) ctx.fillStyle = "#4a5a6c";
+        else if (kind === CELL.DOOR) ctx.fillStyle = "#6a8898";
+        else if (kind === CELL.CHASM) ctx.fillStyle = "#04060a";
+        else if (kind === CELL.BRIDGE) ctx.fillStyle = "#3a5060";
+        else if (kind === CELL.STAIR_UP || kind === CELL.STAIR_DOWN) ctx.fillStyle = "#5ee0c0";
+        else ctx.fillStyle = "#1c2834";
         ctx.fillRect(ox + x * cell, oy + y * cell, Math.ceil(cell), Math.ceil(cell));
       }
     }
     (page.foes || []).forEach(function (f) {
       if (!f || f.dead) return;
-      if (!master && !page.explored[keyOf(level.id, f.x, f.y)]) return;
-      ctx.drawImage(iconOf("foe", 16), ox + f.x * cell, oy + f.y * cell, cell, cell);
+      if (!master && !explored[keyOf(level.id, f.x, f.y)]) return;
+      const face = f.portrait ? portraitOf(f.portrait, onReady) : null;
+      if (face) ctx.drawImage(face, ox + f.x * cell, oy + f.y * cell, cell, cell);
+      else ctx.drawImage(iconOf("foe", 16), ox + f.x * cell, oy + f.y * cell, cell, cell);
     });
     const dir = DIRS[party.dir || 0];
     const px = ox + (party.x + 0.5) * cell;
     const py = oy + (party.y + 0.5) * cell;
-    ctx.fillStyle = "#e6c36a";
+    ctx.fillStyle = "#5ee0c0";
     ctx.beginPath();
     ctx.moveTo(px + dir.x * cell * 0.45, py + dir.y * cell * 0.45);
     ctx.lineTo(px - dir.x * cell * 0.3 - dir.y * cell * 0.28, py - dir.y * cell * 0.3 + dir.x * cell * 0.28);
@@ -975,15 +1093,32 @@ window.ShirmoDungeon = (function () {
 
   function paintView(root, page, opts) {
     if (!root || !page || page.kind !== "dungeon") return;
-    const fp = root.querySelector(".dung-fp");
-    const mini = root.querySelector(".dung-mini");
-    if (fp) renderFp(fp, page, opts);
-    if (mini) renderMini(mini, page, opts);
-    const flash = root.querySelector(".dung-flash");
-    if (flash && page.flash) {
-      flash.hidden = false;
-      flash.textContent = page.flash.text || "Открыто!";
-      setTimeout(function () { flash.hidden = true; }, 1600);
+    if (!page.level || !page.party) return;
+    try {
+      const nextOpts = Object.assign({}, opts || {});
+      if (!nextOpts.onReady) {
+        let pending = 0;
+        nextOpts.onReady = function () {
+          if (pending) return;
+          pending = 1;
+          setTimeout(function () {
+            pending = 0;
+            paintView(root, page, opts);
+          }, 30);
+        };
+      }
+      const fp = root.querySelector(".dung-fp");
+      const mini = root.querySelector(".dung-mini");
+      if (fp) renderFp(fp, page, nextOpts);
+      if (mini) renderMini(mini, page, nextOpts);
+      const flash = root.querySelector(".dung-flash");
+      if (flash && page.flash) {
+        flash.hidden = false;
+        flash.textContent = page.flash.text || "Открыто!";
+        setTimeout(function () { flash.hidden = true; }, 1600);
+      }
+    } catch (err) {
+      /* кадр битый — не валим весь экран игроков */
     }
   }
 
@@ -1035,9 +1170,15 @@ window.ShirmoDungeon = (function () {
     const d = ensure(ctx.campaign);
     let tool = "floor";
     let propKind = d.brushProp || "lever";
+    let foeBrush = d.brushFoe || "";
     let paint = false;
     let pan = { x: 0, y: 0 };
     let zoom = 1;
+    let paintSoonTimer = 0;
+    function requestPaint() {
+      clearTimeout(paintSoonTimer);
+      paintSoonTimer = setTimeout(function () { paintAll(); }, 40);
+    }
     let spaceDown = false;
     let panning = false;
     let panFrom = null;
@@ -1089,6 +1230,7 @@ window.ShirmoDungeon = (function () {
       '<div class="dung-tool-panel" data-tools></div>' +
       '<label class="check dung-autowall">Автостены у пола<input type="checkbox" data-dung="autowalls"' + (d.autoWalls !== false ? " checked" : "") + "></label>" +
       '<div class="dung-door-types" data-door-types></div>' +
+      '<div class="dung-foes" data-foe-palette></div>' +
       '<div class="dung-props" data-prop-palette></div>' +
 
       '<details class="dung-assets">' +
@@ -1296,13 +1438,37 @@ window.ShirmoDungeon = (function () {
       radial._size = size;
     }
 
+    function paintFoePalette() {
+      const box = host.querySelector("[data-foe-palette]");
+      if (!box) return;
+      const list = codexEnemies(ctx.campaign);
+      if (!list.length) {
+        box.innerHTML = '<p class="dung-under-title">Враги</p><p class="note">Нет врагов в справочнике. Добавь во вкладке «Справочник» → Враги.</p>';
+        return;
+      }
+      if (!foeBrush || !list.some(function (row) { return row.id === foeBrush; })) {
+        foeBrush = list[0].id;
+        d.brushFoe = foeBrush;
+      }
+      box.innerHTML = '<p class="dung-under-title">Враги из справочника</p><div class="dung-foe-grid">' +
+        list.map(function (row) {
+          const on = foeBrush === row.id ? " is-on" : "";
+          const face = row.portrait
+            ? '<img alt="" src="' + esc(row.portrait) + '">'
+            : "<span>" + esc((row.name || "?").slice(0, 1)) + "</span>";
+          return '<button type="button" class="dung-foe-btn' + on + '" data-foe-id="' + esc(row.id) + '" title="' + esc(row.name) + '">' +
+            face + "<em>" + esc(row.name) + "</em></button>";
+        }).join("") + "</div>";
+    }
+
     function paintPropPalette() {
       const box = host.querySelector("[data-prop-palette]");
       box.innerHTML = '<p class="dung-under-title">Объекты</p><div class="dung-prop-grid">' +
         PROP_KINDS.map(function (p) {
           return '<button type="button" class="dung-prop-btn' + (propKind === p.id ? " is-on" : "") + '" data-prop-kind="' + p.id + '" title="' + esc(p.name) + '">' +
             '<canvas width="36" height="36" data-icon="' + p.id + '"></canvas></button>';
-        }).join("") + "</div>";
+        }).join("") + "</div>" +
+        '<p class="note">«Стереть» / ПКМ — убрать объект или врага.</p>';
       box.querySelectorAll("canvas[data-icon]").forEach(function (c) {
         c.getContext("2d").drawImage(iconOf(c.getAttribute("data-icon"), 36), 0, 0);
       });
@@ -1345,11 +1511,11 @@ window.ShirmoDungeon = (function () {
 
       ctx2.clearRect(0, 0, grid.width, grid.height);
       if (!underUrl()) {
-        ctx2.fillStyle = "#12100c";
+        ctx2.fillStyle = "#0a1018";
         ctx2.fillRect(0, 0, grid.width, grid.height);
         const pat = ctx2.createPattern(textures().floor, "repeat");
         if (pat) {
-          ctx2.globalAlpha = 0.35;
+          ctx2.globalAlpha = 0.4;
           ctx2.fillStyle = pat;
           ctx2.fillRect(ox, oy, mapW, mapH);
           ctx2.globalAlpha = 1;
@@ -1361,25 +1527,25 @@ window.ShirmoDungeon = (function () {
           const kind = cellAt(lv, x, y);
           if (kind === CELL.VOID) continue;
           const colors = {
-            1: "rgba(210, 180, 100, 0.42)",
-            2: "rgba(18, 16, 14, 0.82)",
-            3: "rgba(160, 110, 40, 0.7)",
-            4: "rgba(230, 195, 80, 0.65)",
-            5: "rgba(5, 4, 8, 0.85)",
-            6: "rgba(120, 85, 40, 0.65)",
-            7: "rgba(230,195,106,0.55)",
-            8: "rgba(180,140,70,0.55)"
+            1: "rgba(70, 140, 160, 0.38)",
+            2: "rgba(12, 18, 26, 0.88)",
+            3: "rgba(90, 130, 150, 0.72)",
+            4: "rgba(94, 224, 192, 0.55)",
+            5: "rgba(2, 4, 10, 0.9)",
+            6: "rgba(60, 90, 110, 0.65)",
+            7: "rgba(94,224,192,0.5)",
+            8: "rgba(70,180,200,0.5)"
           };
-          ctx2.fillStyle = colors[kind] || "rgba(60,60,60,0.4)";
+          ctx2.fillStyle = colors[kind] || "rgba(60,80,100,0.4)";
           ctx2.fillRect(ox + x * cell, oy + y * cell, cell + 0.4, cell + 0.4);
           if (kind === CELL.DOOR) {
             const dtype = (lv.doors && lv.doors[doorKey(x, y)]) || "wood";
-            ctx2.fillStyle = dtype === "iron" ? "#8a949a" : (dtype === "bars" ? "#6a7080" : (dtype === "locked" ? "#c46b2a" : "#a07840"));
+            ctx2.fillStyle = dtype === "iron" ? "#8aa0b0" : (dtype === "bars" ? "#6a7888" : (dtype === "locked" ? "#e07060" : "#5a7a8a"));
             ctx2.fillRect(ox + x * cell + cell * 0.3, oy + y * cell + cell * 0.15, cell * 0.4, cell * 0.7);
           }
           if (kind === CELL.STAIR_UP || kind === CELL.STAIR_DOWN) {
-            ctx2.fillStyle = "#e6c36a";
-            ctx2.font = Math.max(10, cell * 0.55) + "px Georgia";
+            ctx2.fillStyle = "#5ee0c0";
+            ctx2.font = Math.max(10, cell * 0.55) + "px Bahnschrift, Segoe UI, sans-serif";
             ctx2.textAlign = "center";
             ctx2.textBaseline = "middle";
             ctx2.fillText(kind === CELL.STAIR_UP ? "▲" : "▼", ox + (x + 0.5) * cell, oy + (y + 0.5) * cell);
@@ -1387,7 +1553,7 @@ window.ShirmoDungeon = (function () {
         }
       }
 
-      ctx2.strokeStyle = "rgba(230,195,106,0.55)";
+      ctx2.strokeStyle = "rgba(94,224,192,0.28)";
       ctx2.lineWidth = 1;
       for (let x = 0; x <= lv.w; x++) {
         ctx2.beginPath();
@@ -1408,21 +1574,29 @@ window.ShirmoDungeon = (function () {
         ctx2.drawImage(ic, ox + p.x * cell + cell * 0.05, oy + p.y * cell + cell * 0.05, cell * 0.9, cell * 0.9);
         ctx2.globalAlpha = 1;
         if (selectedProp && selectedProp.id === p.id) {
-          ctx2.strokeStyle = "#fff";
+          ctx2.strokeStyle = "#5ee0c0";
           ctx2.lineWidth = 2;
           ctx2.strokeRect(ox + p.x * cell, oy + p.y * cell, cell, cell);
         }
       });
 
       (d.foes || []).filter(function (f) { return f.levelId === lv.id; }).forEach(function (f) {
-        ctx2.drawImage(iconOf("foe", Math.max(16, (cell * 0.9) | 0)), ox + f.x * cell + cell * 0.05, oy + f.y * cell + cell * 0.05, cell * 0.9, cell * 0.9);
+        const battle = ctx.campaign.battle;
+        const actor = battle && (battle.actors || []).find(function (a) { return a && a.id === f.actorId; });
+        const url = (actor && actor.portrait) || f.portrait || "";
+        const size = Math.max(16, (cell * 0.9) | 0);
+        const dx = ox + f.x * cell + cell * 0.05;
+        const dy = oy + f.y * cell + cell * 0.05;
+        const face = url ? portraitOf(url, requestPaint) : null;
+        if (face) ctx2.drawImage(face, dx, dy, size, size);
+        else ctx2.drawImage(iconOf("foe", size), dx, dy, size, size);
       });
 
       if (d.party.levelId === lv.id) {
         const dir = DIRS[d.party.dir || 0];
         const px = ox + (d.party.x + 0.5) * cell;
         const py = oy + (d.party.y + 0.5) * cell;
-        ctx2.fillStyle = "#e6c36a";
+        ctx2.fillStyle = "#5ee0c0";
         ctx2.beginPath();
         ctx2.moveTo(px + dir.x * cell * 0.42, py + dir.y * cell * 0.42);
         ctx2.lineTo(px - dir.x * cell * 0.28 - dir.y * cell * 0.26, py - dir.y * cell * 0.28 + dir.x * cell * 0.26);
@@ -1449,10 +1623,10 @@ window.ShirmoDungeon = (function () {
         page.level = { id: lv.id, name: lv.name, w: lv.w, h: lv.h, cells: lv.cells };
         page.props = (d.props || []).filter(function (p) { return p.levelId === lv.id; });
         page.foes = (d.foes || []).filter(function (f) { return f.levelId === lv.id; }).map(function (f) {
-          return { id: f.id, x: f.x, y: f.y, name: f.name || "Враг", dead: false };
+          return { id: f.id, x: f.x, y: f.y, name: f.name || "Враг", portrait: f.portrait || "", dead: false };
         });
       }
-      paintView(preview, page, { master: true });
+      paintView(preview, page, { master: true, onReady: requestPaint });
     }
 
     function paintAll() {
@@ -1461,12 +1635,50 @@ window.ShirmoDungeon = (function () {
       paintTools();
       paintRadial();
       paintPropPalette();
+      paintFoePalette();
       paintAssets();
       syncUnderSliders();
       syncUnder();
       paintGrid();
       paintPreview();
       paintInit();
+    }
+
+    function removeAtCell(at, alsoTerrain) {
+      if (!at) return false;
+      const lv = level();
+      let changed = false;
+      const beforeProps = d.props.length;
+      d.props = (d.props || []).filter(function (p) {
+        if (p.levelId === lv.id && p.x === at.x && p.y === at.y) {
+          if (selectedProp && selectedProp.id === p.id) selectedProp = null;
+          changed = true;
+          return false;
+        }
+        return true;
+      });
+      const beforeFoes = d.foes.length;
+      const killed = [];
+      d.foes = (d.foes || []).filter(function (f) {
+        if (f.levelId === lv.id && f.x === at.x && f.y === at.y) {
+          if (f.actorId) killed.push(f.actorId);
+          changed = true;
+          return false;
+        }
+        return true;
+      });
+      if (killed.length && ctx.campaign.battle && Array.isArray(ctx.campaign.battle.actors)) {
+        ctx.campaign.battle.actors = ctx.campaign.battle.actors.filter(function (a) {
+          return !a || killed.indexOf(a.id) < 0;
+        });
+      }
+      if (alsoTerrain) {
+        lv.cells[at.y][at.x] = CELL.VOID;
+        if (lv.doors) delete lv.doors[doorKey(at.x, at.y)];
+        changed = true;
+      }
+      if (beforeProps !== d.props.length || beforeFoes !== d.foes.length) changed = true;
+      return changed;
     }
 
     function cellFromEvent(event) {
@@ -1495,38 +1707,55 @@ window.ShirmoDungeon = (function () {
         return;
       }
       if (tool === "foe") {
+        removeAtCell(at, false);
+        const enemies = codexEnemies(ctx.campaign);
+        const person = enemies.find(function (row) { return row.id === foeBrush; }) || enemies[0] || null;
         const battle = window.ShirmoBattle ? window.ShirmoBattle.ensure(ctx.campaign) : null;
         let actor = null;
-        if (battle) {
-          actor = {
-            id: uid(), name: "Враг", side: "foe", hp: 11, hpMax: 11, ac: 13,
-            init: 10, initBonus: 1, dead: false, weapon: "Скимитар", damage: "1d6+1",
-            bonus: 3, portrait: "", marks: [], note: "Данж"
-          };
+        if (battle && person) {
+          actor = actorFromEnemy(person);
           battle.actors.push(actor);
-          window.ShirmoBattle.ensure(ctx.campaign);
+        } else if (battle) {
+          actor = actorFromEnemy({ name: "Враг", hp: 11, hpMax: 11, ac: 13, weapon: "Скимитар", damage: "1d6+1", bonus: 3 });
+          battle.actors.push(actor);
         }
-        d.foes.push({ id: uid(), x: at.x, y: at.y, levelId: lv.id, actorId: actor ? actor.id : "", name: "Враг" });
+        d.foes.push({
+          id: uid(), x: at.x, y: at.y, levelId: lv.id,
+          actorId: actor ? actor.id : "",
+          name: (actor && actor.name) || (person && person.name) || "Враг",
+          portrait: (actor && actor.portrait) || (person && person.portrait) || ""
+        });
+        if (actor && actor.portrait) portraitOf(actor.portrait, requestPaint);
         paintAll();
         saveSoon();
         return;
       }
       if (tool === "prop") {
+        removeAtCell(at, false);
         const meta = PROP_KINDS.find(function (p) { return p.id === propKind; }) || PROP_KINDS[0];
         const prop = {
           id: uid(), x: at.x, y: at.y, levelId: lv.id,
-          kind: meta.id, name: meta.name, secret: !!meta.secret,
+          kind: meta.id, name: "", secret: !!meta.secret,
           revealed: !meta.secret, dc: meta.dc || 15, skill: "Внимание"
         };
         d.props.push(prop);
         selectedProp = prop;
-        if (meta.id === "secretDoor") lv.cells[at.y][at.x] = CELL.SECRET;
+        if (meta.id === "secretDoor") {
+          prop.name = "Секретная дверь";
+          lv.cells[at.y][at.x] = CELL.SECRET;
+        }
+        paintAll();
+        saveSoon();
+        return;
+      }
+      if (tool === "erase") {
+        removeAtCell(at, true);
         paintAll();
         saveSoon();
         return;
       }
       const hit = (d.props || []).find(function (p) { return p.levelId === lv.id && p.x === at.x && p.y === at.y; });
-      if (hit && tool !== "erase") {
+      if (hit) {
         selectedProp = hit;
         paintGrid();
         return;
@@ -1537,9 +1766,6 @@ window.ShirmoDungeon = (function () {
         stampFloor(lv, at.x, at.y, d.autoWalls !== false);
       } else if (tool === "door") {
         stampDoor(lv, at.x, at.y, d.doorType || "wood");
-      } else if (tool === "erase") {
-        lv.cells[at.y][at.x] = CELL.VOID;
-        if (lv.doors) delete lv.doors[doorKey(at.x, at.y)];
       } else {
         lv.cells[at.y][at.x] = t.cell;
       }
@@ -1672,6 +1898,23 @@ window.ShirmoDungeon = (function () {
       d.brushProp = propKind;
       setTool("prop");
       paintPropPalette();
+    });
+    host.querySelector("[data-foe-palette]").addEventListener("click", function (event) {
+      const btn = event.target.closest("[data-foe-id]");
+      if (!btn) return;
+      foeBrush = btn.getAttribute("data-foe-id");
+      d.brushFoe = foeBrush;
+      setTool("foe");
+      paintFoePalette();
+    });
+    grid.addEventListener("contextmenu", function (event) {
+      event.preventDefault();
+      const at = cellFromEvent(event);
+      if (!at) return;
+      if (removeAtCell(at, false)) {
+        paintAll();
+        saveSoon();
+      }
     });
     host.querySelector("[data-site-list]").addEventListener("click", function (event) {
       const del = event.target.closest("[data-site-del]");
@@ -1977,8 +2220,8 @@ window.ShirmoDungeon = (function () {
       panning = false;
     });
     board.addEventListener("wheel", function (event) {
-      event.preventDefault();
       if (event.altKey) {
+        event.preventDefault();
         const lv = level();
         const step = event.shiftKey ? 0.005 : 0.02;
         const next = (Number(lv.underScale) || 1) + (event.deltaY < 0 ? step : -step);
@@ -1987,8 +2230,28 @@ window.ShirmoDungeon = (function () {
         underSaveTimer = setTimeout(function () { saveSoon(); }, 400);
         return;
       }
-      const next = zoom * (event.deltaY < 0 ? 1.08 : 0.92);
-      zoom = Math.max(0.35, Math.min(3, next));
+      /* Ctrl+колёсико — зум сетки к курсору. Без Ctrl — обычный скролл доски. */
+      if (!(event.ctrlKey || event.metaKey)) return;
+      event.preventDefault();
+      const rect = grid.getBoundingClientRect();
+      if (rect.width < 1 || rect.height < 1) return;
+      const before = zoom;
+      const factor = event.deltaY < 0 ? 1.1 : 0.9;
+      const next = Math.max(0.35, Math.min(3, zoom * factor));
+      if (next === before) return;
+      const mx = (event.clientX - rect.left) * (grid.width / rect.width);
+      const my = (event.clientY - rect.top) * (grid.height / rect.height);
+      const cellBefore = grid._cell || before;
+      const worldX = (mx - (grid._ox || 0)) / cellBefore;
+      const worldY = (my - (grid._oy || 0)) / cellBefore;
+      zoom = next;
+      const lv = level();
+      const base = Math.min(grid.width / lv.w, grid.height / lv.h);
+      const cell = base * zoom;
+      const ox0 = (grid.width - lv.w * cell) / 2;
+      const oy0 = (grid.height - lv.h * cell) / 2;
+      pan.x = mx - worldX * cell - ox0;
+      pan.y = my - worldY * cell - oy0;
       paintGrid();
     }, { passive: false });
 

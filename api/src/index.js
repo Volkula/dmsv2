@@ -655,11 +655,16 @@ const server = http.createServer(async function (req, res) {
         room.campaign = body.campaign;
       }
       const shown = room.campaign.activePageId === room.campaign.shownPageId;
-      if (room.publishMode === "live" && shown) {
-        room.frame = projectFrame(room.campaign);
+      const nextFrame = projectFrame(room.campaign);
+      const nextKind = nextFrame && nextFrame.page && nextFrame.page.kind;
+      const prevKind = room.frame && room.frame.page && room.frame.page.kind;
+      const overlay = nextKind === "dungeon" || nextKind === "battle";
+      const wasOverlay = prevKind === "dungeon" || prevKind === "battle";
+      if (room.publishMode === "live" && (shown || overlay || wasOverlay)) {
+        room.frame = nextFrame;
       }
       writeRoom(room);
-      if (room.publishMode === "live" && shown) pushFrame(room);
+      if (room.publishMode === "live" && (shown || overlay || wasOverlay)) pushFrame(room);
       send(res, 200, { publishMode: room.publishMode, frame: room.frame });
       return;
     }

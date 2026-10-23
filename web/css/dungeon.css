@@ -9,13 +9,27 @@
 }
 
 .dung-work {
+  --dung-bg: #070a0e;
+  --dung-panel: #0e141c;
+  --dung-panel-2: #121a24;
+  --dung-line: rgba(94, 224, 192, 0.28);
+  --dung-line-strong: rgba(94, 224, 192, 0.55);
+  --dung-accent: #5ee0c0;
+  --dung-accent-dim: #2a9a80;
+  --dung-text: #d8e4f0;
+  --dung-muted: #8aa0b4;
+  --dung-danger: #ff6b7a;
+  --dung-ink: #061018;
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr);
   height: 100%;
   min-height: 0;
-  background: #0c0a08;
-  color: #f3ead8;
-  font-family: Georgia, "Times New Roman", serif;
+  background:
+    radial-gradient(ellipse at 20% 0%, rgba(40, 90, 110, 0.22), transparent 45%),
+    radial-gradient(ellipse at 90% 100%, rgba(30, 120, 90, 0.12), transparent 40%),
+    var(--dung-bg);
+  color: var(--dung-text);
+  font-family: Bahnschrift, "Segoe UI", "Trebuchet MS", sans-serif;
 }
 
 .dung-side {
@@ -24,10 +38,10 @@
   gap: 10px;
   padding: 12px;
   overflow: auto;
-  border-right: 1px solid rgba(230, 195, 106, 0.28);
+  border-right: 1px solid var(--dung-line);
   background:
-    linear-gradient(180deg, rgba(40, 32, 20, 0.5), transparent 120px),
-    #14110e;
+    linear-gradient(180deg, rgba(30, 60, 70, 0.35), transparent 140px),
+    var(--dung-panel);
 }
 
 .dung-side-head {
@@ -39,18 +53,18 @@
 
 .dung-side-head h2 {
   margin: 0;
-  font-size: 22px;
-  letter-spacing: 0.12em;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: #e6c36a;
-  text-shadow: 0 2px 0 #000;
+  color: var(--dung-accent);
 }
 
 .dung-title {
   width: 100%;
-  background: #1c1812;
-  border: 1px solid rgba(230, 195, 106, 0.35);
-  color: #f3ead8;
+  background: var(--dung-panel-2);
+  border: 1px solid var(--dung-line);
+  color: var(--dung-text);
   padding: 8px 10px;
   font: inherit;
   border-radius: 2px;
@@ -59,9 +73,9 @@
 .dung-under-title {
   margin: 0 0 4px;
   font-size: 11px;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: #e6c36a;
+  color: var(--dung-accent);
 }
 
 .dung-floors,
@@ -69,8 +83,8 @@
 .dung-light,
 .dung-secret-box {
   padding: 8px;
-  border: 1px solid rgba(230, 195, 106, 0.28);
-  background: rgba(28, 22, 14, 0.65);
+  border: 1px solid var(--dung-line);
+  background: rgba(14, 22, 32, 0.85);
   border-radius: 2px;
 }
 
@@ -79,9 +93,9 @@
   justify-content: space-between;
   align-items: center;
   margin-bottom: 6px;
-  color: #e6c36a;
+  color: var(--dung-accent);
   font-size: 11px;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
 }
 
@@ -92,9 +106,9 @@
 .dung-prop-btn,
 .dung-floor {
   font: inherit;
-  color: #f3ead8;
-  background: #221c14;
-  border: 1px solid rgba(230, 195, 106, 0.3);
+  color: var(--dung-text);
+  background: var(--dung-panel-2);
+  border: 1px solid var(--dung-line);
   border-radius: 2px;
   cursor: pointer;
 }
@@ -102,7 +116,7 @@
 .dung-floors-head button {
   width: 28px;
   height: 28px;
-  color: #e6c36a;
+  color: var(--dung-accent);
 }
 
 .dung-floor-list {
@@ -120,9 +134,9 @@
 }
 
 .dung-floor.is-on {
-  background: #3a3020;
-  border-color: #e6c36a;
-  color: #e6c36a;
+  background: rgba(94, 224, 192, 0.12);
+  border-color: var(--dung-accent);
+  color: var(--dung-accent);
 }
 
 .dung-floor span {
@@ -136,13 +150,14 @@
   text-align: center;
   padding: 12px 10px;
   font-weight: 700;
-  color: #1a1208;
-  background: linear-gradient(180deg, #f0d78a, #c4a35a);
-  border: 1px solid #a8843a;
+  letter-spacing: 0.04em;
+  color: var(--dung-ink);
+  background: linear-gradient(180deg, #8af0d0, #3cbc9a);
+  border: 1px solid #2a9a80;
   border-radius: 2px;
   cursor: pointer;
   overflow: hidden;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
 
 .dung-upload input[type="file"] {
@@ -173,9 +188,9 @@
   align-items: center;
   gap: 1px;
   font: inherit;
-  color: #cfc3a8;
-  background: #221c14;
-  border: 1px solid rgba(230, 195, 106, 0.3);
+  color: var(--dung-muted);
+  background: var(--dung-panel-2);
+  border: 1px solid var(--dung-line);
   border-radius: 3px;
   cursor: pointer;
 }
@@ -195,18 +210,18 @@
 .dung-icon-btn.is-on,
 .dung-prop-btn.is-on,
 .dung-chip.is-on {
-  background: #3a3020;
-  border-color: #e6c36a;
-  color: #e6c36a;
+  background: rgba(94, 224, 192, 0.14);
+  border-color: var(--dung-accent);
+  color: var(--dung-accent);
 }
 
 .dung-chip {
   padding: 5px 8px;
   font: inherit;
   font-size: 12px;
-  color: #f3ead8;
-  background: #221c14;
-  border: 1px solid rgba(230, 195, 106, 0.3);
+  color: var(--dung-text);
+  background: var(--dung-panel-2);
+  border: 1px solid var(--dung-line);
   border-radius: 3px;
   cursor: pointer;
 }
@@ -214,16 +229,16 @@
 .dung-autowall { margin: 0; }
 
 .dung-assets {
-  border: 1px solid rgba(230, 195, 106, 0.28);
-  background: rgba(28, 22, 14, 0.65);
+  border: 1px solid var(--dung-line);
+  background: rgba(14, 22, 32, 0.85);
   padding: 6px 8px;
 }
 
 .dung-assets summary {
   cursor: pointer;
-  color: #e6c36a;
+  color: var(--dung-accent);
   font-size: 12px;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
@@ -240,14 +255,14 @@
   flex-direction: column;
   gap: 2px;
   font-size: 11px;
-  color: #cfc3a8;
+  color: var(--dung-muted);
 }
 
 .dung-under-fine input[type="number"] {
   width: 100%;
-  background: #1c1812;
-  border: 1px solid rgba(230, 195, 106, 0.35);
-  color: #f3ead8;
+  background: var(--dung-panel-2);
+  border: 1px solid var(--dung-line);
+  color: var(--dung-text);
   padding: 5px 6px;
   font: inherit;
   border-radius: 2px;
@@ -262,14 +277,14 @@
 .dung-under-nudge button {
   padding: 6px 0;
   font: inherit;
-  color: #e6c36a;
-  background: #221c14;
-  border: 1px solid rgba(230, 195, 106, 0.3);
+  color: var(--dung-accent);
+  background: var(--dung-panel-2);
+  border: 1px solid var(--dung-line);
   border-radius: 2px;
   cursor: pointer;
 }
 
-.dung-under-nudge button:hover { border-color: #e6c36a; }
+.dung-under-nudge button:hover { border-color: var(--dung-accent); }
 
 .dung-asset-list { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
 
@@ -285,7 +300,7 @@
   width: 28px;
   height: 28px;
   object-fit: cover;
-  border: 1px solid rgba(230, 195, 106, 0.25);
+  border: 1px solid var(--dung-line);
 }
 
 .dung-radial {
@@ -302,14 +317,14 @@
 .dung-radial-svg { display: block; }
 
 .dung-radial-ring {
-  fill: rgba(10, 8, 6, 0.55);
-  stroke: rgba(230, 195, 106, 0.55);
+  fill: rgba(6, 10, 16, 0.62);
+  stroke: var(--dung-line-strong);
   stroke-width: 2;
 }
 
 .dung-wedge {
-  fill: #241c14;
-  stroke: rgba(230, 195, 106, 0.35);
+  fill: #121a24;
+  stroke: var(--dung-line);
   stroke-width: 1.2;
   cursor: pointer;
   transition: fill 0.08s ease;
@@ -317,23 +332,23 @@
 
 .dung-wedge.is-on,
 .dung-wedge:hover {
-  fill: #5a4520;
-  stroke: #e6c36a;
+  fill: #1a3a36;
+  stroke: var(--dung-accent);
   stroke-width: 1.8;
 }
 
 .dung-radial-hub {
-  fill: #120e0a;
-  stroke: rgba(230, 195, 106, 0.5);
+  fill: #060a10;
+  stroke: var(--dung-line-strong);
   stroke-width: 1.5;
 }
 
 .dung-radial-hub-text {
-  fill: #e6c36a;
+  fill: var(--dung-accent);
   font-size: 11px;
-  font-family: Georgia, serif;
+  font-family: Bahnschrift, "Segoe UI", sans-serif;
   text-anchor: middle;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   pointer-events: none;
   user-select: none;
 }
@@ -355,6 +370,54 @@
   gap: 6px;
 }
 
+.dung-foe-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.dung-foe-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 4px;
+  font: inherit;
+  color: var(--dung-text);
+  background: var(--dung-panel-2);
+  border: 1px solid var(--dung-line);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.dung-foe-btn img,
+.dung-foe-btn > span {
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  display: grid;
+  place-items: center;
+  background: #1a2430;
+  border-radius: 2px;
+}
+
+.dung-foe-btn em {
+  font-style: normal;
+  font-size: 11px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dung-foe-btn.is-on {
+  background: rgba(94, 224, 192, 0.14);
+  border-color: var(--dung-accent);
+  color: var(--dung-accent);
+}
+
 .dung-prop-btn {
   display: flex;
   flex-direction: column;
@@ -369,7 +432,7 @@
 
 .dung-prop-btn span {
   font-size: 11px;
-  color: #cfc3a8;
+  color: var(--dung-muted);
 }
 
 .dung-light {
@@ -404,16 +467,16 @@
   overflow: auto;
   min-width: 0;
   background:
-    radial-gradient(ellipse at center, rgba(60, 45, 25, 0.25), transparent 55%),
-    #080705;
+    radial-gradient(ellipse at center, rgba(40, 90, 100, 0.18), transparent 55%),
+    #05080c;
 }
 
 .dung-edit-wrap {
   position: relative;
   width: max-content;
   margin: 16px auto;
-  background: #15120e;
-  box-shadow: 0 0 0 1px rgba(230, 195, 106, 0.35), 0 12px 40px rgba(0, 0, 0, 0.55);
+  background: #0c1218;
+  box-shadow: 0 0 0 1px var(--dung-line-strong), 0 16px 48px rgba(0, 0, 0, 0.55);
 }
 
 .dung-under-img {
@@ -438,31 +501,31 @@
   flex-direction: column;
   gap: 10px;
   padding: 12px;
-  border-left: 1px solid rgba(230, 195, 106, 0.28);
-  background: #100e0b;
+  border-left: 1px solid var(--dung-line);
+  background: var(--dung-panel);
   overflow: auto;
 }
 
 .dung-preview .dung-fp {
   width: 100%;
   height: auto;
-  border: 2px solid rgba(230, 195, 106, 0.4);
-  background: #050403;
+  border: 2px solid var(--dung-line-strong);
+  background: #05080c;
   image-rendering: pixelated;
-  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.8);
+  box-shadow: inset 0 0 40px rgba(0, 20, 30, 0.85);
 }
 
 .dung-preview .dung-mini {
   width: 180px;
   height: 180px;
-  border: 1px solid rgba(230, 195, 106, 0.35);
-  background: #0a0806;
+  border: 1px solid var(--dung-line);
+  background: #06090e;
   image-rendering: pixelated;
   align-self: center;
 }
 
 .dung-init { display: flex; flex-direction: column; gap: 6px; }
-.dung-round { color: #e6c36a; font-size: 13px; }
+.dung-round { color: var(--dung-accent); font-size: 13px; }
 .dung-track { display: flex; flex-wrap: wrap; gap: 6px; }
 
 .dung-tok {
@@ -471,8 +534,8 @@
   align-items: center;
   width: 54px;
   padding: 4px;
-  border: 1px solid rgba(230, 195, 106, 0.25);
-  background: #1a1612;
+  border: 1px solid var(--dung-line);
+  background: var(--dung-panel-2);
   color: inherit;
   font: inherit;
 }
@@ -486,7 +549,7 @@ button.dung-tok { cursor: pointer; }
   object-fit: cover;
   display: grid;
   place-items: center;
-  background: #2a241c;
+  background: #1a2430;
   border-radius: 2px;
 }
 
@@ -499,16 +562,16 @@ button.dung-tok { cursor: pointer; }
   white-space: nowrap;
 }
 
-.dung-tok.is-player { border-color: #7dcea0; }
-.dung-tok.is-foe { border-color: #e07a6a; }
-.dung-tok.is-on { box-shadow: 0 0 0 1px #e6c36a; }
+.dung-tok.is-player { border-color: #5ee0c0; }
+.dung-tok.is-foe { border-color: #ff6b7a; }
+.dung-tok.is-on { box-shadow: 0 0 0 1px var(--dung-accent); }
 .dung-tok.is-dead { opacity: 0.4; }
 
 .play-dungeon {
   position: relative;
   display: grid;
   place-items: center;
-  background: #050403 !important;
+  background: #05080c !important;
   overflow: hidden;
 }
 
@@ -533,23 +596,24 @@ button.dung-tok { cursor: pointer; }
 .play-dungeon .dung-mini {
   width: 180px;
   height: 180px;
-  border: 2px solid rgba(230, 195, 106, 0.5);
+  border: 2px solid var(--dung-line-strong);
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.6);
-  background: #0a0806;
+  background: #06090e;
 }
 
 .play-dungeon .dung-meta {
   padding: 4px 8px;
-  background: rgba(10, 8, 6, 0.78);
-  border: 1px solid rgba(230, 195, 106, 0.3);
+  background: rgba(6, 10, 16, 0.82);
+  border: 1px solid var(--dung-line);
   font-size: 13px;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 2px;
+  font-family: Bahnschrift, "Segoe UI", sans-serif;
 }
 
-.play-dungeon .dung-meta b { color: #e6c36a; }
+.play-dungeon .dung-meta b { color: var(--dung-accent); }
 
 .play-dungeon .dung-init {
   position: absolute;
@@ -567,11 +631,12 @@ button.dung-tok { cursor: pointer; }
   inset: 0;
   display: grid;
   place-items: center;
-  background: radial-gradient(circle, rgba(230, 195, 106, 0.4), rgba(0, 0, 0, 0.6));
-  color: #fff8e0;
+  background: radial-gradient(circle, rgba(94, 224, 192, 0.35), rgba(2, 8, 14, 0.72));
+  color: #e8fff8;
   font-size: 42px;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
+  font-family: Bahnschrift, "Segoe UI", sans-serif;
   animation: dung-flash 1.5s ease-out;
 }
 
@@ -583,13 +648,37 @@ button.dung-tok { cursor: pointer; }
   100% { opacity: 0; }
 }
 
+.dung-work .note { color: var(--dung-muted); }
+.dung-work .check { color: var(--dung-muted); }
+.dung-work label { color: var(--dung-muted); }
+.dung-work input[type="number"],
+.dung-work input[type="text"] {
+  accent-color: var(--dung-accent);
+}
+
+.dung-work button.primary {
+  background: linear-gradient(180deg, #8af0d0, #3cbc9a);
+  color: var(--dung-ink);
+  border: 1px solid #2a9a80;
+  font-weight: 700;
+}
+
 @media (max-width: 1100px) {
   .dung-main { grid-template-columns: 1fr; }
-  .dung-preview { border-left: 0; border-top: 1px solid rgba(230, 195, 106, 0.28); flex-direction: row; flex-wrap: wrap; }
+  .dung-preview {
+    border-left: 0;
+    border-top: 1px solid var(--dung-line);
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
   .dung-preview .dung-fp { max-width: 480px; }
 }
 
 @media (max-width: 860px) {
   .dung-work { grid-template-columns: 1fr; }
-  .dung-side { max-height: 42vh; border-right: 0; border-bottom: 1px solid rgba(230, 195, 106, 0.28); }
+  .dung-side {
+    max-height: 42vh;
+    border-right: 0;
+    border-bottom: 1px solid var(--dung-line);
+  }
 }
