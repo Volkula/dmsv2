@@ -62,7 +62,12 @@ window.ShirmoDungeon = (function () {
     if (!d.underlay.master) d.underlay.master = MASTER_MAP;
     if (!d.underlay.clean) d.underlay.clean = CLEAN_MAP;
     if (d.underlay.custom == null) d.underlay.custom = "";
-    if (!d.underlay.show) d.underlay.show = d.underlay.custom ? "custom" : "master";
+    /* blob: нельзя хранить в кампании — после F5 ссылка мёртвая */
+    if (d.underlay.preview) delete d.underlay.preview;
+    if (String(d.underlay.custom || "").indexOf("blob:") === 0) d.underlay.custom = "";
+    if (!d.underlay.show || (d.underlay.show === "custom" && !d.underlay.custom)) {
+      d.underlay.show = d.underlay.custom ? "custom" : "master";
+    }
     if (!Number.isFinite(Number(d.underlay.alpha))) d.underlay.alpha = 0.92;
     if (Number(d.underlay.alpha) < 0.4) d.underlay.alpha = 0.92;
     if (!Array.isArray(d.levels) || !d.levels.length) {
@@ -598,11 +603,11 @@ window.ShirmoDungeon = (function () {
       '<p class="note">' + esc(d.title) + " · 1кл = " + esc(d.cellFt) + "фт</p>" +
       '<div class="dung-under-box">' +
       '<p class="dung-under-title">Подложка</p>' +
-      '<label class="dung-upload primary-like" title="Загрузить свою картинку карты">' +
-      'Загрузить свою карту' +
-      '<input type="file" accept="image/*" data-dung-upload hidden>' +
+      '<label class="dung-upload" title="Загрузить свою картинку карты">' +
+      '<span>Загрузить свою карту</span>' +
+      '<input type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.gif" data-dung-upload>' +
       "</label>" +
-      '<p class="note" data-dung-upload-status>' + (d.underlay.custom ? "Своя карта загружена." : "Жми сюда и выбери файл карты.") + "</p>" +
+      '<p class="note" data-dung-upload-status>' + (d.underlay.custom ? "Своя карта в комнате. Можно загрузить снова." : "Жми жёлтую кнопку и выбери файл.") + "</p>" +
       '<label>Или встроенная<select data-dung="underlay">' +
       '<option value="custom"' + (d.underlay.custom ? "" : " disabled") + ">Своя загрузка</option>" +
       '<option value="master">Redbrand мастер</option>' +
@@ -647,6 +652,7 @@ window.ShirmoDungeon = (function () {
       '</aside>' +
       '<div class="dung-main">' +
       '<div class="dung-edit-wrap">' +
+      '<img class="dung-under-img" alt="подложка" draggable="false">' +
       '<canvas class="dung-grid" width="840" height="1040"></canvas>' +
       "</div>" +
       '<div class="dung-eyes" hidden>' +
@@ -655,42 +661,62 @@ window.ShirmoDungeon = (function () {
       "</div></div></div>";
 
     const grid = host.querySelector(".dung-grid");
+    const underDom = host.querySelector(".dung-under-img");
     const eyes = host.querySelector(".dung-eyes");
     const editWrap = host.querySelector(".dung-edit-wrap");
     const secretBox = host.querySelector(".dung-secret-box");
+    const statusEl = host.querySelector("[data-dung-upload-status]");
     let selectedProp = null;
+    let localPreview = "";
     const underImg = new Image();
     underImg.decoding = "async";
-    underImg.onload = function () { paintGrid(); };
+    underImg.onload = function () {
+      underDom.hidden = false;
+      paintGrid();
+    };
     underImg.onerror = function () {
-      const note = host.querySelector(".dung-under-box .note");
-      if (note) note.textContent = "Карта не загрузилась: " + (underImg.dataset.url || "");
+      if (statusEl) statusEl.textContent = "Карта не открылась. Загрузи файл ещё раз.";
+      underDom.hidden = true;
+      paintGrid();
     };
 
     function saveSoon() {
       markExplored(d);
+      const keepPreview = d.underlay.preview;
+      delete d.underlay.preview;
       if (ctx.save) ctx.save();
+      if (keepPreview) d.underlay.preview = keepPreview;
     }
 
     function underUrl() {
       const show = d.underlay.show || "master";
       if (show === "off") return "";
-      if (show === "custom") return d.underlay.preview || d.underlay.custom || "";
+      if (show === "custom") return localPreview || d.underlay.custom || "";
       if (show === "clean") return d.underlay.clean || CLEAN_MAP;
       return d.underlay.master || MASTER_MAP;
     }
 
-    function syncUnder() {
-      const url = underUrl();
+    function setUnderSrc(url) {
       if (!url) {
-        underImg.dataset.url = "";
         underImg.removeAttribute("src");
+        underDom.removeAttribute("src");
+        underDom.hidden = true;
+        underImg.dataset.url = "";
         return;
       }
-      if (underImg.dataset.url !== url) {
-        underImg.dataset.url = url;
-        underImg.src = url;
+      if (underImg.dataset.url === url && underImg.naturalWidth) {
+        underDom.src = url;
+        underDom.hidden = false;
+        return;
       }
+      underImg.dataset.url = url;
+      underImg.src = url;
+      underDom.src = url;
+      underDom.hidden = false;
+    }
+
+    function syncUnder() {
+      setUnderSrc(underUrl());
     }
 
     function paintGrid() {
@@ -699,24 +725,22 @@ window.ShirmoDungeon = (function () {
       const cell = Math.min(grid.width / level.w, grid.height / level.h);
       const ox = (grid.width - level.w * cell) / 2;
       const oy = (grid.height - level.h * cell) / 2;
+      const mapW = level.w * cell;
+      const mapH = level.h * cell;
+      underDom.style.left = ox + "px";
+      underDom.style.top = oy + "px";
+      underDom.style.width = mapW + "px";
+      underDom.style.height = mapH + "px";
+      underDom.style.opacity = String(Math.max(0.3, Math.min(1, Number(d.underlay.alpha) || 0.92)));
       ctx2.clearRect(0, 0, grid.width, grid.height);
-      ctx2.fillStyle = "#15120e";
-      ctx2.fillRect(0, 0, grid.width, grid.height);
-      if (underUrl() && underImg.complete && underImg.naturalWidth) {
-        ctx2.save();
-        ctx2.globalAlpha = Math.max(0.3, Math.min(1, Number(d.underlay.alpha) || 0.92));
-        ctx2.drawImage(underImg, ox, oy, level.w * cell, level.h * cell);
-        ctx2.restore();
-      } else if (underUrl()) {
+      /* подложка — через <img> под canvas; canvas только сетка/кисть */
+      if (!underUrl()) {
+        ctx2.fillStyle = "#15120e";
+        ctx2.fillRect(0, 0, grid.width, grid.height);
         ctx2.fillStyle = "#c4a35a";
-        ctx2.font = "16px Georgia, serif";
+        ctx2.font = "18px Georgia, serif";
         ctx2.textAlign = "center";
-        ctx2.fillText("Загрузка карты…", grid.width / 2, grid.height / 2);
-      } else {
-        ctx2.fillStyle = "#c4a35a";
-        ctx2.font = "16px Georgia, serif";
-        ctx2.textAlign = "center";
-        ctx2.fillText("Загрузи карту слева → «Загрузить свою карту»", grid.width / 2, grid.height / 2);
+        ctx2.fillText("Загрузи карту слева", grid.width / 2, grid.height / 2);
       }
       for (let y = 0; y < level.h; y++) {
         for (let x = 0; x < level.w; x++) {
@@ -969,38 +993,33 @@ window.ShirmoDungeon = (function () {
       saveSoon();
     });
     host.querySelector("[data-dung-upload]").addEventListener("change", function () {
-      const file = this.files && this.files[0];
-      this.value = "";
+      const input = this;
+      const file = input.files && input.files[0];
+      input.value = "";
       if (!file) return;
-      const status = host.querySelector("[data-dung-upload-status]");
-      const localUrl = URL.createObjectURL(file);
-      d.underlay.preview = localUrl;
+      if (localPreview) {
+        try { URL.revokeObjectURL(localPreview); } catch (err) { /* ignore */ }
+      }
+      localPreview = URL.createObjectURL(file);
       d.underlay.show = "custom";
       const opt = underSelect.querySelector('option[value="custom"]');
       if (opt) opt.disabled = false;
       underSelect.value = "custom";
-      underImg.dataset.url = localUrl;
-      underImg.src = localUrl;
+      setUnderSrc(localPreview);
       paintGrid();
-      if (status) status.textContent = "На экране. Сохраняю…";
+      if (statusEl) statusEl.textContent = "Показываю «" + (file.name || "карта") + "». Шлю на сервер…";
       if (!ctx.upload) {
-        d.underlay.custom = localUrl;
-        if (status) status.textContent = "Локально: " + (file.name || "карта");
-        saveSoon();
+        if (statusEl) statusEl.textContent = "Показано локально (нет upload).";
         return;
       }
       ctx.upload(file).then(function (url) {
         d.underlay.custom = url;
         d.underlay.show = "custom";
-        underImg.dataset.url = url;
-        underImg.src = url;
-        if (status) status.textContent = "Готово: " + (file.name || "карта");
-        paintGrid();
+        /* пока localPreview жив — оставляем его на экране; custom для следующего захода */
+        if (statusEl) statusEl.textContent = "Сохранено: " + (file.name || "карта");
         saveSoon();
       }).catch(function (error) {
-        d.underlay.custom = localUrl;
-        if (status) status.textContent = (error && error.message) || "Сервер не принял — показан локальный файл";
-        saveSoon();
+        if (statusEl) statusEl.textContent = "На экране есть, сервер: " + ((error && error.message) || "ошибка");
       });
     });
     host.querySelector("[data-dung=torch]").addEventListener("change", function () {
