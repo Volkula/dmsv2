@@ -3486,12 +3486,15 @@
       if (!library || !item || !item.url) return;
       library.images = library.images || [];
       if (library.images.some(function (row) { return row.url === item.url; })) return;
+      const section = item.section || "";
+      const folder = item.folder || (section === "icons" ? "Иконки товаров" : section.indexOf("npc:") === 0 ? (item.sectionName || "НПС") : (section || "Общее"));
       library.images.push({
         id: crypto.randomUUID(),
         name: item.name || "Картинка",
         url: item.url,
-        section: item.section || "",
-        sectionName: item.sectionName || ""
+        section: section,
+        sectionName: item.sectionName || "",
+        folder: folder
       });
     },
     title: function (image, npcs) {

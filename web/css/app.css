@@ -785,11 +785,12 @@ label.text-file:hover { border-color: var(--brass); color: var(--brass); }
 
 .libx {
   display: grid;
-  grid-template-columns: 200px minmax(0, 1fr) 280px;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: 220px minmax(0, 1fr) 280px;
+  grid-template-rows: auto auto minmax(0, 1fr);
   height: 100%;
   min-height: 0;
   background: #12100e;
+  position: relative;
 }
 
 .libx-bar {
@@ -847,21 +848,44 @@ label.text-file:hover { border-color: var(--brass); color: var(--brass); }
   margin-left: auto;
 }
 
+.libx-crumbs {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line);
+  background: #16130f;
+  font-size: 13px;
+}
+
+.libx-crumbs button {
+  border: 0;
+  background: transparent;
+  color: var(--brass);
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.libx-crumbs span { color: var(--muted); }
+
 .libx-tree {
-  grid-row: 2;
+  grid-row: 3;
   overflow: auto;
   border-right: 1px solid var(--line);
   padding: 8px;
   background: #0e0c0a;
 }
 
-.libx-folder {
+.libx-tree-item {
   display: flex;
-  justify-content: space-between;
+  align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 8px 10px;
-  margin-bottom: 2px;
+  padding: 6px 8px 6px calc(8px + (var(--depth, 0) * 14px));
+  margin-bottom: 1px;
   border: 1px solid transparent;
   background: transparent;
   color: inherit;
@@ -871,20 +895,33 @@ label.text-file:hover { border-color: var(--brass); color: var(--brass); }
   border-radius: 4px;
 }
 
-.libx-folder em {
+.libx-tree-item em {
   font-style: normal;
   color: var(--muted);
   font-size: 12px;
+  margin-left: auto;
 }
 
-.libx-folder.is-on {
+.libx-tree-item.is-on {
   border-color: var(--line);
   background: rgba(230, 195, 106, 0.12);
   color: var(--brass);
 }
 
+.libx-tree-ico,
+.libx-folder-art {
+  width: 18px;
+  height: 14px;
+  flex: none;
+  border-radius: 2px 2px 1px 1px;
+  background:
+    linear-gradient(180deg, #e6c36a 0 4px, transparent 4px),
+    linear-gradient(180deg, #c4a35a, #8a6a30);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+
 .libx-grid {
-  grid-row: 2;
+  grid-row: 3;
   overflow: auto;
   padding: 12px;
   display: grid;
@@ -951,7 +988,7 @@ label.text-file:hover { border-color: var(--brass); color: var(--brass); }
 }
 
 .libx-preview {
-  grid-row: 2;
+  grid-row: 3;
   overflow: auto;
   border-left: 1px solid var(--line);
   padding: 12px;
@@ -960,6 +997,106 @@ label.text-file:hover { border-color: var(--brass); color: var(--brass); }
   flex-direction: column;
   gap: 10px;
 }
+
+.libx-card.is-unused {
+  border-color: rgba(224, 122, 106, 0.45);
+}
+
+.libx-card.is-dir .libx-folder-art {
+  width: 72px;
+  height: 56px;
+  border-radius: 4px 6px 4px 4px;
+  background:
+    linear-gradient(180deg, #e6c36a 0 12px, transparent 12px),
+    linear-gradient(180deg, #d4b46a, #8a6a30);
+}
+
+.libx-thumb { position: relative; }
+
+.libx-badge {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 10px;
+  line-height: 1.3;
+  max-width: calc(100% - 8px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.libx-badge.is-used {
+  background: rgba(10, 8, 6, 0.8);
+  color: var(--brass);
+}
+
+.libx-badge.is-free {
+  background: rgba(120, 32, 24, 0.9);
+  color: #f3ead8;
+}
+
+.libx-used {
+  font-size: 13px;
+}
+
+.libx-used p { margin: 0 0 4px; color: var(--brass); }
+
+.libx-used ul {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
+.libx-unused-note { color: #e07a6a; }
+
+.libx-menu {
+  position: fixed;
+  z-index: 80;
+  min-width: 180px;
+  padding: 4px;
+  background: #1a1612;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.libx-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.libx-menu button:hover { background: rgba(230, 195, 106, 0.12); }
+
+.libx-dialog {
+  position: absolute;
+  z-index: 40;
+  left: 50%;
+  top: 20%;
+  transform: translateX(-50%);
+  width: min(360px, 90%);
+  padding: 14px;
+  background: #1a1612;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.libx-dialog h3 { margin: 0; font-size: 16px; font-weight: 500; }
+
+.libx-dialog-acts { display: flex; gap: 8px; }
 
 .libx-preview-empty {
   color: var(--muted);
@@ -1020,7 +1157,7 @@ label.text-file:hover { border-color: var(--brass); color: var(--brass); }
 @media (max-width: 980px) {
   .libx {
     grid-template-columns: 1fr;
-    grid-template-rows: auto auto minmax(180px, 1fr) auto;
+    grid-template-rows: auto auto auto minmax(180px, 1fr) auto;
   }
   .libx-tree,
   .libx-grid,

@@ -1390,6 +1390,7 @@
       app.querySelector("#mod-library").classList.toggle("is-on", kind === "library");
       if (kind === "library") {
         mountLibrary(libraryHost, {
+          campaign: state.campaign,
           shelf: shelf,
           save: save,
           fill: fill,
@@ -1619,92 +1620,354 @@
   function mountLibrary(host, ctx) {
     if (!host || !ctx) return;
     let kind = host._libKind || "images";
-    let folder = host._libFolder || "Все";
+    let path = host._libPath == null ? "" : host._libPath;
     let query = host._libQuery || "";
     let sort = host._libSort || "name";
     let selected = host._libSelected || "";
+    let unusedOnly = !!host._libUnused;
+    let menu = null;
 
-    function sectionName(item) {
-      if (kind !== "images") return "Все";
-      return ctx.sectionOf ? ctx.sectionOf(item) : (item.section || "Общее");
+    function rawList(lib) {
+      if (kind === "fonts") return lib.fonts || [];
+      if (kind === "notes") return lib.notes || [];
+      return lib.images || [];
     }
 
-    function foldersOf(lib) {
-      if (kind === "fonts") return ["Все"];
-      if (kind === "notes") return ["Все"];
+    function folderOf(item) {
+      if (kind !== "images") return "";
+      if (item.folder != null && String(item.folder) !== "") return String(item.folder).replace(/^\/+|\/+$/g, "");
+      const title = ctx.sectionOf ? ctx.sectionOf(item) : (item.section || "Общее");
+      item.folder = title === "Все" ? "" : title;
+      return item.folder;
+    }
+
+    function ensureFolders(lib) {
+      if (!Array.isArray(lib.folders)) lib.folders = [];
       const set = {};
-      (lib.images || []).forEach(function (item) { set[sectionName(item)] = true; });
-      const names = Object.keys(set).sort(function (a, b) {
-        function rank(name) {
-          if (name === "Общее") return 2;
-          if (name === "Иконки товаров") return 1;
-          return 0;
-        }
-        return (rank(a) - rank(b)) || a.localeCompare(b, "ru");
+      lib.folders.forEach(function (p) { if (p) set[p] = true; });
+      (lib.images || []).forEach(function (item) {
+        const parts = folderOf(item).split("/").filter(Boolean);
+        let acc = "";
+        parts.forEach(function (part) {
+          acc = acc ? acc + "/" + part : part;
+          set[acc] = true;
+        });
       });
-      return ["Все"].concat(names);
+      lib.folders = Object.keys(set).sort(function (a, b) { return a.localeCompare(b, "ru"); });
     }
 
-    function listItems(lib) {
-      const raw = kind === "fonts" ? (lib.fonts || []) : (kind === "notes" ? (lib.notes || []) : (lib.images || []));
-      const q = String(query || "").trim().toLowerCase();
-      let rows = raw.filter(function (item) {
-        if (folder && folder !== "Все" && sectionName(item) !== folder) return false;
-        if (!q) return true;
-        const hay = [item.name, item.section, item.text, sectionName(item)].join(" ").toLowerCase();
-        return hay.indexOf(q) >= 0;
+    function childFolders(lib, parent) {
+      const prefix = parent ? parent + "/" : "";
+      const kids = [];
+      const seen = {};
+      (lib.folders || []).forEach(function (p) {
+        if (!p) return;
+        if (parent) {
+          if (p === parent || p.indexOf(prefix) !== 0) return;
+          const rest = p.slice(prefix.length);
+          const name = rest.split("/")[0];
+          if (!name || seen[name]) return;
+          seen[name] = true;
+          kids.push({ name: name, path: prefix + name });
+        } else {
+          const name = p.split("/")[0];
+          if (seen[name]) return;
+          seen[name] = true;
+          kids.push({ name: name, path: name });
+        }
       });
-      rows = rows.slice().sort(function (a, b) {
-        if (sort === "section") {
-          const gap = sectionName(a).localeCompare(sectionName(b), "ru");
+      return kids.sort(function (a, b) { return a.name.localeCompare(b.name, "ru"); });
+    }
+
+    function countIn(lib, folderPath) {
+      return rawList(lib).filter(function (item) {
+        const f = folderOf(item);
+        if (!folderPath) return true;
+        return f === folderPath || f.indexOf(folderPath + "/") === 0;
+      }).length;
+    }
+
+    function isAssetUrl(value) {
+      if (!value || typeof value !== "string") return false;
+      if (value.indexOf("/api/rooms/") === 0) return true;
+      if (value.indexOf("blob:") === 0) return true;
+      if (value.indexOf("data:image") === 0) return true;
+      return /\.(png|jpe?g|gif|webp|svg|woff2?|ttf|otf)(\?|$)/i.test(value);
+    }
+
+    function fieldLabel(key) {
+      const names = {
+        portrait: "портрет", image: "картинка", url: "файл", icon: "иконка",
+        backdrop: "фон", day: "день", night: "ночь", fontUrl: "шрифт",
+        portraitThumb: "миниатюра"
+      };
+      return names[key] || key;
+    }
+
+    function usageIndex() {
+      const acc = {};
+      const campaign = ctx.campaign;
+      if (!campaign) return acc;
+      function add(url, label) {
+        if (!isAssetUrl(url)) return;
+        if (!acc[url]) acc[url] = [];
+        if (acc[url].indexOf(label) < 0) acc[url].push(label);
+      }
+      function walk(node, hint) {
+        if (!node || typeof node !== "object") return;
+        if (Array.isArray(node)) {
+          node.forEach(function (row) {
+            const name = row && (row.name || row.title);
+            walk(row, name ? hint + " «" + name + "»" : hint);
+          });
+          return;
+        }
+        Object.keys(node).forEach(function (key) {
+          if (key === "library" || key === "cells" || key === "explored") return;
+          const val = node[key];
+          if (typeof val === "string") {
+            if (isAssetUrl(val)) add(val, hint + " — " + fieldLabel(key));
+          } else if (val && typeof val === "object") {
+            walk(val, hint);
+          }
+        });
+      }
+      (campaign.pages || []).forEach(function (page) {
+        walk(page, page.kind === "map" ? "Карта" : ("Сцена «" + (page.name || page.title || "") + "»"));
+      });
+      walk(campaign.codex, "Справочник");
+      walk(campaign.battle, "Бой");
+      walk(campaign.stage, "Сцена");
+      return acc;
+    }
+
+    function usesOf(item, index) {
+      if (!item) return [];
+      if (item.url) return index[item.url] || [];
+      return [];
+    }
+
+    function hideMenu() {
+      if (menu) menu.remove();
+      menu = null;
+    }
+
+    function showMenu(x, y, items) {
+      hideMenu();
+      menu = document.createElement("div");
+      menu.className = "libx-menu";
+      menu.innerHTML = items.map(function (row) {
+        return '<button type="button" data-act="' + esc(row.act) + '">' + esc(row.label) + "</button>";
+      }).join("");
+      document.body.appendChild(menu);
+      const w = menu.offsetWidth;
+      const h = menu.offsetHeight;
+      menu.style.left = Math.min(x, window.innerWidth - w - 8) + "px";
+      menu.style.top = Math.min(y, window.innerHeight - h - 8) + "px";
+      menu.addEventListener("click", function (event) {
+        const btn = event.target.closest("[data-act]");
+        if (!btn) return;
+        const act = btn.getAttribute("data-act");
+        hideMenu();
+        const hit = items.find(function (row) { return row.act === act; });
+        if (hit && hit.run) hit.run();
+      });
+    }
+
+    function pickFolder(title, current, done) {
+      const lib = ctx.shelf();
+      ensureFolders(lib);
+      const options = [""].concat(lib.folders || []).map(function (p) {
+        const label = p || "(корень)";
+        return '<option value="' + esc(p) + '"' + (p === current ? " selected" : "") + ">" + esc(label) + "</option>";
+      }).join("");
+      const box = document.createElement("div");
+      box.className = "libx-dialog";
+      box.innerHTML = "<h3>" + esc(title) + "</h3>" +
+        "<label>Папка<select>" + options + "</select></label>" +
+        '<label>Новая папка<input type="text" placeholder="Например Герои/Портреты"></label>' +
+        '<div class="libx-dialog-acts"><button type="button" data-ok class="primary">Ок</button>' +
+        '<button type="button" data-cancel>Отмена</button></div>';
+      host.appendChild(box);
+      function close() { box.remove(); }
+      box.querySelector("[data-cancel]").addEventListener("click", close);
+      box.querySelector("[data-ok]").addEventListener("click", function () {
+        const typed = box.querySelector("input").value.trim().replace(/^\/+|\/+$/g, "").replace(/\\/g, "/");
+        const chosen = typed || box.querySelector("select").value;
+        close();
+        done(chosen);
+      });
+    }
+
+    function setItemFolder(item, next) {
+      item.folder = next || "";
+      if (kind === "images") {
+        item.section = next || "Общее";
+        item.sectionName = next.split("/").pop() || "Общее";
+      }
+    }
+
+    function deleteItem(id) {
+      const shelf = ctx.shelf();
+      shelf[kind] = (shelf[kind] || []).filter(function (item) { return item.id !== id; });
+      if (selected === id) selected = "";
+      ctx.save();
+      if (ctx.fill) ctx.fill();
+      paint();
+    }
+
+    function deleteFolder(folderPath) {
+      if (!folderPath) return;
+      const lib = ctx.shelf();
+      const parent = folderPath.split("/").slice(0, -1).join("/");
+      rawList(lib).forEach(function (item) {
+        const f = folderOf(item);
+        if (f === folderPath) setItemFolder(item, parent);
+        else if (f.indexOf(folderPath + "/") === 0) setItemFolder(item, parent ? parent + f.slice(folderPath.length) : f.slice(folderPath.length + 1));
+      });
+      lib.folders = (lib.folders || []).filter(function (p) {
+        return p !== folderPath && p.indexOf(folderPath + "/") !== 0;
+      });
+      if (path === folderPath || path.indexOf(folderPath + "/") === 0) path = parent;
+      ctx.save();
+      paint();
+    }
+
+    function moveItems(ids, next) {
+      const lib = ctx.shelf();
+      ensureFolders(lib);
+      if (next && lib.folders.indexOf(next) < 0) lib.folders.push(next);
+      rawList(lib).forEach(function (item) {
+        if (ids.indexOf(item.id) >= 0) setItemFolder(item, next);
+      });
+      ctx.save();
+      paint();
+    }
+
+    function moveFolder(from, to) {
+      if (!from || from === to) return;
+      if (to === from || (to && to.indexOf(from + "/") === 0)) return;
+      const lib = ctx.shelf();
+      const name = from.split("/").pop();
+      const dest = to ? to + "/" + name : name;
+      rawList(lib).forEach(function (item) {
+        const f = folderOf(item);
+        if (f === from) setItemFolder(item, dest);
+        else if (f.indexOf(from + "/") === 0) setItemFolder(item, dest + f.slice(from.length));
+      });
+      lib.folders = (lib.folders || []).map(function (p) {
+        if (p === from) return dest;
+        if (p.indexOf(from + "/") === 0) return dest + p.slice(from.length);
+        return p;
+      });
+      if (path === from || path.indexOf(from + "/") === 0) path = dest + path.slice(from.length);
+      ctx.save();
+      paint();
+    }
+
+    function listItems(lib, used) {
+      const q = String(query || "").trim().toLowerCase();
+      let rows = rawList(lib).filter(function (item) {
+        const f = folderOf(item);
+        if (!q && kind === "images" && f !== path) return false;
+        if (!q && kind !== "images" && path) return false;
+        if (q) {
+          const hay = [item.name, item.folder, item.section, item.text].join(" ").toLowerCase();
+          if (hay.indexOf(q) < 0) return false;
+        }
+        if (unusedOnly && usesOf(item, used).length) return false;
+        return true;
+      });
+      rows.sort(function (a, b) {
+        if (sort === "folder") {
+          const gap = folderOf(a).localeCompare(folderOf(b), "ru");
           return gap || String(a.name || "").localeCompare(String(b.name || ""), "ru");
         }
         if (sort === "new") return String(b.id || "").localeCompare(String(a.id || ""));
+        if (sort === "unused") {
+          const ua = usesOf(a, used).length ? 1 : 0;
+          const ub = usesOf(b, used).length ? 1 : 0;
+          return ua - ub || String(a.name || "").localeCompare(String(b.name || ""), "ru");
+        }
         return String(a.name || "").localeCompare(String(b.name || ""), "ru");
       });
       return rows;
     }
 
+    function treeHtml(lib) {
+      const rows = ['<button type="button" class="libx-tree-item' + (path === "" ? " is-on" : "") + '" data-path="" style="--depth:0"><span class="libx-tree-ico" aria-hidden="true"></span><span>Библиотека</span><em>' + countIn(lib, "") + "</em></button>"];
+      (lib.folders || []).forEach(function (p) {
+        const depth = p.split("/").length;
+        const name = p.split("/").pop();
+        const on = path === p ? " is-on" : "";
+        const open = path === p || path.indexOf(p + "/") === 0 ? " is-open" : "";
+        rows.push('<button type="button" class="libx-tree-item' + on + open + '" data-path="' + esc(p) + '" style="--depth:' + depth + '">' +
+          '<span class="libx-tree-ico" aria-hidden="true"></span><span>' + esc(name) + "</span><em>" + countIn(lib, p) + "</em></button>");
+      });
+      return rows.join("");
+    }
+
+    function crumbsHtml() {
+      const parts = path ? path.split("/") : [];
+      let acc = "";
+      let html = '<button type="button" data-path="">Библиотека</button>';
+      parts.forEach(function (part) {
+        acc = acc ? acc + "/" + part : part;
+        html += "<span>/</span><button type=\"button\" data-path=\"" + esc(acc) + "\">" + esc(part) + "</button>";
+      });
+      return html;
+    }
+
     function paint() {
+      hideMenu();
       const lib = ctx.shelf();
-      const folders = foldersOf(lib);
-      if (folder !== "Все" && folders.indexOf(folder) < 0) folder = "Все";
-      const rows = listItems(lib);
-      if (selected && !rows.some(function (row) { return row.id === selected; })) selected = rows[0] ? rows[0].id : "";
+      ensureFolders(lib);
+      const used = usageIndex();
+      const rows = listItems(lib, used);
+      if (selected && !rows.some(function (row) { return row.id === selected; })) selected = "";
       const picked = rows.find(function (row) { return row.id === selected; }) || null;
       host._libKind = kind;
-      host._libFolder = folder;
+      host._libPath = path;
       host._libQuery = query;
       host._libSort = sort;
       host._libSelected = selected;
+      host._libUnused = unusedOnly;
+      const searching = !!String(query || "").trim();
+      const dirs = searching || kind !== "images" ? [] : childFolders(lib, path);
+      const unusedCount = rawList(lib).filter(function (item) { return !usesOf(item, used).length; }).length;
 
-      const tree = folders.map(function (name) {
-        const count = name === "Все"
-          ? (kind === "fonts" ? (lib.fonts || []).length : kind === "notes" ? (lib.notes || []).length : (lib.images || []).length)
-          : (lib.images || []).filter(function (item) { return sectionName(item) === name; }).length;
-        return '<button type="button" class="libx-folder' + (folder === name ? " is-on" : "") + '" data-folder="' + esc(name) + '">' +
-          "<span>" + esc(name) + "</span><em>" + count + "</em></button>";
+      const tree = treeHtml(lib);
+
+      const dirCards = dirs.map(function (dir) {
+        return '<button type="button" class="libx-card is-dir" data-open-path="' + esc(dir.path) + '" title="' + esc(dir.path) + '">' +
+          '<div class="libx-thumb libx-folder-art" aria-hidden="true"></div>' +
+          "<strong>" + esc(dir.name) + "</strong>" +
+          "<small>" + countIn(lib, dir.path) + " шт.</small></button>";
       }).join("");
-
-      const cards = rows.map(function (item) {
+      const fileCards = rows.map(function (item) {
+        const hits = usesOf(item, used);
         const thumb = kind === "images" && item.url
           ? '<img alt="" src="' + esc(item.url) + '">'
           : (kind === "fonts"
             ? '<span class="libx-glyph" style="font-family:' + esc(item.name) + ', Georgia, serif">Aa</span>'
             : '<span class="libx-glyph">≡</span>');
-        return '<button type="button" class="libx-card' + (selected === item.id ? " is-on" : "") + '" data-id="' + esc(item.id) + '" title="' + esc(item.name) + '">' +
-          '<div class="libx-thumb">' + thumb + "</div>" +
+        const badge = hits.length
+          ? '<span class="libx-badge is-used" title="' + esc(hits.join("\n")) + '">' + hits.length + "</span>"
+          : '<span class="libx-badge is-free">не используется</span>';
+        return '<button type="button" class="libx-card' + (selected === item.id ? " is-on" : "") + (hits.length ? "" : " is-unused") + '" data-id="' + esc(item.id) + '" title="' + esc(item.name) + '">' +
+          '<div class="libx-thumb">' + thumb + badge + "</div>" +
           "<strong>" + esc(item.name || "Без имени") + "</strong>" +
-          (kind === "images" ? "<small>" + esc(sectionName(item)) + "</small>" : "") +
+          (kind === "images" ? "<small>" + esc(folderOf(item) || "корень") + "</small>" : "") +
           "</button>";
-      }).join("") || '<p class="roll-empty libx-empty">Пусто</p>';
+      }).join("");
+      const cards = (dirCards + fileCards) || '<p class="roll-empty libx-empty">Пусто</p>';
 
       let preview = '<div class="libx-preview-empty">Выбери файл</div>';
       if (picked) {
         if (kind === "images" && picked.url) {
           preview = '<img class="libx-preview-img" alt="" src="' + esc(picked.url) + '">' +
             "<h3>" + esc(picked.name) + "</h3>" +
-            "<p>" + esc(sectionName(picked)) + "</p>" +
+            "<p>" + esc(folderOf(picked) || "корень") + "</p>" +
             '<a href="' + esc(picked.url) + '" target="_blank" rel="noopener">Открыть оригинал</a>';
         } else if (kind === "fonts") {
           preview = '<p class="libx-font-demo" style="font-family:\'' + esc(picked.name) + '\', Georgia, serif">Съешь ещё этих мягких французских булок</p>' +
@@ -1712,6 +1975,11 @@
         } else {
           preview = "<h3>" + esc(picked.name) + "</h3><pre class=\"libx-note\">" + esc(picked.text || "") + "</pre>";
         }
+        const hits = usesOf(picked, used);
+        preview += hits.length
+          ? '<div class="libx-used"><p>Используется</p><ul>' + hits.map(function (row) { return "<li>" + esc(row) + "</li>"; }).join("") + "</ul></div>"
+          : '<p class="libx-unused-note">Нигде не используется</p>';
+        preview += '<button type="button" data-lib-move="' + esc(picked.id) + '">Переместить</button>';
         preview += '<button type="button" class="danger" data-lib-del="' + esc(picked.id) + '">Удалить</button>';
       }
 
@@ -1737,30 +2005,39 @@
         '<input id="lib-search" type="search" placeholder="Поиск…" value="' + esc(query) + '" aria-label="Поиск">' +
         '<label class="libx-sort">Сортировка<select id="lib-sort">' +
         '<option value="name"' + (sort === "name" ? " selected" : "") + ">Имя</option>" +
-        '<option value="section"' + (sort === "section" ? " selected" : "") + ">Раздел</option>" +
+        '<option value="folder"' + (sort === "folder" ? " selected" : "") + ">Папка</option>" +
+        '<option value="unused"' + (sort === "unused" ? " selected" : "") + ">Сначала лишние</option>" +
         '<option value="new"' + (sort === "new" ? " selected" : "") + ">Новые</option>" +
         "</select></label>" +
-        '<span class="libx-count">' + rows.length + "</span>" +
+        '<label class="check"><input type="checkbox" id="lib-unused"' + (unusedOnly ? " checked" : "") + "> Только неиспользуемые</label>" +
+        '<button type="button" id="lib-new-folder">Новая папка</button>' +
+        '<span class="libx-count">' + unusedCount + " лишних · " + rows.length + "</span>" +
         "</header>" +
+        '<nav class="libx-crumbs">' + crumbsHtml() + "</nav>" +
         '<aside class="libx-tree">' + tree + "</aside>" +
         '<div class="libx-grid">' + cards + "</div>" +
         '<aside class="libx-preview">' + preview + addBlock + "</aside>" +
         "</div>";
 
+      function goPath(next) {
+        path = next || "";
+        selected = "";
+        paint();
+      }
       host.querySelectorAll("[data-kind]").forEach(function (btn) {
         btn.addEventListener("click", function () {
           kind = btn.getAttribute("data-kind");
-          folder = "Все";
+          path = "";
           selected = "";
           paint();
         });
       });
-      host.querySelectorAll("[data-folder]").forEach(function (btn) {
-        btn.addEventListener("click", function () {
-          folder = btn.getAttribute("data-folder");
-          selected = "";
-          paint();
-        });
+      host.querySelectorAll("[data-path]").forEach(function (btn) {
+        btn.addEventListener("click", function () { goPath(btn.getAttribute("data-path") || ""); });
+      });
+      host.querySelectorAll("[data-open-path]").forEach(function (btn) {
+        btn.addEventListener("dblclick", function () { goPath(btn.getAttribute("data-open-path")); });
+        btn.addEventListener("click", function () { selected = ""; });
       });
       host.querySelectorAll("[data-id]").forEach(function (btn) {
         btn.addEventListener("click", function () {
@@ -1768,6 +2045,56 @@
           paint();
         });
       });
+      host.querySelector(".libx-grid").addEventListener("contextmenu", function (event) {
+        event.stopPropagation();
+        const dir = event.target.closest("[data-open-path]");
+        const file = event.target.closest("[data-id]");
+        if (!dir && !file) return;
+        event.preventDefault();
+        if (dir) {
+          const folderPath = dir.getAttribute("data-open-path");
+          showMenu(event.clientX, event.clientY, [
+            { act: "open", label: "Открыть", run: function () { goPath(folderPath); } },
+            { act: "move", label: "Переместить…", run: function () {
+              pickFolder("Переместить папку", path, function (next) { moveFolder(folderPath, next); });
+            } },
+            { act: "delete", label: "Удалить папку", run: function () {
+              if (window.confirm("Удалить папку? Файлы поднимутся выше.")) deleteFolder(folderPath);
+            } }
+          ]);
+          return;
+        }
+        const id = file.getAttribute("data-id");
+        selected = id;
+        showMenu(event.clientX, event.clientY, [
+          { act: "move", label: "Переместить…", run: function () {
+            pickFolder("Переместить файл", folderOf(rawList(ctx.shelf()).find(function (row) { return row.id === id; }) || {}), function (next) {
+              moveItems([id], next);
+            });
+          } },
+          { act: "delete", label: "Удалить", run: function () { deleteItem(id); } }
+        ]);
+      });
+      host.querySelector(".libx-tree").addEventListener("contextmenu", function (event) {
+        event.stopPropagation();
+        const btn = event.target.closest("[data-path]");
+        if (!btn) return;
+        const folderPath = btn.getAttribute("data-path");
+        if (!folderPath) return;
+        event.preventDefault();
+        showMenu(event.clientX, event.clientY, [
+          { act: "move", label: "Переместить…", run: function () {
+            pickFolder("Переместить папку", path, function (next) { moveFolder(folderPath, next); });
+          } },
+          { act: "delete", label: "Удалить папку", run: function () {
+            if (window.confirm("Удалить папку? Файлы поднимутся выше.")) deleteFolder(folderPath);
+          } }
+        ]);
+      });
+      if (!host._libMenuHide) {
+        host._libMenuHide = true;
+        document.addEventListener("click", hideMenu);
+      }
       const search = host.querySelector("#lib-search");
       if (search) {
         search.addEventListener("input", function () {
@@ -1788,16 +2115,35 @@
           paint();
         });
       }
+      const unusedEl = host.querySelector("#lib-unused");
+      if (unusedEl) {
+        unusedEl.addEventListener("change", function () {
+          unusedOnly = unusedEl.checked;
+          paint();
+        });
+      }
+      const newFolder = host.querySelector("#lib-new-folder");
+      if (newFolder) {
+        newFolder.addEventListener("click", function () {
+          const name = window.prompt("Имя папки", "Новая папка");
+          if (!name) return;
+          const next = (path ? path + "/" : "") + name.trim().replace(/[\\/]+/g, "/");
+          const lib = ctx.shelf();
+          ensureFolders(lib);
+          if (lib.folders.indexOf(next) < 0) lib.folders.push(next);
+          ctx.save();
+          goPath(next);
+        });
+      }
       const del = host.querySelector("[data-lib-del]");
       if (del) {
-        del.addEventListener("click", function () {
-          const id = del.getAttribute("data-lib-del");
-          const shelf = ctx.shelf();
-          shelf[kind] = (shelf[kind] || []).filter(function (item) { return item.id !== id; });
-          selected = "";
-          ctx.save();
-          if (ctx.fill) ctx.fill();
-          paint();
+        del.addEventListener("click", function () { deleteItem(del.getAttribute("data-lib-del")); });
+      }
+      const moveBtn = host.querySelector("[data-lib-move]");
+      if (moveBtn) {
+        moveBtn.addEventListener("click", function () {
+          const id = moveBtn.getAttribute("data-lib-move");
+          pickFolder("Переместить файл", path, function (next) { moveItems([id], next); });
         });
       }
       const file = host.querySelector("#lib-upload");
@@ -1825,7 +2171,7 @@
               const name = (host.querySelector("#lib-item-name").value || "").trim();
               if (!pickedFile || !name) return;
               const url = await ctx.upload(pickedFile);
-              const row = { id: crypto.randomUUID(), name: name, url: url };
+              const row = { id: crypto.randomUUID(), name: name, url: url, folder: path, section: path || "Общее" };
               if (kind === "images") {
                 ctx.shelf().images.push(row);
                 selected = row.id;
