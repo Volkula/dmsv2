@@ -1094,6 +1094,7 @@
         '<div class="tool-side tool-end">' +
         '<button type="button" data-act="quick-attack" title="Кто атакует и чем. Если оружия нет — бросок кости с подписью «атака»">Атаковать</button>' +
         '<label class="check" title="Пока включено, игроки видят бой вместо карты"><input id="battle-screen" type="checkbox"' + (battle.screen !== false ? " checked" : "") + "> Игрокам</label>" +
+        '<label class="check" title="Показать журнал боя рядом со списком"><input id="battle-log-on" type="checkbox"' + (battle.logOpen ? " checked" : "") + "> Журнал</label>" +
         '<button type="button" data-act="sort" class="' + (battle.autoSort ? "is-on" : "") + '" title="Большее число выше. Внутри отряда и между отрядами. Разделители остаются на месте">По числу</button>' +
         '<button type="button" data-act="init" title="Бросить инициативу всем на ширме, без показа кубиков">Инициатива всем</button>' +
         '<button type="button" data-act="place" title="Поставить врагов на текущую карту. Игроки их не видят, пока не снимете скрытие">На карту</button>' +
@@ -1208,11 +1209,12 @@
       const now = active();
       const prev = host.querySelector(".battle-sheet");
       const scroll = prev ? prev.scrollTop : 0;
-      host.innerHTML = '<div class="battle-desk">' + masterRail(now) +
+      host.innerHTML = '<div class="battle-desk' + (battle.logOpen ? " is-log" : "") + '">' + masterRail(now) +
         '<section class="battle-sheet">' + toolsHtml(now) +
         '<table class="cast queue-table fight-table"><thead><tr><th></th><th></th><th>Число</th><th>Имя</th><th title="Класс доспеха">КД</th><th>Хиты</th><th></th><th></th><th></th></tr></thead><tbody>' +
         sheetHtml(now) + "</tbody></table></section>" +
-        '<aside class="battle-log-pane"><label>Лог боя<textarea id="battle-log">' + esc(logText(battle.log)) + "</textarea></label></aside></div>";
+        (battle.logOpen ? '<aside class="battle-log-pane"><label>Журнал боя<textarea id="battle-log">' + esc(logText(battle.log)) + "</textarea></label></aside>" : "") +
+        "</div>";
       const sheet = host.querySelector(".battle-sheet");
       if (sheet) sheet.scrollTop = scroll;
       bind();
@@ -1587,6 +1589,12 @@
       if (shown) shown.addEventListener("change", function () {
         battle.screen = shown.checked;
         save();
+      });
+      const logOn = host.querySelector("#battle-log-on");
+      if (logOn) logOn.addEventListener("change", function () {
+        battle.logOpen = logOn.checked;
+        save();
+        paint();
       });
       const round = host.querySelector("#battle-round");
       if (round) round.addEventListener("change", function () {
