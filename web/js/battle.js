@@ -2186,7 +2186,7 @@
         const cls = "battle-token " + side + (on ? " active" : "") + (actor.dead ? " dead" : "");
         const inner = '<span class="battle-face">' + faceOf(actor) + '</span>' + markUnder(actor.marks) + '<span class="token-name">' + esc(actor.name || "—") + "</span>";
         if (!clickable) return '<div class="' + cls + '">' + inner + "</div>";
-        return '<button type="button" class="' + cls + '" data-go="' + esc(actor.id) + '" title="' + esc(actor.name || "") + '">' + inner + "</button>";
+        return '<button type="button" class="' + cls + '" data-go="' + esc(actor.id) + '" title="Ход: ' + esc(actor.name || "") + '">' + inner + "</button>";
       }).join("");
       const body = group.actors.length > 1 ? '<div class="battle-bracket">' + tokens + "</div>" : tokens;
       return '<div class="battle-slot' + (group.actors.length > 1 ? " battle-tie" : "") + '"><div class="battle-num">' + esc(String(group.init)) + "</div>" + body + "</div>";
@@ -2219,8 +2219,8 @@
 
   function screenHtml(actors, active, log, clickable, showHp, round) {
     const head = '<p class="fight-round"><span>Раунд</span><b>' + esc(String(round || 1)) + "</b></p>";
-    return head + '<div class="battle-track">' + trackHtml(actors, clickable, active && active.id) + "</div>" +
-      bossHtml(actors, !!showHp);
+    return head + '<div class="battle-stage"><div class="battle-track">' + trackHtml(actors, clickable, active && active.id) + "</div>" +
+      bossHtml(actors, !!showHp) + "</div>";
   }
 
   function playerHtml(page) {

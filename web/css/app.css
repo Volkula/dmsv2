@@ -3385,8 +3385,19 @@ button.ware-face-btn img { width: 100%; height: 100%; object-fit: cover; display
   background: radial-gradient(ellipse at 50% 38%, #1a3d72 0%, #0b1730 52%, #060b16 100%) center/cover no-repeat;
 }
 .stage.play-battle {
+  justify-content: flex-start;
+}
+.play-battle .battle-stage {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   justify-content: center;
 }
+.play-battle .battle-track { gap: 22px; }
+.play-battle .battle-num { font-size: 52px; margin-bottom: 8px; }
 .stage.play-battle p,
 .battle-screen p { margin: 0; white-space: normal; }
 
@@ -3486,6 +3497,7 @@ button.ware-face-btn img { width: 100%; height: 100%; object-fit: cover; display
   line-height: 1.15;
   text-align: center;
 }
+.battle-screen .battle-token { cursor: pointer; }
 .battle-screen .battle-token.active,
 .play-battle .battle-token.active { width: max-content; min-width: 168px; max-width: 240px; }
 .battle-face { position: relative; display: block; }
@@ -3517,6 +3529,27 @@ button.ware-face-btn img { width: 100%; height: 100%; object-fit: cover; display
 .battle-token.dead { opacity: 0.42; filter: grayscale(1); }
 .battle-token.dead .token-name { text-decoration: line-through; }
 .battle-token.active .token-name { color: #f6e7b0; font-size: 22px; }
+.play-battle .battle-token {
+  min-width: 150px;
+  max-width: 210px;
+  font-size: 20px;
+  gap: 8px;
+}
+.play-battle .battle-token.active { min-width: 320px; max-width: 440px; }
+.play-battle .face,
+.play-battle .face-empty {
+  width: 150px;
+  height: 186px;
+  font-size: 60px;
+}
+.play-battle .battle-token.active .face,
+.play-battle .battle-token.active .face-empty {
+  width: 340px;
+  height: 440px;
+  font-size: 120px;
+}
+.play-battle .token-name { font-size: 20px; }
+.play-battle .battle-token.active .token-name { font-size: 34px; }
 .boss-row {
   display: flex;
   flex-direction: column;
