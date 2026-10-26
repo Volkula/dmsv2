@@ -3384,6 +3384,9 @@ button.ware-face-btn img { width: 100%; height: 100%; object-fit: cover; display
   color: #f4f7ff;
   background: radial-gradient(ellipse at 50% 38%, #1a3d72 0%, #0b1730 52%, #060b16 100%) center/cover no-repeat;
 }
+.stage.play-battle {
+  justify-content: center;
+}
 .stage.play-battle p,
 .battle-screen p { margin: 0; white-space: normal; }
 

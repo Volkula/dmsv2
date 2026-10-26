@@ -2207,15 +2207,6 @@
     }).join("") + "</div>";
   }
 
-  function bannerHtml(actor) {
-    if (!actor) return '<div class="turn-banner"></div>';
-    const frame = frameStyle(actor);
-    const face = actor.portrait
-      ? '<img class="turn-face" alt="" src="' + esc(actor.portrait) + '"' + frame + ">"
-      : '<div class="turn-face turn-letter side-glyph"' + frame + '><svg viewBox="0 0 24 24" aria-hidden="true">' + (actor.side === "player" ? SIDE_SVG.player : SIDE_SVG.foe) + "</svg></div>";
-    return '<div class="turn-card"><div class="turn-banner"><b>' + esc(actor.name || "—") + '</b><span class="turn-face-wrap">' + face + "</span></div>" + markUnder(actor.marks) + "</div>";
-  }
-
   function revealActive(root) {
     if (!root) return;
     const track = root.querySelector(".battle-track");
@@ -2227,13 +2218,9 @@
   }
 
   function screenHtml(actors, active, log, clickable, showHp, round) {
-    const text = esc(logText(log)).replace(/\n/g, "<br>");
     const head = '<p class="fight-round"><span>Раунд</span><b>' + esc(String(round || 1)) + "</b></p>";
     return head + '<div class="battle-track">' + trackHtml(actors, clickable, active && active.id) + "</div>" +
-      bossHtml(actors, !!showHp) +
-      '<div class="battle-mid"></div>' +
-      '<div class="battle-panels"><div class="battle-panel battle-picture">' + bannerHtml(active) + "</div>" +
-      '<div class="battle-panel battle-log"><div class="log-text">' + text + "</div></div></div>";
+      bossHtml(actors, !!showHp);
   }
 
   function playerHtml(page) {
