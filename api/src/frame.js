@@ -241,7 +241,7 @@ function projectMap(page, campaign) {
     }, textLook(item, 14));
   });
   const markers = (Array.isArray(view.markers) ? view.markers : []).filter(function (item) {
-    return item && !item.hidden && (item.locId || "") === here;
+    return item && !item.hidden && item.screen !== false && (item.locId || "") === here;
   }).slice(0, 200).map(function (item) {
     if (item.kind === "image") {
       if (!shownOnScreen(item) || item.hidden) return null;
@@ -282,8 +282,10 @@ function projectMap(page, campaign) {
       y: unit(item.y),
       kind: kind,
       tip: clip(item.tip, 400),
-      pinSize: Math.min(160, Math.max(12, Number(item.pinSize) || (portrait ? 56 : 14))),
+      pinSize: Math.min(160, Math.max(12, Number(item.pinSize) || (portrait ? 56 : (item.kind === "mark" && (item.icon || item.emoji) ? 36 : 14)))),
       portrait: portrait,
+      icon: kind === "mark" ? picture(item.icon) : "",
+      emoji: kind === "mark" ? clip(item.emoji, 16) : "",
       portraitX: portrait ? face.x : 50,
       portraitY: portrait ? face.y : 50,
       portraitZoom: portrait ? face.zoom : 1

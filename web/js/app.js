@@ -1627,7 +1627,7 @@
         });
         closeHeroRoll();
         root.classList.toggle("is-shut", !dock.open);
-        const toggle = '<button type="button" class="dock-toggle" data-dock="toggle" title="' + (dock.open ? "Свернуть панель" : "Открыть панель") + '" aria-expanded="' + (dock.open ? "true" : "false") + '">' + (dock.open ? "»" : "Панель") + "</button>";
+        const toggle = '<button type="button" class="dock-toggle" data-dock="toggle" title="' + (dock.open ? "Свернуть стол" : "Открыть стол") + '" aria-expanded="' + (dock.open ? "true" : "false") + '">' + (dock.open ? "»" : "Стол") + "</button>";
         if (!dock.open) {
           root.innerHTML = toggle;
           bind();

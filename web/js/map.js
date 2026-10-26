@@ -276,6 +276,8 @@
     return '<div class="map-flags">' + flagMark("screen", !!flags.screen) + flagMark("map", !!flags.map) + "</div>";
   }
 
+  const MARK_GLYPHS = ["⚔", "🛡", "☠", "🔥", "🔑", "💰", "🚪", "⛺", "⭐", "❗", "❓", "🧪", "📜", "💎", "⚓", "🏠", "🌳", "👁", "🐴", "📦", "🚩", "💤"];
+
   function pinHtml(item, kind, master) {
     if (!master && item.hidden) return "";
     const tip = item.tip ? '<span class="tip">' + esc(item.tip) + "</span>" : "";
@@ -289,10 +291,19 @@
       return '<button type="button" class="map-pin image' + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="image" aria-label="' + esc(item.name || "Картинка") + '" style="left:' + (item.x * 100) + "%;top:" + (item.y * 100) + "%;--pin:" + size + 'px">' + marks + '<img alt="" src="' + esc(url) + '">' + tip + "</button>";
     }
     const portrait = kind === "npc" || kind === "loc" || kind === "foe" || kind === "hero" ? (item.portrait || "") : "";
-    const size = Math.min(160, Math.max(12, Number(item.pinSize) || (portrait ? 56 : 14)));
-    const badge = master && item.emoji ? '<em class="pin-emoji">' + esc(item.emoji) + "</em>" : "";
-    const dot = portrait ? '<i><img alt="" src="' + esc(portrait) + '" style="' + faceStyle(item) + '">' + badge + "</i>" : "<i></i>";
-    const marks = master && (kind === "npc" || kind === "loc" || kind === "foe" || kind === "hero")
+    const markIcon = kind === "mark" ? (item.icon || "") : "";
+    const markEmoji = kind === "mark" ? (item.emoji || "") : "";
+    const size = Math.min(160, Math.max(12, Number(item.pinSize) || (portrait ? 56 : (markIcon || markEmoji ? 36 : 14))));
+    const badge = master && item.emoji && kind !== "mark" ? '<em class="pin-emoji">' + esc(item.emoji) + "</em>" : "";
+    let dot = "<i></i>";
+    if (markIcon) {
+      dot = '<i class="mark-icon"><img alt="" src="' + esc(markIcon) + '">' + (markEmoji ? '<em class="pin-emoji">' + esc(markEmoji) + "</em>" : "") + "</i>";
+    } else if (markEmoji) {
+      dot = '<i class="mark-glyph">' + esc(markEmoji) + "</i>";
+    } else if (portrait) {
+      dot = '<i><img alt="" src="' + esc(portrait) + '" style="' + faceStyle(item) + '">' + badge + "</i>";
+    }
+    const marks = master && (kind === "npc" || kind === "loc" || kind === "foe" || kind === "hero" || kind === "mark")
       ? '<span class="pin-flags">' + flagMark("screen", shownScreen(item)) + flagMark("map", shownMap(item)) + "</span>"
       : "";
     const hp = master && kind === "foe" && item.hpMax ? '<em class="pin-hp">' + esc(String(item.hp == null ? item.hpMax : item.hp)) + "/" + esc(String(item.hpMax)) + "</em>" : "";
@@ -2504,6 +2515,19 @@
             return '<option value="' + esc(image.url) + '"' + (image.url === item.portrait ? " selected" : "") + ">" + esc(image.name || "Картинка") + "</option>";
           }).join("") + "</select></label>"
         : "";
+      const markBox = kind === "mark"
+        ? '<div class="mark-pool">' + MARK_GLYPHS.map(function (glyph) {
+          const on = item.emoji === glyph ? " is-on" : "";
+          return '<button type="button" class="mark-pick' + on + '" data-mark-glyph="' + glyph + '" title="' + glyph + '">' + glyph + "</button>";
+        }).join("") + "</div>" +
+          '<label title="Свой эмодзи. Можно вместо значка из набора">Эмодзи<input id="mark-emoji" type="text" maxlength="16" value="' + esc(item.emoji || "") + '" placeholder="🙂"></label>' +
+          (item.icon ? '<img class="loc-shot" alt="" src="' + esc(item.icon) + '">' : '<p class="note">Своей картинки нет. Тогда на метке значок или эмодзи.</p>') +
+          '<label class="file-btn" title="Загрузить картинку значка. Она попадёт в библиотеку">Загрузить<input type="file" id="mark-icon-file" accept="image/*" aria-label="Загрузить значок"></label>' +
+          '<label title="Картинка из библиотеки">Из библиотеки<select id="mark-icon-lib"><option value="">Нет</option>' + images.map(function (image) {
+            return '<option value="' + esc(image.url) + '"' + (image.url === item.icon ? " selected" : "") + ">" + esc(image.name || "Картинка") + "</option>";
+          }).join("") + "</select></label>" +
+          (item.icon ? '<button type="button" id="mark-icon-clear">Убрать картинку</button>' : "")
+        : "";
       const foeBox = kind === "foe"
         ? '<label title="Текущие хиты">Хиты<input id="foe-hp" type="number" min="0" value="' + esc(String(item.hp == null ? "" : item.hp)) + '"></label>' +
           '<label title="Максимум хитов">Максимум<input id="foe-max" type="number" min="1" value="' + esc(String(item.hpMax || 1)) + '"></label>' +
@@ -2537,6 +2561,7 @@
         group("Картинка", "Файл и библиотека", imageShot, true) +
         sheet +
         group("Бой", "Хиты, броня и броски от имени врага", foeBox, true) +
+        group("Значок", "Набор, свой эмодзи, загрузка или библиотека", markBox, true) +
         group("Цифры", "Какие характеристики видны над портретом", vitalBox, true) +
         group("Точка", kind === "image" ? "Размер и видимость для игроков" : "Размер точки, заметка и видимость для игроков", pin + note, kind === "loc" || kind === "image") +
         (kind === "image" ? "" : group("Подпись", "Шрифт, размер и оформление подписи", text)) +
@@ -2919,6 +2944,60 @@
             sectionName: "Локации"
           });
           setLocPortrait(url);
+        });
+      });
+      function setMarkIcon(url) {
+        const row = findItem();
+        if (!row) return;
+        row.icon = url || "";
+        if (!row.pinSize) row.pinSize = 36;
+        paintBoard();
+        dirty();
+      }
+      menu.querySelectorAll("[data-mark-glyph]").forEach(function (button) {
+        button.addEventListener("click", function () {
+          const row = findItem();
+          if (!row) return;
+          const glyph = button.getAttribute("data-mark-glyph") || "";
+          row.emoji = row.emoji === glyph ? "" : glyph;
+          if (!row.pinSize) row.pinSize = 36;
+          const input = menu.querySelector("#mark-emoji");
+          if (input) input.value = row.emoji;
+          menu.querySelectorAll("[data-mark-glyph]").forEach(function (node) {
+            node.classList.toggle("is-on", node.getAttribute("data-mark-glyph") === row.emoji);
+          });
+          paintBoard();
+          dirty();
+        });
+      });
+      const markEmoji = menu.querySelector("#mark-emoji");
+      if (markEmoji) markEmoji.addEventListener("input", function () {
+        const row = findItem();
+        if (!row) return;
+        row.emoji = markEmoji.value.trim().slice(0, 16);
+        if (row.emoji && !row.pinSize) row.pinSize = 36;
+        menu.querySelectorAll("[data-mark-glyph]").forEach(function (node) {
+          node.classList.toggle("is-on", node.getAttribute("data-mark-glyph") === row.emoji);
+        });
+        paintBoard();
+        dirty();
+      });
+      const markLib = menu.querySelector("#mark-icon-lib");
+      if (markLib) markLib.addEventListener("change", function () { setMarkIcon(markLib.value); });
+      const markClear = menu.querySelector("#mark-icon-clear");
+      if (markClear) markClear.addEventListener("click", function () { setMarkIcon(""); });
+      const markFile = menu.querySelector("#mark-icon-file");
+      if (markFile) markFile.addEventListener("change", function (event) {
+        const file = event.target.files && event.target.files[0];
+        if (!file || !ctx.upload) return;
+        ctx.upload(file).then(function (url) {
+          if (!ctx.campaign.library) ctx.campaign.library = { fonts: [], images: [], notes: [] };
+          if (window.ShirmoLib) window.ShirmoLib.keep(ctx.campaign.library, {
+            url: url,
+            name: file.name.replace(/\.[^.]+$/, ""),
+            section: "Метки"
+          });
+          setMarkIcon(url);
         });
       });
       function rollFoe(damage) {
