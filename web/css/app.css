@@ -1558,12 +1558,21 @@ label.check input { width: auto; }
 
 .map-pin b {
   display: inline-block;
-  max-width: 220px;
+  max-width: 280px;
   font-size: 14px;
   font-weight: 500;
-  line-height: 1.1;
+  line-height: 1.15;
+  white-space: pre-line;
   text-shadow: 0 1px 2px #1a140c, 0 0 4px #1a140c;
 }
+.map-pin.cap-top {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.map-pin.cap-top > b { order: 1; margin: 0 0 2px; }
+.map-pin.cap-top > i { order: 2; margin: 0; }
+.map-pin.cap-top > .pin-hp { order: 3; }
 
 .map-pin .tip {
   display: none;
@@ -1629,8 +1638,9 @@ label.check input { width: auto; }
 
 .map-label {
   transform: translate(-50%, -50%);
-  white-space: pre;
-  line-height: 1.1;
+  white-space: pre-wrap;
+  line-height: 1.15;
+  max-width: 420px;
 }
 
 .ping {

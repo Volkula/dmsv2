@@ -229,10 +229,11 @@ function projectMap(page, campaign) {
     const source = item.portrait ? item : (place || {});
     return Object.assign({
       id: clip(item.id, 80),
-      name: clip(item.name, 80),
+      name: clip(item.name, 240),
       x: unit(item.x),
       y: unit(item.y),
       tip: clip(item.tip, 400),
+      capTop: item.capTop === true,
       pinSize: Math.min(160, Math.max(12, Number(item.pinSize) || (portrait ? 56 : 14))),
       portrait: portrait,
       portraitX: portrait ? axis(source.portraitX) : 50,
@@ -277,10 +278,11 @@ function projectMap(page, campaign) {
     const kind = item.kind === "npc" ? "npc" : (item.kind === "foe" ? "foe" : (item.kind === "hero" ? "hero" : "mark"));
     return Object.assign({
       id: clip(item.id, 80),
-      name: clip(item.name, 80),
+      name: clip(item.name, 240),
       x: unit(item.x),
       y: unit(item.y),
       kind: kind,
+      capTop: item.capTop === true,
       tip: clip(item.tip, 400),
       pinSize: Math.min(160, Math.max(12, Number(item.pinSize) || (portrait ? 56 : (item.kind === "mark" && (item.icon || item.emoji) ? 36 : 14)))),
       portrait: portrait,
@@ -296,7 +298,7 @@ function projectMap(page, campaign) {
   }).slice(0, 100).map(function (item) {
     return Object.assign({
       id: clip(item.id, 80),
-      text: clip(item.text, 200),
+      text: clip(item.text, 400),
       x: unit(item.x),
       y: unit(item.y)
     }, textLook(item, 28));

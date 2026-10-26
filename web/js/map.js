@@ -199,6 +199,10 @@
     }).join("");
   }
 
+  function oneLine(value) {
+    return String(value || "").replace(/\s*\n\s*/g, " ").replace(/\s+/g, " ").trim();
+  }
+
   function captionCss(item, fallbackSize) {
     const size = Math.min(96, Math.max(10, Number(item.size) || fallbackSize));
     const stroke = Math.min(8, Math.max(0, Number(item.strokeWidth) || 0));
@@ -309,8 +313,9 @@
     const hp = master && kind === "foe" && item.hpMax ? '<em class="pin-hp">' + esc(String(item.hp == null ? item.hpMax : item.hp)) + "/" + esc(String(item.hpMax)) + "</em>" : "";
     const vitals = master && kind === "hero" ? heroVitalsHtml(item) : "";
     const caption = '<b style="' + captionCss(item, 14) + '">' + esc(item.name || (kind === "loc" ? "Локация" : "Без имени")) + "</b>" + hp;
-    const named = kind === "loc" ? ' aria-label="' + esc(item.name || "Локация") + '"' : "";
-    return '<button type="button" class="map-pin ' + kind + (portrait ? " has-face" : "") + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="' + kind + '"' + named + ' style="left:' + (item.x * 100) + "%;top:" + (item.y * 100) + "%;--pin:" + size + 'px">' + marks + vitals + dot + caption + tip + "</button>";
+    const named = kind === "loc" ? ' aria-label="' + esc(oneLine(item.name) || "Локация") + '"' : "";
+    const cap = item.capTop ? " cap-top" : "";
+    return '<button type="button" class="map-pin ' + kind + cap + (portrait ? " has-face" : "") + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="' + kind + '"' + named + ' style="left:' + (item.x * 100) + "%;top:" + (item.y * 100) + "%;--pin:" + size + 'px">' + marks + vitals + dot + caption + tip + "</button>";
   }
 
   function heroVitalsHtml(item) {
@@ -382,10 +387,10 @@
       guard += 1;
     }
     crumbs.forEach(function (loc) {
-      tabs.push({ id: loc.id, name: loc.name || "Локация", on: loc.id === here, hidden: !!loc.hidden });
+      tabs.push({ id: loc.id, name: oneLine(loc.name) || "Локация", on: loc.id === here, hidden: !!loc.hidden });
     });
     locs.filter(function (loc) { return (loc.parentId || "") === here && !loc.trashed; }).forEach(function (loc) {
-      tabs.push({ id: loc.id, name: loc.name || "Локация", on: false, hidden: !!loc.hidden });
+      tabs.push({ id: loc.id, name: oneLine(loc.name) || "Локация", on: false, hidden: !!loc.hidden });
     });
     return tabs;
   }
@@ -898,7 +903,7 @@
         const ico = function (act, label, body) {
           return '<button type="button" class="map-ico" data-act="' + act + '" data-id="' + esc(item.id) + '" title="' + label + '" aria-label="' + label + '">' + body + "</button>";
         };
-        return '<div class="map-node" style="padding-left:' + (depth * 14) + 'px"><button type="button" class="map-loc' + on + '" data-loc="' + esc(item.id) + '" title="Открыть эту локацию">' + esc(item.name || "Локация") + "</button>" +
+        return '<div class="map-node" style="padding-left:' + (depth * 14) + 'px"><button type="button" class="map-loc' + on + '" data-loc="' + esc(item.id) + '" title="Открыть эту локацию">' + esc(oneLine(item.name) || "Локация") + "</button>" +
           ico("setup", "Имя, подсказка, день и ночь, фоны", ACT.setup) +
           ico("add", "Добавить локацию внутри этой", icon('<path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>')) +
           ico("del", "Убрать. Если есть данные — в корзину", icon('<path d="M7 7l10 10M17 7L7 17" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>')) +
@@ -1100,9 +1105,9 @@
       const pop = document.createElement("div");
       pop.className = "pop";
       pop.innerHTML = '<div class="pop-card map-setup" role="dialog" aria-label="Настройки">' +
-        '<div class="pop-head"><h2>' + esc(loc ? (loc.name || "Локация") : "Карта") + '</h2><button type="button" data-pop-close title="Закрыть" aria-label="Закрыть">×</button></div>' +
+        '<div class="pop-head"><h2>' + esc(loc ? (oneLine(loc.name) || "Локация") : "Карта") + '</h2><button type="button" data-pop-close title="Закрыть" aria-label="Закрыть">×</button></div>' +
         '<details class="drop" open><summary title="Имя, подсказка и видимость">Основное</summary>' +
-        '<label title="Имя на вкладке и в дереве">Название<input id="setup-name" type="text" value="' + esc(sheet.name || "") + '"></label>' +
+        '<label title="Название на карте. Enter — новая строка">Название<textarea id="setup-name" rows="2">' + esc(sheet.name || "") + "</textarea></label>" +
         (loc ? '<label title="Текст при наведении на точку локации">Подсказка<textarea id="setup-tip">' + esc(loc.tip || "") + "</textarea></label>" +
           '<label class="check" title="Игроки не видят эту локацию"><input id="setup-hide" type="checkbox"' + (loc.hidden ? " checked" : "") + "> Скрыть от игроков</label>" : "") +
         "</details>" +
@@ -2211,18 +2216,23 @@
       closeMenu();
       const pin = board.querySelector('[data-pin="' + selected.id + '"]');
       if (!pin) return;
+      const multi = selected.kind === "label" || selected.kind === "loc" || selected.kind === "mark";
       const label = pin.querySelector("b") || pin;
       const rect = label.getBoundingClientRect();
       const look = getComputedStyle(label);
-      const input = document.createElement("input");
+      const input = document.createElement(multi ? "textarea" : "input");
       input.id = "pin-rename";
       input.className = "pin-rename";
       input.value = item.name || item.text || "";
       input.style.left = rect.left + "px";
       input.style.top = rect.top + "px";
-      input.style.width = Math.max(rect.width + 24, 96) + "px";
+      input.style.width = Math.max(rect.width + 24, 140) + "px";
       input.style.fontSize = look.fontSize;
       input.style.fontFamily = look.fontFamily;
+      if (multi) {
+        input.rows = Math.min(6, Math.max(2, (input.value.match(/\n/g) || []).length + 1));
+        input.title = "Enter — новая строка. Ctrl+Enter — готово";
+      }
       document.body.appendChild(input);
       input.focus();
       input.select();
@@ -2243,7 +2253,7 @@
       }
       input.addEventListener("pointerdown", function (event) { event.stopPropagation(); });
       input.addEventListener("keydown", function (event) {
-        if (event.key === "Enter") { event.preventDefault(); finish(true); }
+        if (event.key === "Enter" && (!multi || event.ctrlKey)) { event.preventDefault(); finish(true); }
         if (event.key === "Escape") { event.preventDefault(); finish(false); }
       });
       input.addEventListener("blur", function () { finish(true); });
@@ -2548,7 +2558,13 @@
       function group(title, tip, body, open) {
         return body ? '<details class="drop"' + (open ? " open" : "") + '><summary title="' + esc(tip) + '">' + title + "</summary>" + body + "</details>" : "";
       }
-      const text = '<label title="Размер подписи у точки">Размер текста<input id="pin-text-size" type="range" min="10" max="72" value="' + (Number(item.size) || (kind === "label" ? 28 : 14)) + '"></label>' +
+      const nameBox = kind === "label"
+        ? '<label title="Enter — новая строка">Текст<textarea id="pin-label-text" rows="3">' + esc(item.text || "") + "</textarea></label>"
+        : (kind === "loc" || kind === "mark"
+          ? '<label title="Enter — новая строка">Название<textarea id="pin-name" rows="3">' + esc(item.name || "") + "</textarea></label>" +
+            '<label class="check" title="Подпись над значком, а не под ним"><input id="pin-cap-top" type="checkbox"' + (item.capTop ? " checked" : "") + "> Сверху</label>"
+          : "");
+      const text = nameBox + '<label title="Размер подписи у точки">Размер текста<input id="pin-text-size" type="range" min="10" max="72" value="' + (Number(item.size) || (kind === "label" ? 28 : 14)) + '"></label>' +
         '<label title="Шрифт подписи">Шрифт<select id="pin-font">' + fontOptions + "</select></label>" +
         '<div class="row"><button type="button" id="pin-bold" class="' + (item.bold ? "is-on" : "") + '" title="Жирный">Ж</button><button type="button" id="pin-italic" class="' + (item.italic ? "is-on" : "") + '" title="Курсив">К</button><button type="button" id="pin-under" class="' + (item.underline ? "is-on" : "") + '" title="Подчёркнутый">Ч</button></div>' +
         '<label title="Цвет подписи">Цвет текста<input id="pin-ink" type="color" value="' + hexColor(item.ink, "#f3ead8") + '"></label>' +
@@ -2679,6 +2695,8 @@
           row.strokeWidth = Number(menu.querySelector("#pin-stroke-w").value) || 0;
           row.plate = menu.querySelector("#pin-plate-on").checked ? menu.querySelector("#pin-plate").value : "";
         }
+        const capTop = menu.querySelector("#pin-cap-top");
+        if (capTop) row.capTop = capTop.checked;
         paintBoard();
         dirty();
       }
@@ -2695,6 +2713,26 @@
       if (pinPlate) pinPlate.addEventListener("input", applyStyle);
       const pinPlateOn = menu.querySelector("#pin-plate-on");
       if (pinPlateOn) pinPlateOn.addEventListener("change", applyStyle);
+      const pinCapTop = menu.querySelector("#pin-cap-top");
+      if (pinCapTop) pinCapTop.addEventListener("change", applyStyle);
+      const pinName = menu.querySelector("#pin-name");
+      if (pinName) pinName.addEventListener("input", function () {
+        const row = findItem();
+        if (!row) return;
+        row.name = pinName.value;
+        renameLinked(pinName.value);
+        paintBoard();
+        paintTree();
+        dirty();
+      });
+      const pinLabelText = menu.querySelector("#pin-label-text");
+      if (pinLabelText) pinLabelText.addEventListener("input", function () {
+        const row = findItem();
+        if (!row) return;
+        row.text = pinLabelText.value;
+        paintBoard();
+        dirty();
+      });
       const imageLib = menu.querySelector("#image-pin-lib");
       if (imageLib) imageLib.addEventListener("change", function () {
         const row = findItem();
