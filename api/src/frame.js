@@ -282,6 +282,7 @@ function projectMap(page, campaign) {
       x: unit(item.x),
       y: unit(item.y),
       kind: kind,
+      toBattle: (kind === "mark" || kind === "foe") && item.toBattle === true,
       capTop: item.capTop === true,
       tip: clip(item.tip, 400),
       pinSize: Math.min(160, Math.max(12, Number(item.pinSize) || (portrait ? 56 : (item.kind === "mark" && (item.icon || item.emoji) ? 36 : 14)))),

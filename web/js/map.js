@@ -315,7 +315,7 @@
     const caption = '<b style="' + captionCss(item, 14) + '">' + esc(item.name || (kind === "loc" ? "Локация" : "Без имени")) + "</b>" + hp;
     const named = kind === "loc" ? ' aria-label="' + esc(oneLine(item.name) || "Локация") + '"' : "";
     const cap = item.capTop ? " cap-top" : "";
-    const fight = kind === "mark" ? ' data-battle="1" title="Открыть экран боя"' : "";
+    const fight = item.toBattle ? ' data-battle="1" title="Открыть экран боя"' : "";
     return '<button type="button" class="map-pin ' + kind + cap + (portrait ? " has-face" : "") + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="' + kind + '"' + named + fight + ' style="left:' + (item.x * 100) + "%;top:" + (item.y * 100) + "%;--pin:" + size + 'px">' + marks + vitals + dot + caption + tip + "</button>";
   }
 
@@ -2581,7 +2581,11 @@
           '<label class="check" title="10 + бонус Анализа"><input id="vital-pi" type="checkbox"' + (vitalOn("vitalPi") ? " checked" : "") + "> Пассивный анализ</label>" +
           '<label title="Размер цифр над портретом">Размер<input id="vital-size" type="range" min="10" max="28" value="' + (Number(item.vitalSize) || 13) + '"></label>'
         : "";
+      const toBattle = kind === "mark" || kind === "foe"
+        ? '<label class="check" title="Левый клик по этой точке открывает экран боя"><input id="pin-to-battle" type="checkbox"' + (item.toBattle ? " checked" : "") + "> Левый клик открывает бой</label>"
+        : "";
       return '<div class="pin-style">' +
+        toBattle +
         group("Портрет", "Кадр, крупность и сдвиг портрета", foeFace || frame || locShot, kind === "foe") +
         group("Картинка", "Файл и библиотека", imageShot, true) +
         sheet +
@@ -2698,6 +2702,8 @@
         }
         const capTop = menu.querySelector("#pin-cap-top");
         if (capTop) row.capTop = capTop.checked;
+        const toBattle = menu.querySelector("#pin-to-battle");
+        if (toBattle) row.toBattle = toBattle.checked;
         paintBoard();
         dirty();
       }
@@ -2716,6 +2722,8 @@
       if (pinPlateOn) pinPlateOn.addEventListener("change", applyStyle);
       const pinCapTop = menu.querySelector("#pin-cap-top");
       if (pinCapTop) pinCapTop.addEventListener("change", applyStyle);
+      const pinToBattle = menu.querySelector("#pin-to-battle");
+      if (pinToBattle) pinToBattle.addEventListener("change", applyStyle);
       const pinName = menu.querySelector("#pin-name");
       if (pinName) pinName.addEventListener("input", function () {
         const row = findItem();
@@ -3633,8 +3641,10 @@
           const npc = row && row.npcId && (book().npcs || []).find(function (item) { return item && item.id === row.npcId; });
           if (!npc || npc.role !== "enemy") openTalk(id);
         }
-        else if (open && kind === "mark") {
-          if (ctx.openBattle) ctx.openBattle();
+        else if (open && (kind === "mark" || kind === "foe")) {
+          const row = (view().markers || []).find(function (item) { return item && item.id === id; });
+          if (row && row.toBattle && ctx.openBattle) ctx.openBattle();
+          else showMenu();
         }
         else if (open && kind === "image") {
           const row = (view().markers || []).find(function (item) { return item && item.id === id; });
