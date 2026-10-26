@@ -266,14 +266,15 @@ function projectMap(page, campaign) {
       ? campaign.codex.heroes.find(function (row) { return row && row.id === item.heroId; })
       : null;
     const npcFace = activeFace(npc);
+    const fromHero = item.kind === "hero" && hero && hero.portrait;
     const face = {
-      portrait: item.portrait || (hero && hero.portrait) || npcFace.portrait || "",
-      x: item.portrait ? axis(item.portraitX) : npcFace.x,
-      y: item.portrait ? axis(item.portraitY) : npcFace.y,
-      zoom: item.portrait ? zoomOf(item.portraitZoom) : npcFace.zoom
+      portrait: (fromHero ? hero.portrait : "") || item.portrait || (hero && hero.portrait) || npcFace.portrait || "",
+      x: fromHero ? axis(hero.portraitX) : (item.portrait ? axis(item.portraitX) : npcFace.x),
+      y: fromHero ? axis(hero.portraitY) : (item.portrait ? axis(item.portraitY) : npcFace.y),
+      zoom: fromHero ? zoomOf(hero.portraitZoom) : (item.portrait ? zoomOf(item.portraitZoom) : npcFace.zoom)
     };
     const portrait = picture(face.portrait);
-    const kind = item.kind === "npc" ? "npc" : (item.kind === "foe" ? "foe" : "mark");
+    const kind = item.kind === "npc" ? "npc" : (item.kind === "foe" ? "foe" : (item.kind === "hero" ? "hero" : "mark"));
     return Object.assign({
       id: clip(item.id, 80),
       name: clip(item.name, 80),

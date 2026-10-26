@@ -288,11 +288,11 @@
         : "";
       return '<button type="button" class="map-pin image' + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="image" aria-label="' + esc(item.name || "Картинка") + '" style="left:' + (item.x * 100) + "%;top:" + (item.y * 100) + "%;--pin:" + size + 'px">' + marks + '<img alt="" src="' + esc(url) + '">' + tip + "</button>";
     }
-    const portrait = kind === "npc" || kind === "loc" || kind === "foe" ? (item.portrait || "") : "";
+    const portrait = kind === "npc" || kind === "loc" || kind === "foe" || kind === "hero" ? (item.portrait || "") : "";
     const size = Math.min(160, Math.max(12, Number(item.pinSize) || (portrait ? 56 : 14)));
     const badge = master && item.emoji ? '<em class="pin-emoji">' + esc(item.emoji) + "</em>" : "";
     const dot = portrait ? '<i><img alt="" src="' + esc(portrait) + '" style="' + faceStyle(item) + '">' + badge + "</i>" : "<i></i>";
-    const marks = master && (kind === "npc" || kind === "loc" || kind === "foe")
+    const marks = master && (kind === "npc" || kind === "loc" || kind === "foe" || kind === "hero")
       ? '<span class="pin-flags">' + flagMark("screen", shownScreen(item)) + flagMark("map", shownMap(item)) + "</span>"
       : "";
     const hp = master && kind === "foe" && item.hpMax ? '<em class="pin-hp">' + esc(String(item.hp == null ? item.hpMax : item.hp)) + "/" + esc(String(item.hpMax)) + "</em>" : "";
@@ -479,7 +479,7 @@
     const strokes = (source.strokes || []).map(strokeSvg).join("");
     const locations = (source.locations || []).map(function (item) { return pinHtml(item, "loc", master); }).join("");
     const markers = (source.markers || []).map(function (item) {
-      const kind = item.kind === "npc" ? "npc" : (item.kind === "foe" ? "foe" : (item.kind === "image" ? "image" : "mark"));
+      const kind = item.kind === "npc" ? "npc" : (item.kind === "foe" ? "foe" : (item.kind === "hero" ? "hero" : (item.kind === "image" ? "image" : "mark")));
       return pinHtml(item, kind, master);
     }).join("");
     const labels = (source.labels || []).map(labelHtml).join("");
@@ -574,6 +574,7 @@
     ["loc", "Локация", icon('<path d="M12 21s6-5.2 6-10a6 6 0 1 0-12 0c0 4.8 6 10 6 10z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="11" r="1.6" fill="currentColor"/>')],
     ["mark", "Метка", icon('<path d="M12 3l7 9-7 9-7-9z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>')],
     ["npc", "НПС", icon('<circle cx="12" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 19c1.2-3 3.2-4.5 6-4.5S16.8 16 18 19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>')],
+    ["hero", "Герой", icon('<path d="M12 3l7 3v6c0 4.2-3 7.2-7 9-4-1.8-7-4.8-7-9V6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>')],
     ["image", "Картинка", icon('<rect x="3" y="5" width="18" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="8.5" cy="10" r="1.4" fill="currentColor"/><path d="M3 16l5-4 4 3 3-2 6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>')],
     ["label", "Надпись", icon('<path d="M7 18h10M9 16l3-10 3 10M10 13h4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>')],
     ["brush", "Кисть", icon('<path d="M14 4l6 6-8 8H6v-6z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>')],
@@ -604,6 +605,7 @@
     let timer = 0;
     let binOpen = false;
     let setupEl = null;
+    let heroPick = "";
 
     host.innerHTML = '<aside class="side map-side">' +
       '<div class="map-viewbar">' +
@@ -630,6 +632,7 @@
       '<label title="Размер новой картинки на карте">Размер<input id="map-image-size" type="range" min="32" max="400" value="120"></label>' +
       '<p class="note">Клик по карте ставит выбранную картинку. Потом можно скрыть или изменить размер.</p></div>' +
       '<div id="map-ping-box" hidden><label title="Как выглядит вспышка пинга">Пинг<select id="map-ping"><option value="rings">Круги</option><option value="flash">Вспышка</option><option value="lights">Огоньки</option></select></label></div>' +
+      '<div id="map-hero-box" hidden><p class="note">Выберите героя и кликните по карте. Он встанет в открытую локацию.</p><div id="map-hero-list"></div></div>' +
       '<div class="map-tree-head"><span>Локации</span>' +
       '<button type="button" id="map-loc-add" title="Новая локация на текущей карте" aria-label="Добавить локацию">' + icon('<path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "</button>" +
       '<button type="button" id="map-bin" title="Локации с данными, которые вы убрали" aria-label="Корзина">' + icon('<path d="M5 8h14M9 8V6h6v2M8 8l1 12h6l1-12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>') + '<b id="map-bin-n"></b></button></div>' +
@@ -747,10 +750,69 @@
       host.querySelector("#map-label-box").hidden = tool !== "label";
       host.querySelector("#map-image-box").hidden = tool !== "image";
       host.querySelector("#map-ping-box").hidden = tool !== "ping";
+      host.querySelector("#map-hero-box").hidden = tool !== "hero";
+      if (tool === "hero") paintHeroList();
       host.querySelector("#map-bold").classList.toggle("is-on", styleBold);
       host.querySelector("#map-italic").classList.toggle("is-on", styleItalic);
       host.querySelector("#map-under").classList.toggle("is-on", styleUnderline);
       if (tool === "image") fillImageLib();
+    }
+    function paintHeroList() {
+      const box = host.querySelector("#map-hero-list");
+      if (!box) return;
+      const heroes = book().heroes || [];
+      if (!heroes.length) {
+        box.innerHTML = '<p class="note">В справочнике нет героев. Загрузите лист на вкладке «Герои».</p>';
+        return;
+      }
+      if (heroPick && !heroes.some(function (row) { return row && row.id === heroPick; })) heroPick = "";
+      box.innerHTML = heroes.map(function (hero) {
+        const on = hero.id === heroPick ? " is-on" : "";
+        const face = hero.portrait ? '<img alt="" src="' + esc(hero.portrait) + '">' : "<i></i>";
+        return '<button type="button" class="map-hero-pick' + on + '" data-hero="' + esc(hero.id) + '">' + face + "<span>" + esc(hero.name || "Герой") + "</span></button>";
+      }).join("");
+    }
+    function placeHeroAt(at) {
+      const heroes = book().heroes || [];
+      const hero = heroes.find(function (row) { return row && row.id === heroPick; });
+      const hint = host.querySelector("#map-hint");
+      if (!hero) {
+        if (hint) hint.textContent = heroes.length ? "Сначала выберите героя слева." : "В справочнике нет героев. Загрузите лист на вкладке «Герои».";
+        return;
+      }
+      const current = view();
+      let marker = (current.markers || []).find(function (row) {
+        return row && row.kind === "hero" && row.heroId === hero.id;
+      });
+      if (!marker) {
+        marker = {
+          id: crypto.randomUUID(),
+          kind: "hero",
+          heroId: hero.id,
+          tip: hero.title || "",
+          hidden: false,
+          pinSize: 56
+        };
+        current.markers.push(marker);
+      }
+      marker.name = hero.name || "Герой";
+      marker.x = at.x;
+      marker.y = at.y;
+      marker.locId = current.focusId || "";
+      marker.portrait = hero.portrait || "";
+      if (hero.portraitX != null) marker.portraitX = hero.portraitX;
+      if (hero.portraitY != null) marker.portraitY = hero.portraitY;
+      if (hero.portraitZoom != null) marker.portraitZoom = hero.portraitZoom;
+      selected = { kind: "hero", id: marker.id };
+      shownForm = "";
+      const loc = marker.locId ? findLoc(marker.locId) : null;
+      if (hint) hint.textContent = loc
+        ? "Герой стоит в «" + (loc.name || "локация") + "». Правый клик — размер и перенос."
+        : "Герой стоит на корне карты. Откройте локацию и кликните ещё раз, чтобы перенести его внутрь.";
+      paintBoard();
+      paintTree();
+      paintSelected();
+      ctx.save();
     }
     function fillImageLib(selectedUrl) {
       const pick = host.querySelector("#map-image-lib");
@@ -1249,6 +1311,7 @@
       if (!campaign.codex) campaign.codex = {};
       campaign.codex.places = campaign.codex.places || [];
       campaign.codex.npcs = campaign.codex.npcs || [];
+      campaign.codex.heroes = campaign.codex.heroes || [];
       return campaign.codex;
     }
     function ensurePlace(loc) {
@@ -2034,6 +2097,13 @@
       });
     }
     function faceOf(item) {
+      if (item && item.kind === "hero") {
+        const hero = (book().heroes || []).find(function (row) { return row && row.id === item.heroId; });
+        const portrait = (hero && hero.portrait) || item.portrait || "";
+        if (!portrait) return null;
+        const frame = hero && hero.portrait ? hero : item;
+        return Object.assign({ url: portrait, emoji: "" }, focusNums(frame));
+      }
       const npc = linkedNpc(item);
       if (!npc) return null;
       const mood = window.ShirmoNpc.apply(npc);
@@ -2350,7 +2420,7 @@
       const pinMax = kind === "image" ? 400 : 140;
       const pinMin = kind === "image" ? 32 : 12;
       const pin = kind === "label" ? "" : '<label title="' + (kind === "image" ? "Размер картинки на карте" : "Размер точки на карте") + '">Размер<input id="pin-size" type="range" min="' + pinMin + '" max="' + pinMax + '" value="' + pinDefault + '"></label>';
-      const note = kind === "mark" || kind === "npc" || kind === "loc" || kind === "image"
+      const note = kind === "mark" || kind === "npc" || kind === "loc" || kind === "image" || kind === "hero"
         ? '<label title="' + (kind === "loc" ? "Заметка к локации. Игроки видят её при наведении, если точка им показана" : "Текст при наведении") + '">' + (kind === "loc" ? "Заметка" : "Подсказка") + '<textarea id="pin-tip">' + esc(item.tip || "") + "</textarea></label>" +
           '<label class="check" title="Игроки это не видят"><input id="pin-hide" type="checkbox"' + (item.hidden ? " checked" : "") + "> Скрыть от игроков</label>"
         : "";
@@ -2424,7 +2494,7 @@
       function actBtn(act, label) {
         return '<button type="button" class="pin-act" data-act="' + act + '" title="' + label + '" aria-label="' + label + '">' + ACT[act] + "</button>";
       }
-      const canHome = selected.kind === "loc" || selected.kind === "npc" || selected.kind === "mark" || selected.kind === "foe" || selected.kind === "label" || selected.kind === "image";
+      const canHome = selected.kind === "loc" || selected.kind === "npc" || selected.kind === "mark" || selected.kind === "foe" || selected.kind === "hero" || selected.kind === "label" || selected.kind === "image";
       const personId = markerPersonId(item);
       const inSquad = personId && (book().squads || []).some(function (squad) {
         return squad && (squad.memberIds || []).indexOf(personId) >= 0;
@@ -2848,6 +2918,17 @@
       if (tool !== "loc") pendingParent = "";
       paintTools();
     });
+    host.querySelector("#map-hero-list").addEventListener("click", function (event) {
+      const button = event.target.closest("[data-hero]");
+      if (!button) return;
+      heroPick = button.getAttribute("data-hero") || "";
+      paintHeroList();
+      const hint = host.querySelector("#map-hint");
+      const loc = view().focusId ? findLoc(view().focusId) : null;
+      if (hint) hint.textContent = loc
+        ? "Клик по карте ставит героя в «" + (loc.name || "локация") + "»."
+        : "Клик по карте ставит героя. Откройте локацию, чтобы он встал внутрь неё.";
+    });
     host.querySelector("#map-image-file").addEventListener("change", function (event) {
       const file = event.target.files && event.target.files[0];
       event.target.value = "";
@@ -3020,7 +3101,7 @@
     }
     function pinKind(hit) {
       const kind = hit.getAttribute("data-kind");
-      return kind === "loc" || kind === "mark" || kind === "npc" || kind === "label" || kind === "foe" || kind === "image";
+      return kind === "loc" || kind === "mark" || kind === "npc" || kind === "label" || kind === "foe" || kind === "hero" || kind === "image";
     }
     function flipFlag(item, which) {
       if (item.screen == null) item.screen = !item.hidden;
@@ -3141,6 +3222,10 @@
       event.preventDefault();
       if (tool === "loc" || tool === "mark" || tool === "npc" || tool === "label" || tool === "image") {
         addPoint(tool, at);
+        return;
+      }
+      if (tool === "hero") {
+        placeHeroAt(at);
         return;
       }
       if (tool === "ping") {

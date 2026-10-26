@@ -1410,6 +1410,29 @@ label.check input { width: auto; }
 
 .map-pin.npc i { background-color: #c45a4a; }
 
+.map-pin.hero i { background-color: #2f6b45; box-shadow: 0 0 0 2px #3ecf78; }
+
+.map-hero-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: 0 0 4px;
+  padding: 4px 6px;
+  text-align: left;
+}
+.map-hero-pick img,
+.map-hero-pick i {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: 0 0 28px;
+  background: #1a1612;
+  display: block;
+}
+.map-hero-pick.is-on { outline: 1px solid #3ecf78; }
+
 .map-pin.has-face i {
   position: relative;
   border-radius: 50%;
