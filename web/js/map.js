@@ -2480,6 +2480,57 @@
         (kind === "image" ? "" : group("Подпись", "Шрифт, размер и оформление подписи", text)) +
         "</div>";
     }
+    function openHeroRoll(id) {
+      closeMenu();
+      const marker = (view().markers || []).find(function (item) { return item && item.id === id && item.kind === "hero"; });
+      if (!marker) return;
+      const hero = (book().heroes || []).find(function (row) { return row && row.id === marker.heroId; });
+      const pin = board.querySelector('[data-pin="' + id + '"]');
+      if (!hero || !pin) return;
+      function signed(n) {
+        const v = Math.round(Number(n) || 0);
+        return (v > 0 ? "+" : "") + v;
+      }
+      const stats = hero.stats || [];
+      const skills = hero.skills || [];
+      const saves = stats.map(function (stat, index) {
+        const bonus = stat.save != null ? stat.save : stat.mod;
+        return '<button type="button" class="hero-stat' + (stat.saveProf ? " is-prof" : "") + '" data-roll="save" data-i="' + index + '" title="Спасбросок ' + esc(stat.name || "") + '">' +
+          "<em>" + esc(stat.name || "") + "</em><b>" + signed(bonus) + "</b></button>";
+      }).join("");
+      const skillHtml = skills.map(function (skill, index) {
+        return '<button type="button" class="hero-skill' + (skill.trained ? " is-prof" : "") + (skill.expert ? " is-expert" : "") + '" data-roll="skill" data-i="' + index + '" title="Проверка ' + esc(skill.name || "навыка") + '">' +
+          "<span>" + esc(skill.name || "Навык") + "</span><b>" + signed(skill.bonus) + "</b></button>";
+      }).join("");
+      const menu = document.createElement("div");
+      menu.id = "pin-menu";
+      menu.className = "pin-menu hero-roll";
+      menu.innerHTML = "<h3>" + esc(hero.name || marker.name || "Герой") + "</h3>" +
+        (saves ? '<p class="roll-cap">Спасброски</p><div class="hero-stats">' + saves + "</div>" : "") +
+        (skillHtml ? '<p class="roll-cap">Навыки</p><div class="hero-skills">' + skillHtml + "</div>" : "") +
+        (!saves && !skillHtml ? '<p class="note">В листе нет характеристик и навыков.</p>' : "");
+      const rect = pin.getBoundingClientRect();
+      menu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 276)) + "px";
+      menu.style.top = Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - 280)) + "px";
+      document.body.appendChild(menu);
+      menu.addEventListener("pointerdown", function (event) { event.stopPropagation(); });
+      menu.addEventListener("click", function (event) {
+        const button = event.target.closest("[data-roll]");
+        if (!button || !ctx.roll) return;
+        const index = Number(button.getAttribute("data-i"));
+        const rollKind = button.getAttribute("data-roll");
+        const row = rollKind === "save" ? stats[index] : skills[index];
+        if (!row) return;
+        const bonus = rollKind === "save" ? (row.save != null ? row.save : row.mod) : row.bonus;
+        ctx.roll({
+          name: hero.name || marker.name || "Герой",
+          label: rollKind === "save" ? ("Спас " + (row.name || "")) : (row.name || "Навык"),
+          sides: 20,
+          count: 1,
+          mod: Math.round(Number(bonus) || 0)
+        });
+      });
+    }
     function showMenu() {
       closeMenu();
       const item = findItem();
@@ -3354,6 +3405,7 @@
         const id = selected && selected.id;
         press = null;
         if (open && kind === "loc") enter(id);
+        else if (open && kind === "hero") openHeroRoll(id);
         else if (open && kind === "npc") {
           const row = (view().markers || []).find(function (item) { return item && item.id === id; });
           const npc = row && row.npcId && (book().npcs || []).find(function (item) { return item && item.id === row.npcId; });
@@ -3400,7 +3452,7 @@
       const hit = event.target.closest("[data-pin]");
       if (!hit || !board.contains(hit)) return;
       const kind = hit.getAttribute("data-kind");
-      if (kind === "loc" || kind === "npc" || kind === "image") {
+      if (kind === "loc" || kind === "npc" || kind === "image" || kind === "hero") {
         event.preventDefault();
         return;
       }

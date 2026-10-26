@@ -1653,6 +1653,22 @@ label.check input { width: auto; }
   overflow: auto;
 }
 
+.pin-menu.hero-roll {
+  width: 260px;
+  max-height: min(440px, 72vh);
+  overflow: auto;
+}
+.hero-roll h3 { margin: 2px 4px 0; font-size: 15px; }
+.hero-roll .roll-cap {
+  margin: 8px 4px 2px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.hero-roll .hero-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 0; }
+.hero-roll .hero-skills { grid-template-columns: 1fr; margin-top: 0; }
+
 .pin-menu.pin-home button:disabled {
   opacity: 0.4;
   cursor: default;
