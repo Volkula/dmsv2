@@ -303,12 +303,18 @@
   }
 
   function heroVitalsHtml(item) {
-    function cell(label, value, title) {
-      if (value == null || value === "") return "";
+    function on(key) { return item[key] !== false; }
+    function cell(label, value, title, show) {
+      if (!show || value == null || value === "") return "";
       return '<em title="' + esc(title) + '">' + label + " <b>" + esc(String(value)) + "</b></em>";
     }
-    const body = cell("КД", item.ac, "Класс доспеха") + cell("ХП", item.hp, "Текущие хиты") + cell("ВС", item.pp, "Пассивное восприятие");
-    return body ? '<span class="pin-vitals">' + body + "</span>" : "";
+    const body = cell("КД", item.ac, "Класс доспеха", on("vitalAc")) +
+      cell("ХП", item.hp, "Текущие хиты", on("vitalHp")) +
+      cell("ВС", item.pp, "Пассивное восприятие", on("vitalPp")) +
+      cell("АН", item.pi, "Пассивный анализ", on("vitalPi"));
+    if (!body) return "";
+    const size = Math.min(28, Math.max(10, Number(item.vitalSize) || 13));
+    return '<span class="pin-vitals" style="font-size:' + size + 'px">' + body + "</span>";
   }
 
   function labelHtml(item) {
@@ -749,26 +755,26 @@
       const stage = board.querySelector(".stage");
       if (stage) stage.classList.toggle("is-erase", tool === "erase");
     }
+    function passiveSkill(hero, id, names, statId) {
+      const skill = (hero.skills || []).find(function (row) {
+        if (!row) return false;
+        const name = String(row.name || "").trim().toLowerCase();
+        return row.id === id || names.indexOf(name) >= 0;
+      });
+      if (skill) return 10 + Math.round(Number(skill.bonus) || 0);
+      const stat = (hero.stats || []).find(function (row) { return row && row.id === statId; });
+      return stat ? 10 + Math.round(Number(stat.mod) || 0) : null;
+    }
     function heroSheet(item) {
       if (!item || item.kind !== "hero" || !item.heroId) return null;
       const hero = (book().heroes || []).find(function (row) { return row && row.id === item.heroId; });
       if (!hero) return null;
-      const perc = (hero.skills || []).find(function (skill) {
-        if (!skill) return false;
-        const name = String(skill.name || "").trim().toLowerCase();
-        return skill.id === "perception" || name === "восприятие" || name === "внимательность";
-      });
-      let pp = null;
-      if (perc) pp = 10 + Math.round(Number(perc.bonus) || 0);
-      else {
-        const wis = (hero.stats || []).find(function (stat) { return stat && stat.id === "wis"; });
-        if (wis) pp = 10 + Math.round(Number(wis.mod) || 0);
-      }
       const hp = hero.hp != null && hero.hp !== "" ? Math.round(Number(hero.hp) || 0) : null;
       return {
         ac: Math.round(Number(hero.ac) || 0),
         hp: hp,
-        pp: pp
+        pp: passiveSkill(hero, "perception", ["восприятие", "внимательность"], "wis"),
+        pi: passiveSkill(hero, "investigation", ["анализ", "расследование"], "int")
       };
     }
     function paintTools() {
@@ -2504,11 +2510,20 @@
         '<label title="Толщина контура букв">Толщина обводки<input id="pin-stroke-w" type="range" min="0" max="8" value="' + (Number(item.strokeWidth) || 0) + '"></label>' +
         '<label class="check" title="Плашка под подписью"><input id="pin-plate-on" type="checkbox"' + (item.plate ? " checked" : "") + "> Фон текста</label>" +
         '<label title="Цвет плашки под подписью">Цвет фона<input id="pin-plate" type="color" value="' + hexColor(item.plate, "#14110e") + '"></label>';
+      function vitalOn(key) { return item[key] !== false; }
+      const vitalBox = kind === "hero"
+        ? '<label class="check" title="Класс доспеха над портретом"><input id="vital-ac" type="checkbox"' + (vitalOn("vitalAc") ? " checked" : "") + "> КД</label>" +
+          '<label class="check" title="Текущие хиты над портретом"><input id="vital-hp" type="checkbox"' + (vitalOn("vitalHp") ? " checked" : "") + "> Хиты</label>" +
+          '<label class="check" title="10 + бонус Восприятия"><input id="vital-pp" type="checkbox"' + (vitalOn("vitalPp") ? " checked" : "") + "> Пассивное восприятие</label>" +
+          '<label class="check" title="10 + бонус Анализа"><input id="vital-pi" type="checkbox"' + (vitalOn("vitalPi") ? " checked" : "") + "> Пассивный анализ</label>" +
+          '<label title="Размер цифр над портретом">Размер<input id="vital-size" type="range" min="10" max="28" value="' + (Number(item.vitalSize) || 13) + '"></label>'
+        : "";
       return '<div class="pin-style">' +
         group("Портрет", "Кадр, крупность и сдвиг портрета", frame || locShot) +
         group("Картинка", "Файл и библиотека", imageShot, true) +
         sheet +
         group("Бой", "Хиты, броня и броски от имени врага", foeBox, true) +
+        group("Цифры", "Какие характеристики видны над портретом", vitalBox, true) +
         group("Точка", kind === "image" ? "Размер и видимость для игроков" : "Размер точки, заметка и видимость для игроков", pin + note, kind === "loc" || kind === "image") +
         (kind === "image" ? "" : group("Подпись", "Шрифт, размер и оформление подписи", text)) +
         "</div>";
@@ -2678,6 +2693,25 @@
         if (!row) return;
         if (row.screen == null) row.screen = !row.hidden;
         row.hidden = pinHide.checked;
+        paintBoard();
+        dirty();
+      });
+      [["vital-ac", "vitalAc"], ["vital-hp", "vitalHp"], ["vital-pp", "vitalPp"], ["vital-pi", "vitalPi"]].forEach(function (pair) {
+        const input = menu.querySelector("#" + pair[0]);
+        if (!input) return;
+        input.addEventListener("change", function () {
+          const row = findItem();
+          if (!row) return;
+          row[pair[1]] = input.checked;
+          paintBoard();
+          dirty();
+        });
+      });
+      const vitalSize = menu.querySelector("#vital-size");
+      if (vitalSize) vitalSize.addEventListener("input", function () {
+        const row = findItem();
+        if (!row) return;
+        row.vitalSize = Math.min(28, Math.max(10, Number(vitalSize.value) || 13));
         paintBoard();
         dirty();
       });
