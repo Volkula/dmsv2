@@ -313,8 +313,22 @@
       cell("ВС", item.pp, "Пассивное восприятие", on("vitalPp")) +
       cell("АН", item.pi, "Пассивный анализ", on("vitalPi"));
     if (!body) return "";
+    const look = [];
     const size = Math.min(28, Math.max(10, Number(item.vitalSize) || 13));
-    return '<span class="pin-vitals" style="font-size:' + size + 'px">' + body + "</span>";
+    look.push("font-size:" + size + "px");
+    const stroke = Math.min(8, Math.max(0, Number(item.strokeWidth) || 0));
+    if (stroke > 0) {
+      look.push("-webkit-text-stroke:" + stroke + "px " + esc(item.stroke || "#1a140c"));
+      look.push("paint-order:stroke fill");
+      look.push("text-shadow:none");
+    }
+    if (item.plate) {
+      look.push("background:" + esc(item.plate));
+      look.push("padding:1px 5px");
+      look.push("border-radius:4px");
+      look.push("text-shadow:none");
+    }
+    return '<span class="pin-vitals" style="' + look.join(";") + '">' + body + "</span>";
   }
 
   function labelHtml(item) {

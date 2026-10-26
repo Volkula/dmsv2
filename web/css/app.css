@@ -309,6 +309,61 @@ label { display: flex; flex-direction: column; gap: 6px; }
 
 .work[hidden] { display: none !important; }
 
+.master-row { flex: 1; min-height: 0; display: flex; }
+.master-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.master-main > .work { flex: 1; }
+
+.dock {
+  width: 320px;
+  flex: 0 0 320px;
+  display: flex;
+  min-height: 0;
+  border-left: 1px solid var(--line);
+  background: var(--panel);
+}
+.dock.is-shut { width: 36px; flex-basis: 36px; }
+.dock-toggle {
+  flex: 0 0 36px;
+  width: 36px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: transparent;
+  color: var(--brass);
+  cursor: pointer;
+  padding: 8px 0;
+}
+.dock.is-shut .dock-toggle { flex: 1; border-right: 0; writing-mode: vertical-rl; }
+.dock-body {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dock-fold { border: 1px solid var(--line); border-radius: 6px; padding: 6px; }
+.dock-fold summary { cursor: pointer; color: var(--brass); }
+.dock-fold > button { margin-top: 6px; }
+.dock-line { display: flex; gap: 4px; align-items: center; margin: 4px 0; }
+.dock-line > button:first-child, .dock-line > input { flex: 1; min-width: 0; text-align: left; }
+.dock-hero { display: flex; gap: 8px; align-items: center; }
+.dock-hero img, .dock-hero i {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: 0 0 36px;
+  background: #1a1612;
+}
+.dock-hero span { display: flex; flex-direction: column; min-width: 0; }
+.dock-hero b { font-weight: 500; }
+.dock-hero small { color: var(--muted); font-size: 11px; }
+.dock-note textarea, .dock-form textarea { min-height: 72px; }
+.dock-form { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.dock-picks { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.dock-picks button { text-align: left; }
+
 .side {
   border-right: 1px solid var(--line);
   padding: 12px;

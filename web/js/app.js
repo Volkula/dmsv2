@@ -1015,6 +1015,7 @@
         });
         state.pins = data.pins || [];
         menu.querySelector("[data-pin-list]").innerHTML = pinButtons();
+        if (window.ShirmoDock) window.ShirmoDock.paint();
         err.textContent = "";
       } catch (error) {
         err.textContent = error.message;
@@ -1028,6 +1029,7 @@
         });
         state.pins = data.pins || [];
         menu.querySelector("[data-pin-list]").innerHTML = pinButtons();
+        if (window.ShirmoDock) window.ShirmoDock.paint();
         err.textContent = "";
       } catch (error) {
         err.textContent = error.message;
@@ -1204,7 +1206,7 @@
       '<button type="button" id="mode-hold" class="' + (state.publishMode === "hold" ? "is-on" : "") + '" title="Игроки видят кадр, когда нажмёте «Показать»">Только по кнопке</button>' +
       "</div>" +
       '<button type="button" class="primary" id="show" title="Отправить игрокам то, что на экране сейчас">Показать</button>' +
-      "</div></header><div class=\"work\" id=\"work-scene\"><aside class=\"side\">" +
+      "</div></header><div class=\"master-row\"><div class=\"master-main\"><div class=\"work\" id=\"work-scene\"><aside class=\"side\">" +
       '<label title="Крупная строка на сцене">Заголовок<input id="page-title" type="text"></label>' +
       '<label title="Текст под заголовком">Текст<textarea id="page-text"></textarea></label>' +
       '<label title="Цвет фона сцены">Фон<input id="page-color" type="color"></label>' +
@@ -1215,7 +1217,7 @@
       '<label title="Текст заметки вместо своего текста">Заметка<select id="page-note"></select></label>' +
       '<p class="note">В режиме «Сразу» правки этой страницы уходят игрокам сами. «Показать» публикует кадр в любом режиме. Бросок виден игрокам карточкой с кубиком и остаётся в истории.</p>' +
       '<p class="error" id="err"></p></aside>' +
-      '<div class="stage-wrap" id="preview"></div></div><div class="work" id="work-map" hidden></div><div class="work" id="work-codex" hidden></div><div class="work" id="work-battle" hidden></div><div class="work" id="work-library" hidden></div></section>';
+      '<div class="stage-wrap" id="preview"></div></div><div class="work" id="work-map" hidden></div><div class="work" id="work-codex" hidden></div><div class="work" id="work-battle" hidden></div><div class="work" id="work-library" hidden></div></div><aside id="dock" class="dock"></aside></div></section>';
 
     const err = app.querySelector("#err");
     const preview = app.querySelector("#preview");
@@ -1370,6 +1372,7 @@
       });
     }
     function showModule(kind) {
+      if (window.ShirmoDock) window.ShirmoDock.paint();
       try { sessionStorage.setItem("shirmo-mod-" + id, kind); } catch (err) { /* нет хранилища */ }
       readForm();
       const mapHost = app.querySelector("#work-map");
@@ -1525,6 +1528,303 @@
     });
     state.rolls = state.rolls || [];
     state.pins = state.pins || [];
+    mountDock();
+    function mountDock() {
+      const root = app.querySelector("#dock");
+      if (!root || root._dock) return;
+      root._dock = true;
+      let rollOpen = false;
+      let heroOpen = false;
+      let noteOpen = false;
+      let noteTimer = 0;
+      let rollSides = 20;
+      const folds = { rolls: true, heroes: true, notes: true };
+      function model() {
+        if (!state.campaign.dock || typeof state.campaign.dock !== "object") state.campaign.dock = {};
+        const dock = state.campaign.dock;
+        if (typeof dock.open !== "boolean") dock.open = false;
+        dock.heroes = Array.isArray(dock.heroes) ? dock.heroes : [];
+        dock.notes = Array.isArray(dock.notes) ? dock.notes : [];
+        return dock;
+      }
+      function heroes() {
+        return (state.campaign.codex && state.campaign.codex.heroes) || [];
+      }
+      function notes() {
+        return shelf().notes || [];
+      }
+      function pinFormula(pin) {
+        const sign = modSign(modOf(pin.mod));
+        if (pin.mode === "advantage") return "преимущество" + (sign ? " " + sign : "");
+        if (pin.mode === "disadvantage") return "помеха" + (sign ? " " + sign : "");
+        return (pin.count || 1) + "d" + (pin.sides || 20) + sign;
+      }
+      function closeHeroRoll() {
+        const old = document.getElementById("dock-hero-roll");
+        if (old) old.remove();
+      }
+      function passiveOf(hero, id, names, statId) {
+        const skill = (hero.skills || []).find(function (row) {
+          if (!row) return false;
+          const name = String(row.name || "").trim().toLowerCase();
+          return row.id === id || names.indexOf(name) >= 0;
+        });
+        if (skill) return 10 + Math.round(Number(skill.bonus) || 0);
+        const stat = (hero.stats || []).find(function (row) { return row && row.id === statId; });
+        return stat ? 10 + Math.round(Number(stat.mod) || 0) : null;
+      }
+      function openHeroRoll(hero, anchor) {
+        closeHeroRoll();
+        function signed(n) {
+          const v = Math.round(Number(n) || 0);
+          return (v > 0 ? "+" : "") + v;
+        }
+        const stats = hero.stats || [];
+        const skills = hero.skills || [];
+        const saves = stats.map(function (stat, index) {
+          const bonus = stat.save != null ? stat.save : stat.mod;
+          return '<button type="button" class="hero-stat" data-roll="save" data-i="' + index + '"><em>' + esc(stat.name || "") + "</em><b>" + signed(bonus) + "</b></button>";
+        }).join("");
+        const skillHtml = skills.map(function (skill, index) {
+          return '<button type="button" class="hero-skill" data-roll="skill" data-i="' + index + '"><span>' + esc(skill.name || "Навык") + "</span><b>" + signed(skill.bonus) + "</b></button>";
+        }).join("");
+        const menu = document.createElement("div");
+        menu.id = "dock-hero-roll";
+        menu.className = "pin-menu hero-roll";
+        menu.innerHTML = "<h3>" + esc(hero.name || "Герой") + "</h3>" +
+          (saves ? '<p class="roll-cap">Спасброски</p><div class="hero-stats">' + saves + "</div>" : "") +
+          (skillHtml ? '<p class="roll-cap">Навыки</p><div class="hero-skills">' + skillHtml + "</div>" : "") +
+          (!saves && !skillHtml ? '<p class="note">В листе нет характеристик и навыков.</p>' : "");
+        const rect = anchor.getBoundingClientRect();
+        menu.style.left = Math.max(8, Math.min(rect.left - 270, window.innerWidth - 276)) + "px";
+        menu.style.top = Math.max(8, Math.min(rect.top, window.innerHeight - 280)) + "px";
+        document.body.appendChild(menu);
+        menu.addEventListener("pointerdown", function (event) { event.stopPropagation(); });
+        menu.addEventListener("click", function (event) {
+          const button = event.target.closest("[data-roll]");
+          if (!button) return;
+          const index = Number(button.getAttribute("data-i"));
+          const kind = button.getAttribute("data-roll");
+          const row = kind === "save" ? stats[index] : skills[index];
+          if (!row) return;
+          const bonus = kind === "save" ? (row.save != null ? row.save : row.mod) : row.bonus;
+          publishRoll({
+            name: hero.name || "Герой",
+            label: kind === "save" ? ("Спас " + (row.name || "")) : (row.name || "Навык"),
+            sides: 20,
+            count: 1,
+            mod: Math.round(Number(bonus) || 0)
+          });
+        });
+      }
+      function paint() {
+        const dock = model();
+        const editing = root.querySelector("[data-dock-note]:focus, [data-dock-name]:focus, .dock-form :focus");
+        if (editing) return;
+        ["rolls", "heroes", "notes"].forEach(function (name) {
+          const node = root.querySelector('[data-fold="' + name + '"]');
+          if (node) folds[name] = node.open;
+        });
+        closeHeroRoll();
+        root.classList.toggle("is-shut", !dock.open);
+        const toggle = '<button type="button" class="dock-toggle" data-dock="toggle" title="' + (dock.open ? "Свернуть панель" : "Открыть панель") + '" aria-expanded="' + (dock.open ? "true" : "false") + '">' + (dock.open ? "»" : "Панель") + "</button>";
+        if (!dock.open) {
+          root.innerHTML = toggle;
+          bind();
+          return;
+        }
+        const rollRows = (state.pins || []).map(function (pin) {
+          return '<div class="dock-line"><button type="button" data-dock-throw="' + esc(pin.id) + '">' + esc(pin.name || "Бросок") + " — " + esc(pinFormula(pin)) + "</button>" +
+            '<button type="button" data-dock-unpin-roll="' + esc(pin.id) + '" title="Убрать бросок" aria-label="Убрать бросок">×</button></div>';
+        }).join("") || '<p class="note">Нет закреплённых бросков.</p>';
+        const dice = [4, 6, 8, 10, 12, 20, 100].map(function (n) {
+          return '<option value="' + n + '"' + (n === rollSides ? " selected" : "") + ">d" + n + "</option>";
+        }).join("");
+        const rollForm = rollOpen
+          ? '<div class="dock-form"><label>Название<input data-dock-roll-name type="text" placeholder="Атака"></label>' +
+            '<div class="row"><label>Кости<input data-dock-roll-count type="number" min="1" max="12" value="1"></label>' +
+            '<label>Грань<select data-dock-roll-sides>' + dice + "</select></label>" +
+            '<label>Мод<input data-dock-roll-mod type="number" value="0"></label></div>' +
+            '<label class="check"><input data-dock-roll-adv type="checkbox"> Преимущество</label>' +
+            '<label class="check"><input data-dock-roll-dis type="checkbox"> Помеха</label>' +
+            '<div class="row"><button type="button" data-dock="roll-throw">Бросить</button><button type="button" data-dock="roll-save">Закрепить</button></div></div>'
+          : "";
+        const pinnedHeroes = dock.heroes.map(function (hid) {
+          return heroes().find(function (row) { return row && row.id === hid; });
+        }).filter(Boolean);
+        const heroRows = pinnedHeroes.map(function (hero) {
+          const face = hero.portrait ? '<img alt="" src="' + esc(hero.portrait) + '">' : "<i></i>";
+          const pp = passiveOf(hero, "perception", ["восприятие", "внимательность"], "wis");
+          const pi = passiveOf(hero, "investigation", ["анализ", "расследование"], "int");
+          const bits = ["КД " + (Math.round(Number(hero.ac) || 0)), hero.hp != null ? "ХП " + Math.round(Number(hero.hp) || 0) : "", pp != null ? "ВС " + pp : "", pi != null ? "АН " + pi : ""].filter(Boolean).join(" · ");
+          return '<div class="dock-line"><button type="button" class="dock-hero" data-dock-hero="' + esc(hero.id) + '">' + face + "<span><b>" + esc(hero.name || "Герой") + "</b><small>" + esc(bits) + "</small></span></button>" +
+            '<button type="button" data-dock-unpin-hero="' + esc(hero.id) + '" title="Убрать героя" aria-label="Убрать героя">×</button></div>';
+        }).join("") || '<p class="note">Нет закреплённых героев.</p>';
+        const freeHeroes = heroes().filter(function (hero) { return hero && dock.heroes.indexOf(hero.id) < 0; });
+        const heroForm = heroOpen
+          ? (freeHeroes.length
+            ? '<div class="dock-picks">' + freeHeroes.map(function (hero) {
+              return '<button type="button" data-dock-add-hero="' + esc(hero.id) + '">' + esc(hero.name || "Герой") + "</button>";
+            }).join("") + "</div>"
+            : '<p class="note">Все герои уже закреплены или справочник пуст.</p>')
+          : "";
+        const pinnedNotes = dock.notes.map(function (nid) {
+          return notes().find(function (row) { return row && row.id === nid; });
+        }).filter(Boolean);
+        const noteRows = pinnedNotes.map(function (note) {
+          return '<article class="dock-note"><div class="dock-line"><input data-dock-name="' + esc(note.id) + '" type="text" value="' + esc(note.name || "") + '" aria-label="Название заметки">' +
+            '<button type="button" data-dock-unpin-note="' + esc(note.id) + '" title="Убрать из панели. В библиотеке заметка останется" aria-label="Убрать заметку">×</button></div>' +
+            '<textarea data-dock-note="' + esc(note.id) + '" aria-label="Текст заметки">' + esc(note.text || "") + "</textarea></article>";
+        }).join("") || '<p class="note">Нет заметок на панели.</p>';
+        const freeNotes = notes().filter(function (note) { return note && dock.notes.indexOf(note.id) < 0; });
+        const noteForm = noteOpen
+          ? '<div class="dock-form"><label>Из библиотеки<select data-dock-note-pick><option value="">Выберите заметку</option>' +
+            freeNotes.map(function (note) { return '<option value="' + esc(note.id) + '">' + esc(note.name || "Заметка") + "</option>"; }).join("") +
+            "</select></label>" +
+            '<button type="button" data-dock="note-take">Взять</button>' +
+            '<label>Новая<input data-dock-new-name type="text" placeholder="Название"></label>' +
+            '<textarea data-dock-new-text placeholder="Текст"></textarea>' +
+            '<button type="button" data-dock="note-create">Добавить в библиотеку</button></div>'
+          : "";
+        root.innerHTML = toggle + '<div class="dock-body">' +
+          '<details class="dock-fold" data-fold="rolls"' + (folds.rolls ? " open" : "") + "><summary>Броски</summary>" + rollRows +
+          '<button type="button" data-dock="roll-add">' + (rollOpen ? "Скрыть форму" : "Закрепить бросок") + "</button>" + rollForm + "</details>" +
+          '<details class="dock-fold" data-fold="heroes"' + (folds.heroes ? " open" : "") + "><summary>Герои</summary>" + heroRows +
+          '<button type="button" data-dock="hero-add">' + (heroOpen ? "Скрыть список" : "Закрепить героя") + "</button>" + heroForm + "</details>" +
+          '<details class="dock-fold" data-fold="notes"' + (folds.notes ? " open" : "") + "><summary>Заметки</summary>" + noteRows +
+          '<button type="button" data-dock="note-add">' + (noteOpen ? "Скрыть" : "Из библиотеки или новая") + "</button>" + noteForm + "</details>" +
+          "</div>";
+        bind();
+      }
+      function rollSpec() {
+        const adv = root.querySelector("[data-dock-roll-adv]");
+        const dis = root.querySelector("[data-dock-roll-dis]");
+        const mode = adv && adv.checked ? "advantage" : dis && dis.checked ? "disadvantage" : "normal";
+        const sides = Number(root.querySelector("[data-dock-roll-sides]").value) || 20;
+        rollSides = sides;
+        const count = Number(root.querySelector("[data-dock-roll-count]").value) || 1;
+        const mod = modOf(root.querySelector("[data-dock-roll-mod]").value);
+        const sign = modSign(mod);
+        const name = (root.querySelector("[data-dock-roll-name]").value || "").trim() || ((mode === "advantage" ? "Преимущество" : mode === "disadvantage" ? "Помеха" : count + "d" + sides) + sign);
+        return { name: name, label: name, count: count, sides: sides, mode: mode, mod: mod };
+      }
+      async function saveRoll(spec) {
+        const data = await api("/api/rooms/" + id + "/pins", {
+          method: "POST",
+          headers: headers,
+          body: JSON.stringify(spec)
+        });
+        state.pins = data.pins || [];
+      }
+      async function dropRoll(pinId) {
+        const data = await api("/api/rooms/" + id + "/pins/" + pinId, { method: "DELETE", headers: headers });
+        state.pins = data.pins || [];
+      }
+      function bind() {
+        root.onclick = function (event) {
+          const button = event.target.closest("button");
+          if (!button || !root.contains(button)) return;
+          const act = button.getAttribute("data-dock");
+          const dock = model();
+          if (act === "toggle") {
+            dock.open = !dock.open;
+            save();
+            paint();
+            window.dispatchEvent(new Event("resize"));
+            return;
+          }
+          if (act === "roll-add") { rollOpen = !rollOpen; paint(); return; }
+          if (act === "hero-add") { heroOpen = !heroOpen; paint(); return; }
+          if (act === "note-add") { noteOpen = !noteOpen; paint(); return; }
+          if (button.hasAttribute("data-dock-throw")) {
+            const pin = (state.pins || []).find(function (row) { return row.id === button.getAttribute("data-dock-throw"); });
+            if (pin) publishRoll(pin);
+            return;
+          }
+          if (button.hasAttribute("data-dock-unpin-roll")) {
+            dropRoll(button.getAttribute("data-dock-unpin-roll")).then(paint, function (error) { err.textContent = error.message; });
+            return;
+          }
+          if (act === "roll-throw" || act === "roll-save") {
+            const spec = rollSpec();
+            if (act === "roll-throw") publishRoll(spec);
+            if (act === "roll-save") saveRoll(spec).then(function () { rollOpen = false; paint(); }, function (error) { err.textContent = error.message; });
+            return;
+          }
+          if (button.hasAttribute("data-dock-hero")) {
+            const hero = heroes().find(function (row) { return row && row.id === button.getAttribute("data-dock-hero"); });
+            if (hero) openHeroRoll(hero, button);
+            return;
+          }
+          if (button.hasAttribute("data-dock-add-hero")) {
+            const hid = button.getAttribute("data-dock-add-hero");
+            if (dock.heroes.indexOf(hid) < 0) dock.heroes.unshift(hid);
+            heroOpen = false;
+            save();
+            paint();
+            return;
+          }
+          if (button.hasAttribute("data-dock-unpin-hero")) {
+            const hid = button.getAttribute("data-dock-unpin-hero");
+            dock.heroes = dock.heroes.filter(function (row) { return row !== hid; });
+            save();
+            paint();
+            return;
+          }
+          if (act === "note-take") {
+            const pick = root.querySelector("[data-dock-note-pick]");
+            const nid = pick && pick.value;
+            if (nid && dock.notes.indexOf(nid) < 0) dock.notes.unshift(nid);
+            noteOpen = false;
+            save();
+            paint();
+            return;
+          }
+          if (act === "note-create") {
+            const name = (root.querySelector("[data-dock-new-name]").value || "").trim() || "Заметка";
+            const text = root.querySelector("[data-dock-new-text]").value || "";
+            const note = { id: crypto.randomUUID(), name: name, text: text };
+            shelf().notes.push(note);
+            dock.notes.unshift(note.id);
+            noteOpen = false;
+            save();
+            paint();
+            return;
+          }
+          if (button.hasAttribute("data-dock-unpin-note")) {
+            const nid = button.getAttribute("data-dock-unpin-note");
+            dock.notes = dock.notes.filter(function (row) { return row !== nid; });
+            save();
+            paint();
+          }
+        };
+        root.querySelectorAll("[data-dock-note], [data-dock-name]").forEach(function (field) {
+          field.addEventListener("input", function () {
+            const nid = field.getAttribute("data-dock-note") || field.getAttribute("data-dock-name");
+            const note = notes().find(function (row) { return row && row.id === nid; });
+            if (!note) return;
+            if (field.hasAttribute("data-dock-note")) note.text = field.value;
+            else note.name = field.value;
+            clearTimeout(noteTimer);
+            noteTimer = setTimeout(save, 400);
+          });
+        });
+        const adv = root.querySelector("[data-dock-roll-adv]");
+        const dis = root.querySelector("[data-dock-roll-dis]");
+        if (adv && dis) {
+          adv.addEventListener("change", function () { if (adv.checked) dis.checked = false; });
+          dis.addEventListener("change", function () { if (dis.checked) adv.checked = false; });
+        }
+      }
+      window.ShirmoDock = { paint: paint };
+      document.addEventListener("pointerdown", function (event) {
+        const menu = document.getElementById("dock-hero-roll");
+        if (!menu || menu.contains(event.target)) return;
+        if (event.target.closest && event.target.closest("[data-dock-hero]")) return;
+        closeHeroRoll();
+      });
+      paint();
+    }
     const kebabBtn = app.querySelector("#top-kebab");
     const kebabMenu = app.querySelector("#kebab-menu");
     function setKebab(open) {
