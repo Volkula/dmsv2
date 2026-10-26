@@ -1512,6 +1512,7 @@
             const fight = window.ShirmoBattle && window.ShirmoBattle.ensure(state.campaign);
             if (fight) fight.screen = true;
             showModule("battle");
+            if (!markerId) return;
             const host = app.querySelector("#work-battle");
             if (host && host._battleFocus) host._battleFocus(markerId);
           },

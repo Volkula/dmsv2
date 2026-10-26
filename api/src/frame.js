@@ -282,7 +282,6 @@ function projectMap(page, campaign) {
       x: unit(item.x),
       y: unit(item.y),
       kind: kind,
-      battle: kind === "foe" || !!(npc && npc.role === "enemy"),
       capTop: item.capTop === true,
       tip: clip(item.tip, 400),
       pinSize: Math.min(160, Math.max(12, Number(item.pinSize) || (portrait ? 56 : (item.kind === "mark" && (item.icon || item.emoji) ? 36 : 14)))),
@@ -562,36 +561,12 @@ export function playAction(campaign, op, rawId) {
   if (op === "fight") {
     const battle = campaign.battle;
     if (!battle || !Array.isArray(battle.actors)) return null;
-    const rows = battle.actors.map(function (actor, index) {
-      return { actor: actor, index: index };
-    }).filter(function (row) {
-      return row.actor && String(row.actor.name || "").trim();
-    }).sort(function (a, b) {
-      const diff = (Number(b.actor.init) || 0) - (Number(a.actor.init) || 0);
-      return diff || a.index - b.index;
+    const named = battle.actors.some(function (actor) {
+      return actor && String(actor.name || "").trim();
     });
-    if (!rows.length) return null;
+    if (!named) return null;
     battle.screen = true;
-    let actorId = "";
-    if (wanted) {
-      const pages = Array.isArray(campaign.pages) ? campaign.pages : [];
-      let linked = "";
-      pages.forEach(function (page) {
-        (page.views || []).forEach(function (view) {
-          (view.markers || []).forEach(function (marker) {
-            if (marker && marker.id === wanted) linked = marker.actorId || "";
-          });
-        });
-      });
-      const at = rows.findIndex(function (row) {
-        return row.actor.markerId === wanted || (linked && row.actor.id === linked);
-      });
-      if (at >= 0) {
-        battle.turn = at;
-        actorId = rows[at].actor.id || "";
-      }
-    }
-    return { op: "fight", id: wanted, actorId: actorId };
+    return { op: "fight", id: "" };
   }
   if (op === "turn") {
     const battle = campaign.battle;

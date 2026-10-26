@@ -315,7 +315,7 @@
     const caption = '<b style="' + captionCss(item, 14) + '">' + esc(item.name || (kind === "loc" ? "Локация" : "Без имени")) + "</b>" + hp;
     const named = kind === "loc" ? ' aria-label="' + esc(oneLine(item.name) || "Локация") + '"' : "";
     const cap = item.capTop ? " cap-top" : "";
-    const fight = kind === "foe" || item.battle ? ' data-battle="1" title="В бой"' : "";
+    const fight = kind === "mark" ? ' data-battle="1" title="Открыть экран боя"' : "";
     return '<button type="button" class="map-pin ' + kind + cap + (portrait ? " has-face" : "") + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="' + kind + '"' + named + fight + ' style="left:' + (item.x * 100) + "%;top:" + (item.y * 100) + "%;--pin:" + size + 'px">' + marks + vitals + dot + caption + tip + "</button>";
   }
 
@@ -781,10 +781,7 @@
             emoji: face.emoji || ""
           }) : item;
           const vitals = heroSheet(item);
-          const base = vitals ? Object.assign({}, faced, vitals) : faced;
-          const person = item.npcId && (book().npcs || []).find(function (row) { return row && row.id === item.npcId; });
-          const fight = item.kind === "foe" || (person && person.role === "enemy");
-          return fight ? Object.assign({}, base, { battle: true }) : base;
+          return vitals ? Object.assign({}, faced, vitals) : faced;
         }),
         labels: onLevel(current.labels, here, "locId"),
         strokes: onLevel(current.strokes, here, "locId").concat(draft)
@@ -3616,12 +3613,6 @@
       if (past.length && past[past.length - 1] === now) past.pop();
       else ctx.save();
     }
-    function enemyMarker(id) {
-      const row = (view().markers || []).find(function (item) { return item && item.id === id; });
-      if (!row || row.kind !== "npc") return false;
-      const npc = row.npcId && (book().npcs || []).find(function (item) { return item && item.id === row.npcId; });
-      return !!(npc && npc.role === "enemy");
-    }
     function onUp(event) {
       if (event && event.button === 2) return;
       if (event && event.button === 1) {
@@ -3637,10 +3628,14 @@
         press = null;
         if (open && kind === "loc") enter(id);
         else if (open && kind === "hero") openHeroRoll(id);
-        else if (open && (kind === "foe" || (kind === "npc" && enemyMarker(id)))) {
-          if (ctx.openBattle) ctx.openBattle(id);
+        else if (open && kind === "npc") {
+          const row = (view().markers || []).find(function (item) { return item && item.id === id; });
+          const npc = row && row.npcId && (book().npcs || []).find(function (item) { return item && item.id === row.npcId; });
+          if (!npc || npc.role !== "enemy") openTalk(id);
         }
-        else if (open && kind === "npc") openTalk(id);
+        else if (open && kind === "mark") {
+          if (ctx.openBattle) ctx.openBattle();
+        }
         else if (open && kind === "image") {
           const row = (view().markers || []).find(function (item) { return item && item.id === id; });
           const url = row && (row.url || row.icon);
