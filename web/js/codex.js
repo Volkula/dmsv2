@@ -138,6 +138,88 @@ window.ShirmoCodex = (function () {
     return "/catalog/img/monsters/" + encodeURIComponent(file);
   }
 
+  function writePortrait(person, url) {
+    if (!person) return;
+    if (window.ShirmoNpc) {
+      window.ShirmoNpc.apply(person);
+      person.portrait = url || "";
+      window.ShirmoNpc.write(person);
+      return;
+    }
+    person.portrait = url || "";
+  }
+
+  function pickMonsterFace(onPick, people) {
+    const old = document.getElementById("face-pop");
+    if (old) old.remove();
+    const seen = {};
+    const own = [];
+    (people || []).forEach(function (row) {
+      if (!row || !row.portrait || seen[row.portrait]) return;
+      seen[row.portrait] = true;
+      own.push(row);
+    });
+    const pop = document.createElement("div");
+    pop.id = "face-pop";
+    pop.className = "pop";
+    const ownHtml = own.length
+      ? '<p class="note">Уже в справочнике</p><div class="item-hits">' + own.slice(0, 40).map(function (row, index) {
+        return '<button type="button" data-own-face="' + index + '"><img alt="" src="' + esc(row.portrait) + '">' + esc(row.name || "Без имени") + "</button>";
+      }).join("") + "</div>"
+      : "";
+    pop.innerHTML = '<div class="pop-card item-pop" role="dialog" aria-label="Портрет из справочника">' +
+      '<div class="pop-head"><h2>Портрет из справочника</h2><button type="button" data-pop-close title="Закрыть" aria-label="Закрыть">×</button></div>' +
+      ownHtml +
+      '<label title="Найти монстра и взять его портрет">Монстр<input data-face-q type="text" placeholder="Две буквы и больше" autocomplete="off"></label>' +
+      '<div class="item-hits" data-face-hits></div></div>';
+    document.body.appendChild(pop);
+    function close() { if (pop.parentNode) pop.remove(); }
+    function use(url) {
+      if (!url) return;
+      close();
+      if (onPick) onPick(url);
+    }
+    pop.addEventListener("click", function (event) {
+      if (event.target === pop) close();
+      const ownBtn = event.target.closest("[data-own-face]");
+      if (ownBtn && pop.contains(ownBtn)) {
+        const row = own[Number(ownBtn.getAttribute("data-own-face"))];
+        if (row) use(row.portrait);
+        return;
+      }
+      const hit = event.target.closest("[data-face-hit]");
+      if (!hit || !pop.contains(hit)) return;
+      const box = pop.querySelector("[data-face-hits]");
+      const monster = box && box._hits && box._hits[Number(hit.getAttribute("data-face-hit"))];
+      if (monster) use(monsterImg(monster));
+    });
+    pop.querySelector("[data-pop-close]").addEventListener("click", close);
+    const input = pop.querySelector("[data-face-q]");
+    input.addEventListener("input", function () {
+      const q = input.value.trim().toLowerCase();
+      const box = pop.querySelector("[data-face-hits]");
+      if (q.length < 2) {
+        box.innerHTML = "";
+        box._hits = [];
+        return;
+      }
+      loadCatalog().then(function () {
+        if (!pop.parentNode || !window.allMonsters) return;
+        const hits = window.allMonsters.filter(function (row) {
+          return String(row.name || "").toLowerCase().indexOf(q) >= 0 && monsterImg(row);
+        }).slice(0, 12);
+        box._hits = hits;
+        box.innerHTML = hits.length ? hits.map(function (row, index) {
+          const img = monsterImg(row);
+          return '<button type="button" data-face-hit="' + index + '">' +
+            (img ? '<img alt="" src="' + esc(img) + '" onerror="this.remove()">' : "") +
+            esc(ruTitle(row.name) || row.name || "") + "</button>";
+        }).join("") : '<p class="note">Ничего не найдено.</p>';
+      });
+    });
+    input.focus();
+  }
+
   function ruTitle(name) {
     return String(name || "").replace(/\s*\([^)]*\)\s*$/, "").trim();
   }
@@ -1377,7 +1459,7 @@ window.ShirmoCodex = (function () {
       const parentLine = parent ? '<p class="note">Внутри: ' + esc(parent.name || "Место") + "</p>" : "";
       const scene = place.backdrop
         ? '<div class="npc-scene" data-full="' + esc(place.backdrop) + '" data-thumb="' + esc(place.backdropThumb || "") + '" data-slot="backdrop" data-i="' + index + '">' +
-          '<img class="place-backdrop" alt=""' + (place.backdropThumb ? ' src="' + esc(place.backdropThumb) + '"' : "") + ">"
+        '<img class="place-backdrop" alt=""' + (place.backdropThumb ? ' src="' + esc(place.backdropThumb) + '"' : "") + ">"
         : '<div class="npc-scene">';
       const face = place.portrait
         ? '<button type="button" class="npc-portrait" data-act="face" data-i="' + index + '" data-full="' + esc(place.portrait) + '" data-thumb="' + esc(place.portraitThumb || "") + '" data-slot="portrait" title="Настроить, какая часть изображения видна"><img alt=""' + (place.portraitThumb ? ' src="' + esc(place.portraitThumb) + '"' : "") + ' style="' + faceStyle(place) + '"></button>'
@@ -1820,15 +1902,16 @@ window.ShirmoCodex = (function () {
         const pack = squadOfNpc(row.id);
         const squadLine = isPerson(tab)
           ? '<div class="codex-row"><label title="Перенести в отряд">Отряд<select data-move-enemy="' + esc(row.id) + '" aria-label="Отряд">' +
-            squadPickOptions(pack && pack.id) + "</select></label>" +
-            '<button type="button" data-act="squad-new" data-npc="' + esc(row.id) + '" title="Создать новый отряд">Новый</button>' +
-            (pack ? '<button type="button" data-act="squad-copy" data-npc="' + esc(row.id) + '" title="Скопировать в этот же отряд">Копия</button>' : "") +
-            "</div>"
+          squadPickOptions(pack && pack.id) + "</select></label>" +
+          '<button type="button" data-act="squad-new" data-npc="' + esc(row.id) + '" title="Создать новый отряд">Новый</button>' +
+          (pack ? '<button type="button" data-act="squad-copy" data-npc="' + esc(row.id) + '" title="Скопировать в этот же отряд">Копия</button>' : "") +
+          "</div>"
           : "";
         return '<article class="npc-card" data-npc="' + esc(row.id) + '" title="ПКМ — перенести на место"><div class="npc-scene"' + scene + ">" + face + badge +
           '<div class="npc-pics">' +
           '<span class="place-pair"><label class="file-btn" title="Загрузить свой портрет">' + FACE + '<input type="file" accept="image/*" data-pic="portrait" data-i="' + index + '" aria-label="Портрет"></label>' +
           '<button type="button" class="icon-btn" data-act="clear-pic" data-pic="portrait" data-i="' + index + '"' + (row.portrait ? "" : " disabled") + ' title="Убрать портрет" aria-label="Убрать портрет">' + CROSS + "</button></span>" +
+          (tab === "enemy" ? '<button type="button" data-act="foe-face" data-i="' + index + '" title="Взять портрет из справочника: уже сохранённый или портрет монстра">Справочник</button>' : "") +
           '<span class="place-pair"><label class="file-btn" title="Загрузить свой фон карточки">' + SCENE + '<input type="file" accept="image/*" data-pic="backdrop" data-i="' + index + '" aria-label="Фон"></label>' +
           '<button type="button" class="icon-btn" data-act="clear-pic" data-pic="backdrop" data-i="' + index + '"' + (row.backdrop ? "" : " disabled") + ' title="Убрать фон" aria-label="Убрать фон">' + CROSS + "</button></span>" +
           "</div></div>" +
@@ -1944,7 +2027,7 @@ window.ShirmoCodex = (function () {
             job.row[job.slot + "Thumb"] = url;
             saveSoon();
           }
-        }).catch(function () {}).then(function () {
+        }).catch(function () { }).then(function () {
           thumbBusy = false;
           pumpThumb();
         });
@@ -2125,7 +2208,7 @@ window.ShirmoCodex = (function () {
           }).join("") + "</div></div>" : "") +
         (tab === "squads" ? '<div class="codex-tools">' + squad + "</div>" : "") +
         body +
-        '<p class="error" id="codex-err"></p></div><footer class="codex-foot">Использованы материалы с сайта <a href="https://tentaculus.ru/">tentaculus.ru</a>, CC BY-NC-SA 3.0.</footer>';
+        '<p class="error" id="codex-err"></p></div><footer class="codex-foot">.</footer>';
       if (catalogKind()) paintResults();
       const main = host.querySelector(".codex-main");
       if (main && tab === "places" && codexScroll) main.scrollTop = codexScroll;
@@ -2987,7 +3070,7 @@ window.ShirmoCodex = (function () {
         '<div class="ware-edit-face">' + face + "</div>" +
         (window.ShirmoItems
           ? '<label class="ware-ink" title="Редкость задаёт цвет строки">Редкость<select data-edit-rarity aria-label="Редкость">' +
-            window.ShirmoItems.rarityOptions(item.rarity) + "</select></label>"
+          window.ShirmoItems.rarityOptions(item.rarity) + "</select></label>"
           : "") +
         '<label class="file-btn" title="Своя иконка. Попадёт в библиотеку, в раздел «Иконки товаров»">' + upload + '<input data-edit-file type="file" accept="image/*" aria-label="Загрузить иконку"></label>' +
         '<select data-edit-lib title="Иконка из библиотеки" aria-label="Иконка из библиотеки"><option value="">Библиотека</option>' + lib + "</select>" +
@@ -3173,6 +3256,17 @@ window.ShirmoCodex = (function () {
         place.pinned = !place.pinned;
         paint();
         saveSoon();
+        return;
+      }
+      if (act === "foe-face") {
+        const row = list()[Number(button.getAttribute("data-i"))];
+        if (!row) return;
+        pickMonsterFace(function (url) {
+          writePortrait(row, url);
+          paint();
+          saveSoon();
+          refreshMap();
+        }, book().npcs);
         return;
       }
       if (act === "rehome") {
@@ -3704,5 +3798,5 @@ window.ShirmoCodex = (function () {
     paint();
   }
 
-  return { mount: mount, ensure: ensure, adopt: adopt };
+  return { mount: mount, ensure: ensure, adopt: adopt, pickMonsterFace: pickMonsterFace, writePortrait: writePortrait };
 })();

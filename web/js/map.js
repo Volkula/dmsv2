@@ -2537,6 +2537,10 @@
           '<label title="Формула урона, например 1d6+1">Урон<input id="foe-damage" type="text" value="' + esc(item.damage || "1d6") + '"></label>' +
           '<div class="row"><button type="button" data-act="foe-attack" title="Бросок атаки от имени врага. Игроки видят кубик">Атака</button><button type="button" data-act="foe-damage" title="Бросок урона от имени врага. Игроки видят кубик">Урон</button></div>'
         : "";
+      const foeFace = kind === "foe"
+        ? (item.portrait ? '<img class="loc-shot" alt="" src="' + esc(item.portrait) + '">' : '<p class="note">Портрета пока нет.</p>') +
+          '<button type="button" data-act="foe-face" title="Взять портрет из справочника: уже сохранённый или портрет монстра">Из справочника</button>'
+        : "";
       function group(title, tip, body, open) {
         return body ? '<details class="drop"' + (open ? " open" : "") + '><summary title="' + esc(tip) + '">' + title + "</summary>" + body + "</details>" : "";
       }
@@ -2557,7 +2561,7 @@
           '<label title="Размер цифр над портретом">Размер<input id="vital-size" type="range" min="10" max="28" value="' + (Number(item.vitalSize) || 13) + '"></label>'
         : "";
       return '<div class="pin-style">' +
-        group("Портрет", "Кадр, крупность и сдвиг портрета", frame || locShot) +
+        group("Портрет", "Кадр, крупность и сдвиг портрета", foeFace || frame || locShot, kind === "foe") +
         group("Картинка", "Файл и библиотека", imageShot, true) +
         sheet +
         group("Бой", "Хиты, броня и броски от имени врага", foeBox, true) +
@@ -2879,6 +2883,21 @@
           if (row && selected) pickHome(selected.kind, selected.id, pin);
         }
         if (act === "foe-attack" || act === "foe-damage") rollFoe(act === "foe-damage");
+        if (act === "foe-face" && window.ShirmoCodex && window.ShirmoCodex.pickMonsterFace) {
+          const row = findItem();
+          if (!row) return;
+          window.ShirmoCodex.pickMonsterFace(function (url) {
+            row.portrait = url;
+            if (!row.pinSize) row.pinSize = 56;
+            const personId = markerPersonId(row);
+            const person = personId && (book().npcs || []).find(function (one) { return one && one.id === personId; });
+            if (person && window.ShirmoCodex.writePortrait) window.ShirmoCodex.writePortrait(person, url);
+            syncFoe(row);
+            paintBoard();
+            dirty();
+            closeMenu();
+          }, book().npcs);
+        }
       });
       function syncFoe(row) {
         const battle = ctx.campaign && ctx.campaign.battle;

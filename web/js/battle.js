@@ -800,7 +800,10 @@
       }
       if (has("ac")) person.ac = Number(actor.ac) || person.ac || 0;
       if (has("bonus")) person.bonus = Number(actor.bonus) || person.bonus || 0;
-      if (has("portrait") && actor.portrait) person.portrait = actor.portrait;
+      if (has("portrait") && actor.portrait) {
+        if (window.ShirmoCodex && window.ShirmoCodex.writePortrait) window.ShirmoCodex.writePortrait(person, actor.portrait);
+        else person.portrait = actor.portrait;
+      }
     }
 
     function personScore(person) {
@@ -1118,8 +1121,10 @@
       const face = actor.portrait
         ? '<img alt="" src="' + esc(actor.portrait) + '">'
         : sideIcon(actor.side);
-      return '<label class="fight-face" style="--ink:' + esc(actorInk(actor)) + '" title="Загрузить портрет. Картинка попадёт в библиотеку">' + face + markIcons(actor.marks) +
-        '<input type="file" accept="image/*" data-face="' + esc(actor.id) + '" aria-label="Портрет ' + esc(actor.name || "") + '"></label>';
+      const book = actor.side === "player" ? ""
+        : '<button type="button" class="foe-face-book" data-act="foe-face" data-id="' + esc(actor.id) + '" title="Выбрать портрет из справочника">Справочник</button>';
+      return '<div class="fight-face-box"><label class="fight-face" style="--ink:' + esc(actorInk(actor)) + '" title="Загрузить портрет. Картинка попадёт в библиотеку">' + face + markIcons(actor.marks) +
+        '<input type="file" accept="image/*" data-face="' + esc(actor.id) + '" aria-label="Портрет ' + esc(actor.name || "") + '"></label>' + book + "</div>";
     }
 
     function initBonusOf(actor) {
@@ -1759,6 +1764,16 @@
           save();
           paint();
         }
+      }
+      if (act === "foe-face") {
+        const actor = battle.actors.find(function (row) { return row.id === button.getAttribute("data-id"); });
+        if (!actor || !window.ShirmoCodex || !window.ShirmoCodex.pickMonsterFace) return;
+        window.ShirmoCodex.pickMonsterFace(function (url) {
+          actor.portrait = url;
+          syncPerson(actor, ["portrait"]);
+          save();
+          paint();
+        }, book().npcs);
       }
       if (act === "init") {
         battle.actors.forEach(function (actor) {
