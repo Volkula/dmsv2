@@ -546,7 +546,7 @@
 
     function currentFoe(from) {
       if (from && from.targetId) {
-        const picked = battle.actors.find(function (row) { return row.id === from.targetId && !row.dead; });
+        const picked = battle.actors.find(function (row) { return row.id === from.targetId; });
         if (picked) return picked;
       }
       const list = rows();
@@ -1098,7 +1098,7 @@
         '<button type="button" data-act="init" title="Бросить инициативу всем на ширме, без показа кубиков">Инициатива всем</button>' +
         '<button type="button" data-act="place" title="Поставить врагов на текущую карту. Игроки их не видят, пока не снимете скрытие">На карту</button>' +
         '<button type="button" data-act="pull-hp" title="Подтянуть хиты и характеристики из справочника по имени">ХП из справочника</button></div></div>' +
-        '<p class="note">«Атаковать» — бросок по КД цели, при попадании сразу урон и снятие хитов. Средняя кнопка — боец, черта или отряд. Правая по бойцу — статус. к20 — инициатива.</p>' +
+        '<p class="note">«Атака» у портрета спрашивает, кого бить, и сравнивает бросок с КД. Герой может выбрать союзника или себя. Средняя кнопка — боец, черта или отряд. Правая по бойцу — статус. к20 — инициатива.</p>' +
         toneHtml();
     }
 
@@ -1148,8 +1148,8 @@
       const hp = Math.max(0, Math.min(max, Math.round(Number(actor.hp) || 0)));
       const open = openId === actor.id;
       const main = '<tr class="' + (now && actor.id === now.id ? "is-on" : "") + (actor.dead ? " is-dead" : "") + '" data-fighter="' + esc(actor.id) + '" data-board="' + esc(groupId) + '">' +
-        '<td><button type="button" data-act="row-attack" data-id="' + esc(actor.id) + '" title="Атака этого бойца">Атака</button></td>' +
         "<td>" + faceBox(actor) + "</td>" +
+        '<td><button type="button" data-act="row-attack" data-id="' + esc(actor.id) + '" title="Выбрать, кого бьёт этот боец. Бросок сравнивается с КД цели">Атака</button></td>' +
         '<td class="init-cell"><input data-q="init" data-id="' + esc(actor.id) + '" class="num" type="number" value="' + esc(String(actor.init || 0)) + '" aria-label="Инициатива" title="Итог инициативы">' +
         '<input data-q="initBonus" data-id="' + esc(actor.id) + '" class="num init-bonus" type="number" value="' + esc(String(initBonusOf(actor))) + '" aria-label="Бонус инициативы" title="Бонус к броску к20">' +
         '<button type="button" data-act="roll-init" data-id="' + esc(actor.id) + '" title="' + esc(initRollTitle(actor)) + '">' + esc(initRollLabel(actor)) + "</button></td>" +
@@ -1193,18 +1193,30 @@
       return rowsHtml || '<tr><td colspan="9">Бой пуст. Средняя кнопка мыши добавляет бойца.</td></tr>';
     }
 
+    function masterRail(now) {
+      const actors = rows().map(function (row) { return row.actor; });
+      const style = "--b-player:" + esc(battle.player || "#3ecf78") + ";--b-foe:" + esc(battle.foe || "#e4533e") + ";--b-brass:" + esc(battle.brass || "#e6c36a");
+      return '<div class="battle-screen master-rail" style="' + style + '">' +
+        '<p class="fight-round"><span>Раунд</span><b>' + esc(String(battle.round || 1)) + "</b></p>" +
+        '<div class="battle-track">' + trackHtml(actors, true, now && now.id) + "</div>" +
+        bossHtml(actors, true) +
+        "</div>";
+    }
+
     function paint() {
       if (!alive) return;
       const now = active();
       const prev = host.querySelector(".battle-sheet");
       const scroll = prev ? prev.scrollTop : 0;
-      host.innerHTML = '<div class="battle-desk"><section class="battle-sheet">' + toolsHtml(now) +
+      host.innerHTML = '<div class="battle-desk">' + masterRail(now) +
+        '<section class="battle-sheet">' + toolsHtml(now) +
         '<table class="cast queue-table fight-table"><thead><tr><th></th><th></th><th>Число</th><th>Имя</th><th title="Класс доспеха">КД</th><th>Хиты</th><th></th><th></th><th></th></tr></thead><tbody>' +
         sheetHtml(now) + "</tbody></table></section>" +
         '<aside class="battle-log-pane"><label>Лог боя<textarea id="battle-log">' + esc(logText(battle.log)) + "</textarea></label></aside></div>";
       const sheet = host.querySelector(".battle-sheet");
       if (sheet) sheet.scrollTop = scroll;
       bind();
+      revealActive(host.querySelector(".master-rail"));
     }
 
     function loadItems() {
@@ -1301,6 +1313,30 @@
         const name = String(arm.name || "").trim().toLowerCase();
         return name && name !== "атака";
       });
+    }
+
+    function openAttackPick(actor) {
+      armsOf(actor);
+      const arms = actor.weapons || [];
+      const armHtml = arms.length > 1
+        ? '<label title="Чем бить">Чем<select id="atk-arm">' + arms.map(function (arm) {
+          const on = arm.id === actor.armId || (!actor.armId && arm.name === actor.weapon);
+          const bonus = Math.round(Number(arm.bonus) || 0);
+          return '<option value="' + esc(arm.id) + '"' + (on ? " selected" : "") + ">" +
+            esc(arm.name || "Атака") + " · " + (bonus > 0 ? "+" : "") + bonus + "</option>";
+        }).join("") + "</select></label>"
+        : "";
+      const list = rows().map(function (row) { return row.actor; });
+      const html = list.length ? list.map(function (row) {
+        const ac = Math.max(0, Math.round(Number(row.ac) || 10));
+        const self = row.id === actor.id;
+        return '<button type="button" data-target="' + esc(row.id) + '"><b>' + esc(row.name || "—") +
+          (self ? " · себя" : "") + (row.dead ? " †" : "") + "</b><span>КД " + ac + "</span></button>";
+      }).join("") : '<p class="note">В бою никого нет.</p>';
+      openPop("Кого бьёт " + (actor.name || "боец"), armHtml +
+        '<p class="note">Бросок к20 сравнивается с классом доспеха. Попадание сразу снимает хиты.</p>' +
+        '<div class="battle-hits">' + html + "</div>");
+      popActorId = actor.id;
     }
 
     function openQuickAttack() {
@@ -1841,7 +1877,7 @@
         const box = button.getBoundingClientRect();
         popX = box.right + 6;
         popY = box.top;
-        openQuickArms(actor);
+        openAttackPick(actor);
       }
     }
 
@@ -1886,6 +1922,24 @@
           save();
           paint();
         }
+        return;
+      }
+      const targetBtn = event.target.closest("[data-target]");
+      if (targetBtn && pop && pop.contains(targetBtn)) {
+        const actor = popActor();
+        const foe = battle.actors.find(function (row) { return row.id === targetBtn.getAttribute("data-target"); });
+        if (!actor || !foe) return;
+        const armPick = pop.querySelector("#atk-arm");
+        if (armPick) {
+          const arm = armsOf(actor).find(function (row) { return row.id === armPick.value; });
+          if (arm) {
+            useArm(actor, arm);
+            actor.armId = arm.id;
+          }
+        }
+        actor.targetId = foe.id;
+        closePop();
+        attack(actor);
         return;
       }
       const whoBtn = event.target.closest("[data-attacker]");
