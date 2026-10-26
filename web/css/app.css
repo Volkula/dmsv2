@@ -1366,6 +1366,20 @@ label.check input { width: auto; }
 
 .pin-flags .flag svg { width: 13px; height: 13px; display: block; }
 
+.pin-vitals {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 0 0 3px;
+  font-size: 13px;
+  line-height: 1;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px #000, 0 0 4px #000;
+  pointer-events: none;
+}
+.pin-vitals em { font-style: normal; color: #e6c36a; }
+.pin-vitals b { color: #f6efe0; font-weight: 700; }
+
 .map-photo {
   position: absolute;
   inset: 0;

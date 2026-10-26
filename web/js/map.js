@@ -296,9 +296,19 @@
       ? '<span class="pin-flags">' + flagMark("screen", shownScreen(item)) + flagMark("map", shownMap(item)) + "</span>"
       : "";
     const hp = master && kind === "foe" && item.hpMax ? '<em class="pin-hp">' + esc(String(item.hp == null ? item.hpMax : item.hp)) + "/" + esc(String(item.hpMax)) + "</em>" : "";
+    const vitals = master && kind === "hero" ? heroVitalsHtml(item) : "";
     const caption = '<b style="' + captionCss(item, 14) + '">' + esc(item.name || (kind === "loc" ? "Локация" : "Без имени")) + "</b>" + hp;
     const named = kind === "loc" ? ' aria-label="' + esc(item.name || "Локация") + '"' : "";
-    return '<button type="button" class="map-pin ' + kind + (portrait ? " has-face" : "") + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="' + kind + '"' + named + ' style="left:' + (item.x * 100) + "%;top:" + (item.y * 100) + "%;--pin:" + size + 'px">' + marks + dot + caption + tip + "</button>";
+    return '<button type="button" class="map-pin ' + kind + (portrait ? " has-face" : "") + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="' + kind + '"' + named + ' style="left:' + (item.x * 100) + "%;top:" + (item.y * 100) + "%;--pin:" + size + 'px">' + marks + vitals + dot + caption + tip + "</button>";
+  }
+
+  function heroVitalsHtml(item) {
+    function cell(label, value, title) {
+      if (value == null || value === "") return "";
+      return '<em title="' + esc(title) + '">' + label + " <b>" + esc(String(value)) + "</b></em>";
+    }
+    const body = cell("КД", item.ac, "Класс доспеха") + cell("ХП", item.hp, "Текущие хиты") + cell("ВС", item.pp, "Пассивное восприятие");
+    return body ? '<span class="pin-vitals">' + body + "</span>" : "";
   }
 
   function labelHtml(item) {
@@ -722,14 +732,15 @@
         }),
         markers: onLevel(current.markers, here, "locId").map(function (item) {
           const face = faceOf(item);
-          if (!face) return item;
-          return Object.assign({}, item, {
+          const faced = face ? Object.assign({}, item, {
             portrait: face.url,
             portraitX: face.x,
             portraitY: face.y,
             portraitZoom: face.zoom,
             emoji: face.emoji || ""
-          });
+          }) : item;
+          const vitals = heroSheet(item);
+          return vitals ? Object.assign({}, faced, vitals) : faced;
         }),
         labels: onLevel(current.labels, here, "locId"),
         strokes: onLevel(current.strokes, here, "locId").concat(draft)
@@ -737,6 +748,28 @@
       if (window.ShirmoFit) window.ShirmoFit(board);
       const stage = board.querySelector(".stage");
       if (stage) stage.classList.toggle("is-erase", tool === "erase");
+    }
+    function heroSheet(item) {
+      if (!item || item.kind !== "hero" || !item.heroId) return null;
+      const hero = (book().heroes || []).find(function (row) { return row && row.id === item.heroId; });
+      if (!hero) return null;
+      const perc = (hero.skills || []).find(function (skill) {
+        if (!skill) return false;
+        const name = String(skill.name || "").trim().toLowerCase();
+        return skill.id === "perception" || name === "восприятие" || name === "внимательность";
+      });
+      let pp = null;
+      if (perc) pp = 10 + Math.round(Number(perc.bonus) || 0);
+      else {
+        const wis = (hero.stats || []).find(function (stat) { return stat && stat.id === "wis"; });
+        if (wis) pp = 10 + Math.round(Number(wis.mod) || 0);
+      }
+      const hp = hero.hp != null && hero.hp !== "" ? Math.round(Number(hero.hp) || 0) : null;
+      return {
+        ac: Math.round(Number(hero.ac) || 0),
+        hp: hp,
+        pp: pp
+      };
     }
     function paintTools() {
       host.querySelector("#map-tools").innerHTML = TOOLS.map(function (item) {
