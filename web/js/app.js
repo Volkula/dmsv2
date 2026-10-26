@@ -848,14 +848,17 @@
       view.addEventListener("click", function (event) {
         const back = event.target.closest && event.target.closest("[data-up]");
         const loc = !back && event.target.closest && event.target.closest('.map-pin[data-kind="loc"]');
+        const foe = !back && !loc && event.target.closest && event.target.closest(".map-pin[data-battle]");
         const turn = event.target.closest && event.target.closest(".play-battle [data-go]");
-        if (!back && !loc && !turn) return;
+        if (!back && !loc && !foe && !turn) return;
         event.preventDefault();
         if (busy) return;
         busy = true;
         const body = turn
           ? { op: "turn", id: turn.getAttribute("data-go") || "" }
-          : { op: "enter", id: (back ? back.getAttribute("data-up") : loc.getAttribute("data-pin")) || "" };
+          : foe
+            ? { op: "fight", id: foe.getAttribute("data-pin") || "" }
+            : { op: "enter", id: (back ? back.getAttribute("data-up") : loc.getAttribute("data-pin")) || "" };
         fetch("/api/rooms/" + id + "/play", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -1505,7 +1508,13 @@
             });
           },
           roll: publishRoll,
-          openBattle: function (markerId) { showModule("battle"); const host = app.querySelector("#work-battle"); if (host && host._battleFocus) host._battleFocus(markerId); },
+          openBattle: function (markerId) {
+            const fight = window.ShirmoBattle && window.ShirmoBattle.ensure(state.campaign);
+            if (fight) fight.screen = true;
+            showModule("battle");
+            const host = app.querySelector("#work-battle");
+            if (host && host._battleFocus) host._battleFocus(markerId);
+          },
           ping: function (at, look) {
             return api("/api/rooms/" + id + "/events", {
               method: "POST",
@@ -1940,6 +1949,15 @@
         mapView.talkId = "";
         if (window.ShirmoMap && window.ShirmoMap.sync) window.ShirmoMap.sync();
         return;
+      }
+      if (data.op === "fight" && window.ShirmoBattle) {
+        const fight = window.ShirmoBattle.ensure(state.campaign);
+        fight.screen = true;
+        data = { op: "turn", id: data.actorId || "" };
+        if (!data.id) {
+          if (window.ShirmoBattle.sync) window.ShirmoBattle.sync();
+          return;
+        }
       }
       if (data.op !== "turn") return;
       const battle = state.campaign.battle;

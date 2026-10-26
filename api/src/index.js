@@ -565,9 +565,9 @@ const server = http.createServer(async function (req, res) {
 
     if (req.method === "POST" && tail === "play") {
       const body = await readJson(req, 4000);
-      const op = body.op === "enter" || body.op === "turn" ? body.op : "";
+      const op = body.op === "enter" || body.op === "turn" || body.op === "fight" ? body.op : "";
       const kind = room.frame && room.frame.page && room.frame.page.kind;
-      if (!op || (op === "enter" && kind !== "map") || (op === "turn" && kind !== "battle")) {
+      if (!op || (op === "enter" && kind !== "map") || (op === "fight" && kind !== "map") || (op === "turn" && kind !== "battle")) {
         send(res, 409, { error: "нельзя" });
         return;
       }
@@ -578,7 +578,7 @@ const server = http.createServer(async function (req, res) {
       }
       room.frame = projectFrame(room.campaign);
       writeRoom(room);
-      publish(id, { type: "play", op: done.op, id: done.id });
+      publish(id, { type: "play", op: done.op, id: done.id || "", actorId: done.actorId || "" });
       pushFrame(room);
       send(res, 200, { ok: true });
       return;
