@@ -526,8 +526,12 @@
     const labels = (source.labels || []).map(labelHtml).join("");
     const face = faces(source);
     const bar = master && source.flags ? flagBar(source.flags) : "";
+    const back = !master && source.up != null
+      ? '<button type="button" class="map-back" data-up="' + esc(source.up || "") + '" title="На уровень выше">Назад</button>'
+      : "";
     return (face ? "<style>" + face + "</style>" : "") +
       '<div class="stage map-stage' + (bar ? " has-flags" : "") + '">' +
+      back +
       (master ? tabHtml(source.tabs) : "") +
       bar +
       '<div class="map-photo' + (dim ? " is-night" : "") + '" style="background-image:' + (image ? "url('" + esc(image) + "')" : "none") + '"></div>' +
@@ -3649,7 +3653,15 @@
     window.addEventListener("pointerdown", onDocDown);
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
+    window.ShirmoMap.sync = function () {
+      if (!host.isConnected) return;
+      paintBoard();
+      paintTools();
+      paintTree();
+      paintSelected();
+    };
     host._mapOff = function () {
+      if (window.ShirmoMap) window.ShirmoMap.sync = null;
       window.removeEventListener("pointerdown", onDocDown);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);

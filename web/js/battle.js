@@ -2102,6 +2102,10 @@
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
     document.addEventListener("pointerdown", onDocDown);
+    window.ShirmoBattle.sync = function () {
+      if (!alive || !host.isConnected) return;
+      paint();
+    };
     host._battleFocus = function (markerId) {
       const marker = findMarker(markerId);
       if (!marker) return;
@@ -2132,6 +2136,7 @@
     };
     host._battleOff = function () {
       alive = false;
+      if (window.ShirmoBattle) window.ShirmoBattle.sync = null;
       closeWheel();
       closePop();
       host.removeEventListener("click", onClick);
@@ -2233,7 +2238,7 @@
       ? "background-image:linear-gradient(rgba(6,11,22,.4), rgba(6,11,22,.55)),url('" + esc(page.image) + "');background-size:" + scale + "% auto;background-position:" + x + "% " + y + "%;background-repeat:no-repeat;"
       : "";
     return '<div class="stage play-battle" style="--b-player:' + esc(page.player || "#3ecf78") + ";--b-foe:" + esc(page.foe || "#e4533e") + ";--b-brass:" + esc(page.brass || "#e6c36a") + ";" + image + '">' +
-      screenHtml(actors, active, page.log, false, false, page.round) + "</div>";
+      screenHtml(actors, active, page.log, true, false, page.round) + "</div>";
   }
 
   function placeHero(campaign, hero) {

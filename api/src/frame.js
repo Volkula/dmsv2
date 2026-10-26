@@ -339,10 +339,12 @@ function projectMap(page, campaign) {
       })
     };
   });
+  const parentId = here ? ((locById(here) && locById(here).parentId) || "") : null;
   return {
     id: page.id,
     name: view.name || page.name || "Карта",
     kind: "map",
+    up: parentId,
     day: clip(image, 300),
     night: "",
     mode: image ? "day" : (night ? "night" : "day"),
@@ -473,6 +475,7 @@ function projectBattle(campaign, battle) {
       const hp = Math.max(0, Math.min(hpMax, Math.round(Number(actor.hp) || 0)));
       const tags = Array.isArray(actor.marks) ? actor.marks.filter(function (id) { return marks[id]; }) : [];
       return {
+        id: clip(actor.id, 80),
         name: clip(actor.name, 80),
         side: actor.side === "player" ? "player" : "foe",
         init: Math.round(Number(actor.init) || 0),
@@ -487,6 +490,90 @@ function projectBattle(campaign, battle) {
       };
     })
   };
+}
+
+function playerSpot(page) {
+  const views = Array.isArray(page.views) ? page.views : [];
+  const view = views.find(function (item) { return item && item.id === page.activeViewId; }) || views[0] || null;
+  if (!view) return null;
+  const locations = Array.isArray(view.locations) ? view.locations : [];
+  function locById(locId) {
+    return locations.find(function (item) { return item && item.id === locId; });
+  }
+  function chainTrashed(locId) {
+    let cursor = locId;
+    let guard = 0;
+    while (cursor && guard < 24) {
+      const loc = locById(cursor);
+      if (!loc || loc.trashed) return true;
+      cursor = loc.parentId || "";
+      guard += 1;
+    }
+    return false;
+  }
+  function shownOnScreen(item) {
+    if (!item) return false;
+    if (item.screen === false) return false;
+    if (item.screen === true) return true;
+    return !item.hidden;
+  }
+  let here = view.focusId || "";
+  if (here && !locById(here)) here = "";
+  let guard = 0;
+  while (here && guard < 24) {
+    const loc = locById(here);
+    if (loc && shownOnScreen(loc) && !chainTrashed(here)) break;
+    here = loc ? (loc.parentId || "") : "";
+    guard += 1;
+  }
+  return { view: view, locById: locById, here: here };
+}
+
+export function playAction(campaign, op, rawId) {
+  if (!campaign || typeof campaign !== "object") return null;
+  const wanted = String(rawId || "").slice(0, 80);
+  if (wanted && !/^[\w-]+$/.test(wanted)) return null;
+  if (op === "enter") {
+    const pages = Array.isArray(campaign.pages) ? campaign.pages : [];
+    const page = pages.find(function (item) { return item && item.id === campaign.shownPageId && item.kind === "map"; });
+    if (!page) return null;
+    const spot = playerSpot(page);
+    if (!spot) return null;
+    if (wanted) {
+      const loc = spot.locById(wanted);
+      if (!loc) return null;
+      const child = !loc.trashed && !loc.hidden && (loc.parentId || "") === spot.here;
+      const parentId = spot.here ? ((spot.locById(spot.here) && spot.locById(spot.here).parentId) || "") : "";
+      const back = !!spot.here && wanted === parentId;
+      if (!child && !back) return null;
+      spot.view.focusId = loc.id;
+    } else {
+      if (!spot.here) return null;
+      const parentId = (spot.locById(spot.here) && spot.locById(spot.here).parentId) || "";
+      if (parentId) return null;
+      spot.view.focusId = "";
+    }
+    spot.view.talkId = "";
+    return { op: "enter", id: spot.view.focusId || "" };
+  }
+  if (op === "turn") {
+    const battle = campaign.battle;
+    if (!battle || battle.screen === false || !Array.isArray(battle.actors)) return null;
+    if (!wanted) return null;
+    const rows = battle.actors.map(function (actor, index) {
+      return { actor: actor, index: index };
+    }).filter(function (row) {
+      return row.actor && String(row.actor.name || "").trim();
+    }).sort(function (a, b) {
+      const diff = (Number(b.actor.init) || 0) - (Number(a.actor.init) || 0);
+      return diff || a.index - b.index;
+    });
+    const at = rows.findIndex(function (row) { return row.actor.id === wanted; });
+    if (at < 0) return null;
+    battle.turn = at;
+    return { op: "turn", id: wanted };
+  }
+  return null;
 }
 
 export function projectFrame(campaign) {

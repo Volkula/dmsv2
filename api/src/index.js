@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { openDb, rowToRoom } from "./db.js";
 import { bearer, hashSecret, isAdmin, newSecret, secretMatches } from "./auth.js";
 import { publish, subscribe } from "./hub.js";
-import { blankCampaign, campaignOk, projectFrame } from "./frame.js";
+import { blankCampaign, campaignOk, playAction, projectFrame } from "./frame.js";
 import { openSettings } from "./settings.js";
 import { ROOM_FILES_MAX, roomFilesSize, unpackFiles, wipeRoomFiles, writePackedFiles, pipePackedFiles } from "./files.js";
 
@@ -559,6 +559,27 @@ const server = http.createServer(async function (req, res) {
       }
       purgeRoom.run(id);
       wipeRoomFiles(filesDir, id);
+      send(res, 200, { ok: true });
+      return;
+    }
+
+    if (req.method === "POST" && tail === "play") {
+      const body = await readJson(req, 4000);
+      const op = body.op === "enter" || body.op === "turn" ? body.op : "";
+      const kind = room.frame && room.frame.page && room.frame.page.kind;
+      if (!op || (op === "enter" && kind !== "map") || (op === "turn" && kind !== "battle")) {
+        send(res, 409, { error: "нельзя" });
+        return;
+      }
+      const done = playAction(room.campaign, op, body.id);
+      if (!done) {
+        send(res, 409, { error: "нельзя" });
+        return;
+      }
+      room.frame = projectFrame(room.campaign);
+      writeRoom(room);
+      publish(id, { type: "play", op: done.op, id: done.id });
+      pushFrame(room);
       send(res, 200, { ok: true });
       return;
     }

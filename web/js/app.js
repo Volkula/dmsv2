@@ -822,6 +822,27 @@
         flashTimer = setTimeout(function () { paint(frame, null); }, 4000);
       }
     }
+    if (!view._playBound) {
+      view._playBound = true;
+      let busy = false;
+      view.addEventListener("click", function (event) {
+        const back = event.target.closest && event.target.closest("[data-up]");
+        const loc = !back && event.target.closest && event.target.closest('.map-pin[data-kind="loc"]');
+        const turn = event.target.closest && event.target.closest(".play-battle [data-go]");
+        if (!back && !loc && !turn) return;
+        event.preventDefault();
+        if (busy) return;
+        busy = true;
+        const body = turn
+          ? { op: "turn", id: turn.getAttribute("data-go") || "" }
+          : { op: "enter", id: (back ? back.getAttribute("data-up") : loc.getAttribute("data-pin")) || "" };
+        fetch("/api/rooms/" + id + "/play", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body)
+        }).catch(function () {}).then(function () { busy = false; });
+      });
+    }
     const source = new EventSource("/api/rooms/" + id + "/events");
     let frame = null;
     source.onmessage = function (message) {
@@ -1887,6 +1908,41 @@
     app.querySelector("#copy").addEventListener("click", function () {
       navigator.clipboard.writeText(viewerUrl);
     });
+    function applyPlay(data) {
+      if (data.op === "enter") {
+        const pages = state.campaign.pages || [];
+        const mapPage = pages.find(function (item) { return item && item.kind === "map" && item.id === state.campaign.shownPageId; })
+          || pages.find(function (item) { return item && item.kind === "map"; });
+        if (!mapPage || !mapPage.views) return;
+        const mapView = mapPage.views.find(function (item) { return item && item.id === mapPage.activeViewId; }) || mapPage.views[0];
+        if (!mapView) return;
+        mapView.focusId = data && data.id || "";
+        mapView.talkId = "";
+        if (window.ShirmoMap && window.ShirmoMap.sync) window.ShirmoMap.sync();
+        return;
+      }
+      if (data.op !== "turn") return;
+      const battle = state.campaign.battle;
+      if (!battle || !Array.isArray(battle.actors)) return;
+      const list = battle.actors.map(function (actor, index) { return { actor: actor, index: index }; }).filter(function (row) {
+        return row.actor && String(row.actor.name || "").trim();
+      }).sort(function (a, b) {
+        const diff = (Number(b.actor.init) || 0) - (Number(a.actor.init) || 0);
+        return diff || a.index - b.index;
+      });
+      const at = list.findIndex(function (row) { return row.actor.id === data.id; });
+      if (at < 0) return;
+      battle.turn = at;
+      if (window.ShirmoBattle && window.ShirmoBattle.sync) window.ShirmoBattle.sync();
+    }
+    const playSource = new EventSource("/api/rooms/" + id + "/events");
+    playSource.onmessage = function (message) {
+      let data = null;
+      try { data = JSON.parse(message.data); } catch (err) { return; }
+      if (!data || data.type !== "play") return;
+      applyPlay(data);
+    };
+    window.addEventListener("pagehide", function () { playSource.close(); });
     if (window.ShirmoCodex && window.ShirmoCodex.adopt(state.campaign)) save();
     let open = page().kind === "map" ? "map" : "scene";
     try {
