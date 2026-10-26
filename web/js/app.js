@@ -812,16 +812,36 @@
         return;
       }
       const look = textLook(frame && frame.page);
+      const battle = window.ShirmoBattle;
+      const hold = view._battleHold;
+      const prevPort = battle && battle.bindPan ? view.querySelector(".play-battle .battle-stage") : null;
+      if (hold && prevPort) {
+        hold.left = prevPort.scrollLeft;
+        hold.top = prevPort.scrollTop;
+      }
+      const actors = frame && frame.page && frame.page.kind === "battle" ? (frame.page.actors || []) : null;
+      const activeId = actors ? ((actors.find(function (actor) { return actor.active; }) || {}).id || "") : "";
+      const follow = !hold || hold.active !== activeId;
+      if (hold) hold.active = activeId;
       view.innerHTML = stageHtml(frame) + (event ? '<div class="flash" style="' + look.flash + '">' + esc(event.text) + "</div>" : "");
       bindShopFonts(view);
       if (window.ShirmoMap && window.ShirmoMap.bindImages) window.ShirmoMap.bindImages(view);
       fit(view);
-      if (window.ShirmoBattle && window.ShirmoBattle.revealActive) window.ShirmoBattle.revealActive(view);
+      if (actors && battle) {
+        if (follow && battle.revealActive) battle.revealActive(view);
+        else if (battle.restorePan) battle.restorePan(view);
+        const port = view.querySelector(".play-battle .battle-stage");
+        if (hold && port) {
+          hold.left = port.scrollLeft;
+          hold.top = port.scrollTop;
+        }
+      }
       if (event) {
         clearTimeout(flashTimer);
         flashTimer = setTimeout(function () { paint(frame, null); }, 4000);
       }
     }
+    if (window.ShirmoBattle && window.ShirmoBattle.bindPan) window.ShirmoBattle.bindPan(view);
     if (!view._playBound) {
       view._playBound = true;
       let busy = false;

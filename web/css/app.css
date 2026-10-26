@@ -3393,10 +3393,25 @@ button.ware-face-btn img { width: 100%; height: 100%; object-fit: cover; display
   width: 100%;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  align-items: safe center;
+  justify-content: safe center;
+  overflow: auto;
+  cursor: grab;
+  scrollbar-width: none;
+  touch-action: none;
 }
-.play-battle .battle-track { gap: 22px; }
+.play-battle .battle-stage::-webkit-scrollbar { display: none; }
+.play-battle .battle-track {
+  gap: 22px;
+  width: max-content;
+  min-width: 100%;
+  overflow: visible;
+  flex: none;
+}
+.stage.play-battle { user-select: none; }
+.play-battle img { -webkit-user-drag: none; }
+.play-battle.is-panning,
+.play-battle.is-panning * { cursor: grabbing; }
 .play-battle .battle-num { font-size: 52px; margin-bottom: 8px; }
 .stage.play-battle p,
 .battle-screen p { margin: 0; white-space: normal; }

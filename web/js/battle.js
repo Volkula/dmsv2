@@ -2212,14 +2212,87 @@
     }).join("") + "</div>";
   }
 
+  function panPort(root) {
+    return root && root.querySelector(".play-battle .battle-stage");
+  }
+
   function revealActive(root) {
     if (!root) return;
-    const track = root.querySelector(".battle-track");
-    const token = root.querySelector(".battle-token.active");
-    if (!track || !token) return;
+    const port = panPort(root) || root.querySelector(".battle-track");
+    const home = root.querySelector(".play-battle") || root;
+    const token = home.querySelector(".battle-token.active");
+    if (!port || !token) return;
     const box = token.getBoundingClientRect();
-    const rail = track.getBoundingClientRect();
-    track.scrollLeft += box.left - rail.left - rail.width / 2 + box.width / 2;
+    const rail = port.getBoundingClientRect();
+    const scale = rail.width / (port.offsetWidth || 1) || 1;
+    port.scrollLeft += (box.left - rail.left - rail.width / 2 + box.width / 2) / scale;
+    port.scrollTop += (box.top - rail.top - rail.height / 2 + box.height / 2) / scale;
+  }
+
+  function bindPan(root) {
+    if (!root || root._battlePan) return;
+    root._battlePan = true;
+    root._battleHold = { left: 0, top: 0, active: null };
+    let drag = null;
+    root.addEventListener("pointerdown", function (event) {
+      if (event.button !== 0) return;
+      const screen = event.target.closest && event.target.closest(".play-battle");
+      if (!screen || !root.contains(screen)) return;
+      const port = screen.querySelector(".battle-stage");
+      if (!port) return;
+      drag = {
+        id: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+        left: port.scrollLeft,
+        top: port.scrollTop,
+        moved: false,
+        port: port
+      };
+    });
+    window.addEventListener("pointermove", function (event) {
+      if (!drag || event.pointerId !== drag.id) return;
+      const dx = event.clientX - drag.x;
+      const dy = event.clientY - drag.y;
+      if (!drag.moved && (dx * dx + dy * dy) < 36) return;
+      const port = drag.port;
+      if (!port.isConnected) return;
+      if (!drag.moved && port.setPointerCapture) port.setPointerCapture(event.pointerId);
+      drag.moved = true;
+      const screen = port.closest(".play-battle");
+      if (screen) screen.classList.add("is-panning");
+      const rect = port.getBoundingClientRect();
+      const scale = rect.width / (port.offsetWidth || 1) || 1;
+      port.scrollLeft = drag.left - dx / scale;
+      port.scrollTop = drag.top - dy / scale;
+      root._battleHold.left = port.scrollLeft;
+      root._battleHold.top = port.scrollTop;
+    });
+    function endPan(event) {
+      if (!drag || (event && event.pointerId !== drag.id)) return;
+      const moved = drag.moved;
+      drag = null;
+      const screen = root.querySelector(".play-battle");
+      if (screen) screen.classList.remove("is-panning");
+      if (!moved) return;
+      root._panSuppress = true;
+      setTimeout(function () { root._panSuppress = false; }, 80);
+    }
+    window.addEventListener("pointerup", endPan);
+    window.addEventListener("pointercancel", endPan);
+    root.addEventListener("click", function (event) {
+      if (!root._panSuppress) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }, true);
+  }
+
+  function restorePan(root) {
+    const port = panPort(root);
+    const hold = root && root._battleHold;
+    if (!port || !hold) return;
+    port.scrollLeft = hold.left;
+    port.scrollTop = hold.top;
   }
 
   function screenHtml(actors, active, log, clickable, showHp, round) {
@@ -2334,6 +2407,8 @@
     formula: formula,
     playerHtml: playerHtml,
     revealActive: revealActive,
+    bindPan: bindPan,
+    restorePan: restorePan,
     placeHero: placeHero,
     removeHero: removeHero
   };
