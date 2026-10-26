@@ -3809,7 +3809,8 @@ button.ware-face-btn img { width: 100%; height: 100%; object-fit: cover; display
 .turn-card .mark-line em { font-size: 14px; }
 .turn-card .mark-under { max-width: 150px; }
 .fight-face-box { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.foe-face-book { font-size: 10px; line-height: 1.2; padding: 1px 4px; }
+.foe-face-book { width: 22px; height: 22px; min-width: 22px; padding: 0; display: grid; place-items: center; }
+.foe-face-book svg { width: 14px; height: 14px; display: block; }
 .fight-face {
   position: relative;
   display: block;

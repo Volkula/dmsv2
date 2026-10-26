@@ -1122,7 +1122,7 @@
         ? '<img alt="" src="' + esc(actor.portrait) + '">'
         : sideIcon(actor.side);
       const book = actor.side === "player" ? ""
-        : '<button type="button" class="foe-face-book" data-act="foe-face" data-id="' + esc(actor.id) + '" title="Выбрать портрет из справочника">Справочник</button>';
+        : '<button type="button" class="icon-btn foe-face-book" data-act="foe-face" data-id="' + esc(actor.id) + '" title="Портрет из справочника" aria-label="Портрет из справочника"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h6.2A2.8 2.8 0 0 1 14 8.3V19H7.2A2.2 2.2 0 0 0 5 21.2V5.5zM19 5.5h-6.2A2.8 2.8 0 0 0 10 8.3V19h6.8A2.2 2.2 0 0 1 19 21.2V5.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></button>';
       return '<div class="fight-face-box"><label class="fight-face" style="--ink:' + esc(actorInk(actor)) + '" title="Загрузить портрет. Картинка попадёт в библиотеку">' + face + markIcons(actor.marks) +
         '<input type="file" accept="image/*" data-face="' + esc(actor.id) + '" aria-label="Портрет ' + esc(actor.name || "") + '"></label>' + book + "</div>";
     }
