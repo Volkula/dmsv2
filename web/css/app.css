@@ -4236,3 +4236,29 @@ body > .clock-layer.is-pinned { display: none !important; }
 }
 
 .play-timer .clock-timer { padding: 0; }
+
+.timer-layer {
+  left: 18px;
+  right: auto;
+  width: min(340px, calc(100vw - 24px));
+}
+
+.clock-size select { width: 100%; }
+
+.fx-extra[hidden] { display: none !important; }
+
+.check.fx-extra {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 14px 0;
+}
+
+.shirmo-fx {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}

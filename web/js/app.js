@@ -1005,12 +1005,50 @@
     };
   }
 
+  function pad2(n) { return String(n).padStart(2, "0"); }
+  function digitHtml(text) {
+    return String(text).split("").map(function (ch) {
+      return '<span class="' + (ch === ":" ? "colon" : "digit") + '">' + ch + "</span>";
+    }).join("");
+  }
+  function applyDigitLook(box, size, shape) {
+    box.style.setProperty("--clock-size", size + "px");
+    box.classList.remove("shape-square", "shape-round", "shape-narrow", "shape-segment");
+    box.classList.add("shape-" + shape);
+    box.querySelectorAll("[data-clock-shape]").forEach(function (button) {
+      button.classList.toggle("is-on", button.getAttribute("data-clock-shape") === shape);
+    });
+  }
+  function dragLayer(box, bar, locked) {
+    let drag = null;
+    bar.addEventListener("pointerdown", function (event) {
+      if ((locked && locked()) || event.target.closest("button")) return;
+      const rect = box.getBoundingClientRect();
+      drag = { id: event.pointerId, dx: event.clientX - rect.left, dy: event.clientY - rect.top };
+      bar.setPointerCapture(event.pointerId);
+    });
+    bar.addEventListener("pointermove", function (event) {
+      if (!drag || event.pointerId !== drag.id) return;
+      const left = Math.max(8, Math.min(window.innerWidth - box.offsetWidth - 8, event.clientX - drag.dx));
+      const top = Math.max(8, Math.min(window.innerHeight - 48, event.clientY - drag.dy));
+      box.style.left = left + "px";
+      box.style.top = top + "px";
+      box.style.right = "auto";
+    });
+    bar.addEventListener("pointerup", function () { drag = null; });
+  }
+  function shapeButtons() {
+    return '<div class="clock-shapes" role="group" aria-label="Форма цифр">' +
+      '<button type="button" data-clock-shape="square" title="Прямые цифры">Прямые</button>' +
+      '<button type="button" data-clock-shape="round" title="Круглые цифры">Круглые</button>' +
+      '<button type="button" data-clock-shape="narrow" title="Узкие цифры">Узкие</button>' +
+      '<button type="button" data-clock-shape="segment" title="Сегментные цифры">Сегмент</button></div>';
+  }
+
   function openClock(opts) {
     opts = opts || {};
     let box = document.getElementById("clock-layer");
     if (box) {
-      if (opts.roomId) box._roomId = opts.roomId;
-      if (opts.headers) box._headers = opts.headers;
       if (opts.pin === true && box._setPinned) box._setPinned(true);
       else if (opts.unpin === true && box._setPinned) box._setPinned(false);
       else {
@@ -1024,52 +1062,158 @@
     box.id = "clock-layer";
     box.className = "clock-layer";
     box.setAttribute("role", "dialog");
-    box.setAttribute("aria-label", "Часы и таймер");
+    box.setAttribute("aria-label", "Часы");
     box.innerHTML = '<header class="clock-bar"><b>Часы</b><button type="button" data-clock="close" title="Закрыть" aria-label="Закрыть">×</button></header>' +
-      '<p class="clock-cap">Сейчас</p><p class="clock-face" data-clock="now">00:00:00</p>' +
-      '<p class="clock-cap">Таймер</p><p class="clock-timer" data-clock="left">00:00</p>' +
+      '<p class="clock-face" data-clock="now">00:00:00</p>' +
+      '<label class="clock-size">Размер<input data-clock="size" type="range" min="28" max="120" value="48"></label>' +
+      shapeButtons();
+    document.body.appendChild(box);
+    const nowNode = box.querySelector("[data-clock=now]");
+    let size = 48;
+    let shape = "square";
+    let pinned = false;
+    let beat = 0;
+    function paint() {
+      const now = new Date();
+      nowNode.innerHTML = digitHtml(pad2(now.getHours()) + ":" + pad2(now.getMinutes()) + ":" + pad2(now.getSeconds()));
+      if (box.hidden) {
+        clearInterval(beat);
+        beat = 0;
+      }
+    }
+    function wake() {
+      if (beat) return;
+      paint();
+      beat = setInterval(paint, 250);
+    }
+    box._wake = wake;
+    box.querySelector("[data-clock=size]").addEventListener("input", function (event) {
+      size = Math.min(120, Math.max(28, Math.round(Number(event.target.value) || 48)));
+      applyDigitLook(box, size, shape);
+    });
+    box.querySelectorAll("[data-clock-shape]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        shape = button.getAttribute("data-clock-shape") || "square";
+        applyDigitLook(box, size, shape);
+      });
+    });
+    dragLayer(box, box.querySelector(".clock-bar"), function () { return pinned; });
+    function place() {
+      const dock = document.getElementById("dock");
+      const main = dock && dock.querySelector(".dock-main");
+      const pinBtn = dock && dock.querySelector("[data-dock=clock]");
+      const held = pinned && !box.hidden;
+      if (pinBtn) {
+        const label = held ? "Открепить часы" : "Закрепить часы";
+        pinBtn.classList.toggle("is-on", held);
+        pinBtn.title = label;
+        pinBtn.setAttribute("aria-label", label);
+      }
+      box.classList.toggle("is-pinned", pinned);
+      if (pinned && main) {
+        if (box.parentElement !== main) main.insertBefore(box, main.firstChild);
+        return;
+      }
+      if (box.parentElement !== document.body) document.body.appendChild(box);
+    }
+    function setPinned(next) {
+      pinned = !!next;
+      if (pinned) {
+        box.hidden = false;
+        wake();
+      }
+      place();
+    }
+    box._place = place;
+    box._setPinned = setPinned;
+    box.querySelector("[data-clock=close]").addEventListener("click", function () {
+      box.hidden = true;
+      place();
+    });
+    if (!box._watch) {
+      const dock = document.getElementById("dock");
+      if (dock) {
+        box._watch = new MutationObserver(function () { if (pinned) place(); });
+        box._watch.observe(dock, { childList: true });
+      }
+    }
+    applyDigitLook(box, size, shape);
+    wake();
+    if (opts.pin) setPinned(true);
+  }
+
+  function openTimer(opts) {
+    opts = opts || {};
+    let box = document.getElementById("timer-layer");
+    if (box) {
+      if (opts.roomId) box._roomId = opts.roomId;
+      if (opts.headers) box._headers = opts.headers;
+      box.hidden = false;
+      if (box._wake) box._wake();
+      return;
+    }
+    box = document.createElement("div");
+    box.id = "timer-layer";
+    box.className = "clock-layer timer-layer";
+    box.setAttribute("role", "dialog");
+    box.setAttribute("aria-label", "Таймер");
+    box.innerHTML = '<header class="clock-bar"><b>Таймер</b><button type="button" data-clock="close" title="Закрыть" aria-label="Закрыть">×</button></header>' +
+      '<p class="clock-timer" data-clock="left">05:00</p>' +
       '<div class="clock-set"><label>мин<input data-clock="min" type="number" min="0" max="599" value="5"></label>' +
       '<label>сек<input data-clock="sec" type="number" min="0" max="59" value="0"></label></div>' +
       '<div class="clock-presets"><button type="button" data-clock-min="1">1</button><button type="button" data-clock-min="5">5</button><button type="button" data-clock-min="10">10</button><button type="button" data-clock-min="30">30</button></div>' +
       '<label class="clock-size">Размер<input data-clock="size" type="range" min="28" max="120" value="40"></label>' +
-      '<div class="clock-shapes" role="group" aria-label="Форма цифр">' +
-      '<button type="button" data-clock-shape="square" title="Прямые цифры">Прямые</button>' +
-      '<button type="button" data-clock-shape="round" title="Круглые цифры">Круглые</button>' +
-      '<button type="button" data-clock-shape="narrow" title="Узкие цифры">Узкие</button>' +
-      '<button type="button" data-clock-shape="segment" title="Сегментные цифры">Сегмент</button></div>' +
+      shapeButtons() +
       '<div class="clock-acts"><button type="button" data-clock="run">Старт</button><button type="button" data-clock="reset">Сброс</button></div>' +
-      '<button type="button" class="clock-players" data-clock="players">Вывести таймер для игроков</button>';
+      '<button type="button" class="clock-players" data-clock="players">Вывести таймер для игроков</button>' +
+      '<p class="clock-cap">Эффект</p>' +
+      '<label class="clock-size">Вид<select data-fx="kind">' +
+      '<option value="">Нет</option>' +
+      '<option value="sand">Песочные часы</option>' +
+      '<option value="magic">Магические часы</option>' +
+      '<option value="smoke">Дым</option>' +
+      '<option value="blizzard">Вьюга</option>' +
+      '<option value="fire">Пожар</option>' +
+      '<option value="flood">Потоп</option></select></label>' +
+      '<label class="clock-size">Интенсивность<input data-fx="power" type="range" min="1" max="100" value="50"></label>' +
+      '<label class="clock-size">Скорость заполнения<input data-fx="speed" type="range" min="1" max="100" value="40"></label>' +
+      '<div class="fx-extra" data-fx="magic" hidden>' +
+      '<label class="clock-size">Стрелки<input data-fx="hand" type="color" value="#f6e7b0"></label>' +
+      '<label class="clock-size">Фон часов<input data-fx="face" type="color" value="#1a140c"></label></div>' +
+      '<label class="check fx-extra" data-fx="flood" hidden><input data-fx="storm" type="checkbox"> Дождь и ураган</label>' +
+      '<div class="clock-acts"><button type="button" data-fx="play">Запустить эффект</button><button type="button" data-fx="halt">Стоп</button></div>';
     document.body.appendChild(box);
-    const nowNode = box.querySelector("[data-clock=now]");
     const leftNode = box.querySelector("[data-clock=left]");
     const runBtn = box.querySelector("[data-clock=run]");
     const minInput = box.querySelector("[data-clock=min]");
     const secInput = box.querySelector("[data-clock=sec]");
+    const kindSel = box.querySelector("[data-fx=kind]");
+    const powerInput = box.querySelector("[data-fx=power]");
+    const speedInput = box.querySelector("[data-fx=speed]");
+    const handInput = box.querySelector("[data-fx=hand]");
+    const faceInput = box.querySelector("[data-fx=face]");
+    const stormInput = box.querySelector("[data-fx=storm]");
     let mode = "idle";
     let remain = 0;
     let tickAt = 0;
     let beat = 0;
     let audio = null;
-    let pinned = false;
     let playersOn = false;
     let size = 40;
     let shape = "square";
     let pushTimer = 0;
+    let fxOn = false;
     box._roomId = opts.roomId || "";
     box._headers = opts.headers || null;
-    function pad(n) { return String(n).padStart(2, "0"); }
-    function digits(text) {
-      return String(text).split("").map(function (ch) {
-        return '<span class="' + (ch === ":" ? "colon" : "digit") + '">' + ch + "</span>";
-      }).join("");
-    }
-    function applyLook() {
-      box.style.setProperty("--clock-size", size + "px");
-      box.classList.remove("shape-square", "shape-round", "shape-narrow", "shape-segment");
-      box.classList.add("shape-" + shape);
-      box.querySelectorAll("[data-clock-shape]").forEach(function (button) {
-        button.classList.toggle("is-on", button.getAttribute("data-clock-shape") === shape);
-      });
+    const runningFx = window.ShirmoFx && window.ShirmoFx.read ? window.ShirmoFx.read() : null;
+    if (runningFx && runningFx.kind) {
+      fxOn = true;
+      kindSel.value = runningFx.kind;
+      powerInput.value = String(runningFx.power);
+      speedInput.value = String(runningFx.speed);
+      handInput.value = runningFx.hand;
+      faceInput.value = runningFx.face;
+      stormInput.checked = !!runningFx.storm;
     }
     function readSet(commit) {
       const minutes = Math.min(599, Math.max(0, Math.round(Number(minInput.value) || 0)));
@@ -1085,7 +1229,7 @@
       const hours = Math.floor(total / 3600);
       const minutes = Math.floor((total % 3600) / 60);
       const seconds = total % 60;
-      leftNode.innerHTML = digits(hours ? pad(hours) + ":" + pad(minutes) + ":" + pad(seconds) : pad(minutes) + ":" + pad(seconds));
+      leftNode.innerHTML = digitHtml(hours ? pad2(hours) + ":" + pad2(minutes) + ":" + pad2(seconds) : pad2(minutes) + ":" + pad2(seconds));
     }
     function snapshot() {
       const running = mode === "run";
@@ -1105,10 +1249,9 @@
       if (!playersOn || !box._roomId) return;
       clearTimeout(pushTimer);
       pushTimer = setTimeout(function () {
-        const headers = box._headers || { "content-type": "application/json" };
         fetch("/api/rooms/" + box._roomId + "/events", {
           method: "POST",
-          headers: headers,
+          headers: box._headers || { "content-type": "application/json" },
           body: JSON.stringify(snapshot())
         }).catch(function () {});
       }, 120);
@@ -1116,16 +1259,13 @@
     function sendPlayers(body) {
       if (!box._roomId) return;
       clearTimeout(pushTimer);
-      const headers = box._headers || { "content-type": "application/json" };
       fetch("/api/rooms/" + box._roomId + "/events", {
         method: "POST",
-        headers: headers,
+        headers: box._headers || { "content-type": "application/json" },
         body: JSON.stringify(body)
       }).catch(function () {});
     }
     function paint() {
-      const now = new Date();
-      nowNode.innerHTML = digits(pad(now.getHours()) + ":" + pad(now.getMinutes()) + ":" + pad(now.getSeconds()));
       if (mode === "run") remain = Math.max(0, remain - (Date.now() - tickAt));
       tickAt = Date.now();
       if (mode === "run" && remain <= 0) {
@@ -1171,10 +1311,29 @@
       beat = setInterval(paint, 250);
     }
     box._wake = wake;
-    box.querySelector("[data-clock=close]").addEventListener("click", function () {
-      box.hidden = true;
-      place();
-    });
+    function fxPayload(resetKind) {
+      return {
+        kind: kindSel.value,
+        power: Number(powerInput.value),
+        speed: Number(speedInput.value),
+        hand: handInput.value,
+        face: faceInput.value,
+        storm: stormInput.checked,
+        reset: !!resetKind
+      };
+    }
+    function syncFxBoxes() {
+      box.querySelector("[data-fx=magic]").hidden = kindSel.value !== "magic";
+      box.querySelector("[data-fx=flood]").hidden = kindSel.value !== "flood";
+    }
+    function pushFx(resetKind) {
+      if (!window.ShirmoFx) return;
+      const payload = fxPayload(resetKind);
+      if (!fxOn || !payload.kind) return;
+      if (resetKind) window.ShirmoFx.play(payload);
+      else window.ShirmoFx.tune(payload);
+    }
+    box.querySelector("[data-clock=close]").addEventListener("click", function () { box.hidden = true; });
     runBtn.addEventListener("click", function () {
       if (mode === "run") {
         mode = "pause";
@@ -1211,13 +1370,13 @@
     });
     box.querySelector("[data-clock=size]").addEventListener("input", function (event) {
       size = Math.min(120, Math.max(28, Math.round(Number(event.target.value) || 40)));
-      applyLook();
+      applyDigitLook(box, size, shape);
       pushPlayers();
     });
     box.querySelectorAll("[data-clock-shape]").forEach(function (button) {
       button.addEventListener("click", function () {
         shape = button.getAttribute("data-clock-shape") || "square";
-        applyLook();
+        applyDigitLook(box, size, shape);
         pushPlayers();
       });
     });
@@ -1229,61 +1388,28 @@
       if (playersOn) sendPlayers(snapshot());
       else sendPlayers({ type: "timer", on: false });
     });
-    const bar = box.querySelector(".clock-bar");
-    let drag = null;
-    bar.addEventListener("pointerdown", function (event) {
-      if (pinned || event.target.closest("button")) return;
-      const rect = box.getBoundingClientRect();
-      drag = { id: event.pointerId, dx: event.clientX - rect.left, dy: event.clientY - rect.top };
-      bar.setPointerCapture(event.pointerId);
+    kindSel.addEventListener("change", function () {
+      syncFxBoxes();
+      if (fxOn) pushFx(true);
     });
-    bar.addEventListener("pointermove", function (event) {
-      if (!drag || event.pointerId !== drag.id) return;
-      const left = Math.max(8, Math.min(window.innerWidth - box.offsetWidth - 8, event.clientX - drag.dx));
-      const top = Math.max(8, Math.min(window.innerHeight - 48, event.clientY - drag.dy));
-      box.style.left = left + "px";
-      box.style.top = top + "px";
-      box.style.right = "auto";
+    powerInput.addEventListener("input", function () { pushFx(false); });
+    speedInput.addEventListener("input", function () { pushFx(false); });
+    handInput.addEventListener("input", function () { pushFx(false); });
+    faceInput.addEventListener("input", function () { pushFx(false); });
+    stormInput.addEventListener("change", function () { pushFx(false); });
+    box.querySelector("[data-fx=play]").addEventListener("click", function () {
+      if (!kindSel.value || !window.ShirmoFx) return;
+      fxOn = true;
+      window.ShirmoFx.play(fxPayload(true));
     });
-    bar.addEventListener("pointerup", function () { drag = null; });
-    function place() {
-      const dock = document.getElementById("dock");
-      const main = dock && dock.querySelector(".dock-main");
-      const pinBtn = dock && dock.querySelector("[data-dock=clock]");
-      const held = pinned && !box.hidden;
-      if (pinBtn) {
-        const label = held ? "Открепить часы" : "Закрепить часы";
-        pinBtn.classList.toggle("is-on", held);
-        pinBtn.title = label;
-        pinBtn.setAttribute("aria-label", label);
-      }
-      box.classList.toggle("is-pinned", pinned);
-      if (pinned && main) {
-        if (box.parentElement !== main) main.insertBefore(box, main.firstChild);
-        return;
-      }
-      if (box.parentElement !== document.body) document.body.appendChild(box);
-    }
-    function setPinned(next) {
-      pinned = !!next;
-      if (pinned) {
-        box.hidden = false;
-        wake();
-      }
-      place();
-    }
-    box._place = place;
-    box._setPinned = setPinned;
-    if (!box._watch) {
-      const dock = document.getElementById("dock");
-      if (dock) {
-        box._watch = new MutationObserver(function () { if (pinned) place(); });
-        box._watch.observe(dock, { childList: true });
-      }
-    }
-    applyLook();
+    box.querySelector("[data-fx=halt]").addEventListener("click", function () {
+      fxOn = false;
+      if (window.ShirmoFx) window.ShirmoFx.stop();
+    });
+    dragLayer(box, box.querySelector(".clock-bar"));
+    syncFxBoxes();
+    applyDigitLook(box, size, shape);
     wake();
-    if (opts.pin) setPinned(true);
   }
 
   function openRollMenu(roomId, headers, state, err, anchor) {
@@ -1554,7 +1680,8 @@
       '<button type="button" id="top-kebab" class="kebab-btn" title="Меню" aria-label="Меню" aria-expanded="false">' + glyph('<circle cx="12" cy="6" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="18" r="1.5" fill="currentColor"/>') + "</button>" +
       '<div class="kebab-menu" id="kebab-menu" hidden>' +
       '<button type="button" id="roll" title="Бросок с преимуществом или помехой, закреплённые и история">Броски</button>' +
-      '<button type="button" id="clock-open" title="Часы и таймер поверх ширмы">Часы</button>' +
+      '<button type="button" id="clock-open" title="Часы поверх ширмы">Часы</button>' +
+      '<button type="button" id="timer-open" title="Таймер и эффекты поверх ширмы">Таймер</button>' +
       '<button type="button" id="roll-look" title="Скорость, цвет и текстура кубика">Кубик</button>' +
       '<button type="button" id="library" title="Открыть библиотеку файлов">Библиотека</button>' +
       '<div class="kebab-gap"></div>' +
@@ -2245,6 +2372,7 @@
       openRollMenu(id, headers, state, err, app.querySelector("#roll"));
     });
     app.querySelector("#clock-open").addEventListener("click", function () { openClock({ roomId: id, headers: headers }); });
+    app.querySelector("#timer-open").addEventListener("click", function () { openTimer({ roomId: id, headers: headers }); });
     app.querySelector("#roll-look").addEventListener("click", function () {
       openRollLook(state, err, save, app.querySelector("#roll-look"));
     });
