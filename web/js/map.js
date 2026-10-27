@@ -1115,11 +1115,11 @@
         "</details>" +
         '<details class="drop"><summary title="День, ночь и картинки фона">Вид</summary>' +
         '<div class="row"><button type="button" id="setup-day" class="' + (sheet.mode !== "night" ? "is-on" : "") + '" title="Показать дневной фон">День</button><button type="button" id="setup-night" class="' + (sheet.mode === "night" ? "is-on" : "") + '" title="Показать ночной фон">Ночь</button></div>' +
-        '<label title="Картинка, когда у места день">Фон дня<select id="setup-day-img">' + options(sheet.day || "") + "</select></label>" +
+        '<label title="Картинка, когда у места день">Фон дня<select id="setup-day-img" data-shelf="image">' + options(sheet.day || "") + "</select></label>" +
         '<label class="file-btn" title="Загрузить фон дня, как портрет у персонажа">Загрузить день<input type="file" id="setup-day-file" accept="image/*" aria-label="Загрузить фон дня"></label>' +
-        '<label title="Картинка, когда у места ночь">Фон ночи<select id="setup-night-img">' + options(sheet.night || "") + "</select></label>" +
+        '<label title="Картинка, когда у места ночь">Фон ночи<select id="setup-night-img" data-shelf="image">' + options(sheet.night || "") + "</select></label>" +
         '<label class="file-btn" title="Загрузить фон ночи">Загрузить ночь<input type="file" id="setup-night-file" accept="image/*" aria-label="Загрузить фон ночи"></label>' +
-        (loc ? '<label title="Картинка точки на карте, как портрет НПС">Портрет точки<select id="setup-face">' + options(loc.portrait || "") + "</select></label>" +
+        (loc ? '<label title="Картинка точки на карте, как портрет НПС">Портрет точки<select id="setup-face" data-shelf="image">' + options(loc.portrait || "") + "</select></label>" +
           '<label class="file-btn" title="Загрузить портрет точки">Загрузить портрет<input type="file" id="setup-face-file" accept="image/*" aria-label="Загрузить портрет точки"></label>' : "") +
         "</details></div>";
       document.body.appendChild(pop);
@@ -1788,7 +1788,7 @@
         '<div class="ware-edit"><div class="ware-edit-face">' + face() + "</div>" +
         raritySelect() +
         '<label class="file-btn" title="Своя иконка. Попадёт в библиотеку, в раздел «Иконки товаров»">' + window.ShirmoGlyph.upload + '<input type="file" accept="image/*" data-edit-file aria-label="Загрузить иконку"></label>' +
-        '<select data-edit-lib title="Иконка из библиотеки" aria-label="Иконка из библиотеки"><option value="">Библиотека</option>' + libraryOptions() + "</select>" +
+        '<select data-edit-lib data-shelf="image" title="Иконка из библиотеки" aria-label="Иконка из библиотеки"><option value="">Библиотека</option>' + libraryOptions() + "</select>" +
         '<div class="ware-find"><input data-edit-find type="text" placeholder="Поиск" aria-label="Поиск предмета для иконки" title="Иконка из общего списка предметов"><div class="ware-hits" hidden></div></div>' +
         "</div></div>";
       document.body.appendChild(edit);
@@ -2527,7 +2527,7 @@
       const locShot = kind === "loc"
         ? (item.portrait ? '<img class="loc-shot" alt="" src="' + esc(item.portrait) + '">' : '<p class="note">Портрета точки пока нет. Он показывается на карте, как у НПС.</p>') +
           '<label class="file-btn" title="Загрузить портрет точки">Загрузить<input type="file" id="loc-face-file" accept="image/*" aria-label="Загрузить портрет точки"></label>' +
-          '<label title="Портрет из библиотеки">Из библиотеки<select id="loc-face-lib"><option value="">Нет</option>' + images.map(function (image) {
+          '<label title="Портрет из библиотеки">Из библиотеки<select id="loc-face-lib" data-shelf="image"><option value="">Нет</option>' + images.map(function (image) {
             return '<option value="' + esc(image.url) + '"' + (image.url === item.portrait ? " selected" : "") + ">" + esc(image.name || "Картинка") + "</option>";
           }).join("") + "</select></label>"
         : "";
@@ -2539,7 +2539,7 @@
           '<label title="Свой эмодзи. Можно вместо значка из набора">Эмодзи<input id="mark-emoji" type="text" maxlength="16" value="' + esc(item.emoji || "") + '" placeholder="🙂"></label>' +
           (item.icon ? '<img class="loc-shot" alt="" src="' + esc(item.icon) + '">' : '<p class="note">Своей картинки нет. Тогда на метке значок или эмодзи.</p>') +
           '<label class="file-btn" title="Загрузить картинку значка. Она попадёт в библиотеку">Загрузить<input type="file" id="mark-icon-file" accept="image/*" aria-label="Загрузить значок"></label>' +
-          '<label title="Картинка из библиотеки">Из библиотеки<select id="mark-icon-lib"><option value="">Нет</option>' + images.map(function (image) {
+          '<label title="Картинка из библиотеки">Из библиотеки<select id="mark-icon-lib" data-shelf="image"><option value="">Нет</option>' + images.map(function (image) {
             return '<option value="' + esc(image.url) + '"' + (image.url === item.icon ? " selected" : "") + ">" + esc(image.name || "Картинка") + "</option>";
           }).join("") + "</select></label>" +
           (item.icon ? '<button type="button" id="mark-icon-clear">Убрать картинку</button>' : "")
@@ -4009,7 +4009,7 @@
         '<div class="mood-frame" data-mood-frame' + (mood.portrait ? "" : " hidden") + '><img class="mood-preview" alt="" data-mood-preview src="' + esc(mood.portrait) + '" style="' + faceStyle(mood) + '"><span class="mood-badge" data-mood-badge>' + esc(mood.emoji || "") + "</span></div>" +
         '<div class="mood-tools">' +
         '<label class="mood-file" title="Загрузить портрет этой фазы">Загрузить<input type="file" accept="image/*" data-mood-file></label>' +
-        '<select data-mood-lib title="Взять портрет этой фазы из библиотеки">' + options + "</select>" +
+        '<select data-mood-lib data-shelf="image" title="Взять портрет этой фазы из библиотеки">' + options + "</select>" +
         '<button type="button" data-mood-add title="Добавить фазу настроения">+</button>' +
         '<button type="button" data-mood-del title="Убрать эту фазу"' + (npc.moods.length < 2 ? " disabled" : "") + ">×</button>" +
         "</div></details></div>";

@@ -1030,9 +1030,9 @@
 
     function toneHtml() {
       const images = (ctx.library && ctx.library().images) || [];
-      const options = '<option value="">Фон локации</option><option value="none"' + (battle.image === "none" ? " selected" : "") + ">Без картинки</option>" + images.map(function (image) {
-        return '<option value="' + esc(image.url) + '"' + (image.url === battle.image ? " selected" : "") + ">" + esc(image.name || "Картинка") + "</option>";
-      }).join("");
+      const current = battle.image && battle.image !== "none" ? images.find(function (image) { return image.url === battle.image; }) : null;
+      const options = '<option value="">Фон локации</option><option value="none"' + (battle.image === "none" ? " selected" : "") + ">Без картинки</option>" +
+        (current ? '<option value="' + esc(current.url) + '" selected>' + esc(current.name || "Картинка") + "</option>" : (battle.image && battle.image !== "none" ? '<option value="' + esc(battle.image) + '" selected>Картинка</option>' : ""));
       return '<details class="drop battle-tone"><summary>Экран игроков</summary>' +
         '<div class="tone-colors">' +
         '<label>Фон<input id="battle-bg" type="color" value="' + esc(battle.bg) + '"></label>' +

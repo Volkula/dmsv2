@@ -1306,27 +1306,54 @@
   window.ShirmoShelf = {
     pick: openShelfPick,
     library: function () { return { images: [], notes: [] }; },
-    arm: function (root) {
-      (root || document).querySelectorAll("[data-shelf]").forEach(function (select) {
-        if (select._shelf) return;
-        select._shelf = true;
-        select.addEventListener("mousedown", function (event) {
-          event.preventDefault();
-          const kind = select.getAttribute("data-shelf") === "note" ? "note" : "image";
-          const lib = window.ShirmoShelf.library() || {};
-          openShelfPick({
-            kind: kind,
-            images: lib.images || [],
-            notes: lib.notes || [],
-            onPick: function (picked) {
-              select.value = kind === "note" ? (picked && picked.id || "") : (picked || "");
-              select.dispatchEvent(new Event("change", { bubbles: true }));
-            }
-          });
-        });
+    openSelect: function (select) {
+      if (!select) return;
+      const kind = select.getAttribute("data-shelf") === "note" ? "note" : "image";
+      const lib = window.ShirmoShelf.library() || {};
+      openShelfPick({
+        kind: kind,
+        images: lib.images || [],
+        notes: lib.notes || [],
+        onPick: function (picked) {
+          select.value = kind === "note" ? (picked && picked.id || "") : (picked || "");
+          select.dispatchEvent(new Event("change", { bubbles: true }));
+        }
       });
-    }
+    },
+    arm: function () {}
   };
+  (function armShelfClicks() {
+    let last = 0;
+    function hit(event) {
+      const node = event.target;
+      if (!node || !node.closest) return null;
+      const direct = node.closest("select[data-shelf]");
+      if (direct) return direct;
+      const label = node.closest("label");
+      return label && label.querySelector("select[data-shelf]");
+    }
+    document.addEventListener("pointerdown", function (event) {
+      const select = hit(event);
+      if (!select || select.disabled) return;
+      event.preventDefault();
+      const now = Date.now();
+      if (now - last < 350) return;
+      last = now;
+      window.ShirmoShelf.openSelect(select);
+    }, true);
+    document.addEventListener("mousedown", function (event) {
+      const select = hit(event);
+      if (!select || select.disabled) return;
+      event.preventDefault();
+    }, true);
+    document.addEventListener("keydown", function (event) {
+      const select = event.target;
+      if (!select || !select.matches || !select.matches("select[data-shelf]")) return;
+      if (event.key !== "Enter" && event.key !== " " && event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+      event.preventDefault();
+      window.ShirmoShelf.openSelect(select);
+    }, true);
+  })();
 
   function openTimer(opts) {
     opts = opts || {};
@@ -1956,7 +1983,7 @@
       '<span id="die-speed-n">' + look.speed.toFixed(1) + "</span>" +
       '<label class="check" title="Сразу карточка с итогом, без проката"><input id="die-still" type="checkbox"' + (look.animate ? "" : " checked") + "> Без анимации</label>" +
       '<label title="Цвет кубика для всех бросков">Цвет <input id="die-look-color" type="color" value="' + look.color + '"></label>' +
-      '<label title="Картинка на гранях. Берётся из библиотеки">Текстура <select id="die-look-tex">' + tex + "</select></label>";
+      '<label title="Картинка на гранях. Берётся из библиотеки">Текстура <select id="die-look-tex" data-shelf="image">' + tex + "</select></label>";
     document.body.appendChild(pop);
     function writeLook() {
       state.campaign.dice = {

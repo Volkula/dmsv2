@@ -1820,7 +1820,7 @@ window.ShirmoCodex = (function () {
         '<label title="Количество. Пустое поле — без ограничения">Количество<input data-ware="qty"' + mark + ' class="num" type="number" min="0" value="' + (item.qty == null || item.qty === "" ? "" : esc(String(item.qty))) + '" placeholder="∞" aria-label="Количество"></label>' +
         '<label class="check" title="Скрывать у игроков, когда количество станет нулём"><input data-ware-hide' + mark + ' type="checkbox"' + (item.hideEmpty ? " checked" : "") + "> Скрывать при нуле</label>" +
         '<label title="Скопировать товар в другой лист">В лист<select data-ware-copy-to' + mark + ' aria-label="Копировать в лист">' + sheetCopyOptions(sheet && sheet.id) + "</select></label>" +
-        '<select data-ware-lib' + mark + ' title="Иконка из библиотеки" aria-label="Иконка из библиотеки" hidden><option value="">Библиотека</option>' + lib + "</select>" +
+        '<select data-ware-lib data-shelf="image"' + mark + ' title="Иконка из библиотеки" aria-label="Иконка из библиотеки" hidden><option value="">Библиотека</option>' + lib + "</select>" +
         '<select data-ware-cat' + mark + ' hidden><option value="">Из предмета</option>' + catalog + "</select>" +
         "</div></article>";
     }
@@ -2180,7 +2180,7 @@ window.ShirmoCodex = (function () {
           '<div class="place-tools hero-pics">' +
           '<span class="place-pair"><label class="file-btn" title="Загрузить портрет">' + FACE + '<input type="file" accept="image/*" data-pic="portrait" data-i="' + index + '" aria-label="Портрет"></label>' +
           '<button type="button" class="icon-btn" data-act="clear-pic" data-pic="portrait" data-i="' + index + '"' + (hero.portrait ? "" : " disabled") + ' title="Убрать портрет" aria-label="Убрать портрет">' + CROSS + "</button></span>" +
-          '<select data-hero-lib="' + index + '" title="Портрет из библиотеки" aria-label="Из библиотеки"><option value="">Библиотека</option>' + lib + "</select>" +
+          '<select data-hero-lib="' + index + '" data-shelf="image" title="Портрет из библиотеки" aria-label="Из библиотеки"><option value="">Библиотека</option>' + lib + "</select>" +
           "</div></div>" +
           '<div class="hero-body">' +
           '<div class="hero-head"><button type="button" class="hero-name" data-act="hero-toggle" data-i="' + index + '" title="' + (open ? "Свернуть" : "Полный лист") + '">' + esc(hero.name || "Герой") + "</button>" +
@@ -3100,7 +3100,7 @@ window.ShirmoCodex = (function () {
           window.ShirmoItems.rarityOptions(item.rarity) + "</select></label>"
           : "") +
         '<label class="file-btn" title="Своя иконка. Попадёт в библиотеку, в раздел «Иконки товаров»">' + upload + '<input data-edit-file type="file" accept="image/*" aria-label="Загрузить иконку"></label>' +
-        '<select data-edit-lib title="Иконка из библиотеки" aria-label="Иконка из библиотеки"><option value="">Библиотека</option>' + lib + "</select>" +
+        '<select data-edit-lib data-shelf="image" title="Иконка из библиотеки" aria-label="Иконка из библиотеки"><option value="">Библиотека</option>' + lib + "</select>" +
         '<div class="ware-find"><input data-edit-find type="text" placeholder="Поиск предмета" aria-label="Поиск предмета для иконки" title="Иконка из общего списка предметов"><div class="ware-hits" hidden></div></div>' +
         "</div></div>";
       document.body.appendChild(pop);
