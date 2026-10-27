@@ -57,11 +57,38 @@
     return /^#[0-9a-fA-F]{6}$/.test(String(value || ""));
   }
 
+  function foeInkOk(value) {
+    if (!inkOk(value)) return false;
+    const n = parseInt(String(value).slice(1), 16);
+    const r = (n >> 16) & 255;
+    const g = (n >> 8) & 255;
+    const b = n & 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    const light = (max + min) / 510;
+    const delta = max - min;
+    const sat = delta === 0 ? 0 : delta / (255 * (1 - Math.abs(2 * light - 1)));
+    if (light >= 0.78 && sat < 0.4) return false;
+    let hue = 0;
+    if (delta) {
+      if (max === r) hue = ((g - b) / delta) % 6;
+      else if (max === g) hue = (b - r) / delta + 2;
+      else hue = (r - g) / delta + 4;
+      hue *= 60;
+      if (hue < 0) hue += 360;
+    }
+    if (sat >= 0.18 && hue >= 42 && hue <= 170) return false;
+    if (hue >= 18 && hue <= 70 && light >= 0.55 && sat <= 0.55) return false;
+    return true;
+  }
+
   const FOE_INKS = [
-    "#e4533e", "#e07a2f", "#e6b325", "#8fce4a",
-    "#2fbf71", "#2bb5c0", "#3d8bfd", "#7a6ff0",
-    "#c46bdb", "#e25c9a", "#c47a4a", "#6f8f3a"
+    "#e4533e", "#c0392b", "#e07a2f", "#d35400",
+    "#e25c9a", "#ad3e6b", "#c46bdb", "#7a6ff0",
+    "#3d8bfd", "#2457c5", "#2bb5c0", "#1a6f8a",
+    "#6d4c41", "#8d4e3b"
   ];
+  const HERO_EXTRA = ["#7dcea0", "#2fbf71", "#8fce4a", "#e6c36a", "#f4e7c8", "#f3ead8"];
 
   function hslHex(hue, sat, light) {
     const s = sat / 100;
@@ -85,11 +112,13 @@
   function assignInks(battle) {
     const used = {};
     (battle.actors || []).forEach(function (actor) {
-      if (actor && actor.side !== "player" && inkOk(actor.color)) used[actor.color.toLowerCase()] = true;
+      if (!actor || actor.side === "player") return;
+      if (foeInkOk(actor.color)) used[actor.color.toLowerCase()] = true;
+      else actor.color = "";
     });
     let cursor = 0;
     (battle.actors || []).forEach(function (actor) {
-      if (!actor || actor.side === "player" || inkOk(actor.color)) return;
+      if (!actor || actor.side === "player" || foeInkOk(actor.color)) return;
       let color = "";
       for (let n = 0; n < FOE_INKS.length; n++) {
         const candidate = FOE_INKS[(cursor + n) % FOE_INKS.length];
@@ -100,9 +129,17 @@
         }
       }
       if (!color) {
-        color = hslHex((cursor * 47) % 360, 64, 48);
-        cursor++;
+        for (let n = 0; n < 36; n++) {
+          const hue = (cursor * 23 + n * 19) % 360;
+          if (hue > 40 && hue < 175) continue;
+          const candidate = hslHex(hue, 62, 46);
+          if (!foeInkOk(candidate) || used[candidate.toLowerCase()]) continue;
+          color = candidate;
+          cursor++;
+          break;
+        }
       }
+      if (!color) color = "#e4533e";
       actor.color = color;
       used[color.toLowerCase()] = true;
     });
@@ -634,9 +671,9 @@
       });
     }
 
-    function damage(actor, apply, crit) {
+    function damage(actor, apply, crit, formulaText) {
       const foe = apply ? currentFoe(actor) : null;
-      const spec = formula(actor.damage || "1d6");
+      const spec = formula(formulaText || actor.damage || "1d6");
       const count = crit ? Math.min(12, Math.max(1, spec.count) * 2) : spec.count;
       roll({
         name: actor.name || "Боец",
@@ -1117,20 +1154,24 @@
       el.className = "battle-pop";
       el.innerHTML = "<h3>" + esc(title) + "</h3>" + body + '<button type="button" data-act="pop-close">Закрыть</button>';
       el.style.visibility = "hidden";
-      el.style.maxHeight = Math.max(160, window.innerHeight - 16) + "px";
+      el.style.left = "0px";
+      el.style.top = "0px";
+      const limitH = Math.max(160, window.innerHeight - 16);
+      el.style.maxHeight = limitH + "px";
+      el.style.overflowY = "auto";
       document.body.appendChild(el);
+      if (el.scrollHeight > limitH || el.offsetHeight > limitH) el.style.height = limitH + "px";
       const pad = 8;
-      const width = el.offsetWidth;
-      const height = el.offsetHeight;
+      const width = Math.min(el.offsetWidth, window.innerWidth - pad * 2);
+      const height = Math.min(el.offsetHeight, limitH);
       let left = popX;
       let top = popY;
-      if (left + width > window.innerWidth - pad) left = popX - width;
       if (left + width > window.innerWidth - pad) left = window.innerWidth - pad - width;
       if (left < pad) left = pad;
       if (top + height > window.innerHeight - pad) top = window.innerHeight - pad - height;
       if (top < pad) top = pad;
-      el.style.left = left + "px";
-      el.style.top = top + "px";
+      el.style.left = Math.round(left) + "px";
+      el.style.top = Math.round(top) + "px";
       el.style.visibility = "";
       pop = el;
       el.addEventListener("click", onPopClick);
@@ -1226,16 +1267,6 @@
       return actor.side === "player" ? (battle.player || "#7dcea0") : (battle.foe || "#e4533e");
     }
 
-    function inkField(actor) {
-      const current = actorInk(actor);
-      const dots = FOE_INKS.map(function (color) {
-        const on = inkOk(actor.color) && actor.color.toLowerCase() === color.toLowerCase() ? " is-on" : "";
-        return '<button type="button" class="ink-dot' + on + '" data-ink="' + color + '" data-id="' + esc(actor.id) + '" style="background:' + color + '" title="' + color + '"></button>';
-      }).join("");
-      return '<div class="ink-field"><span>Цвет</span><div class="ink-picks">' + dots +
-        '<input data-q="color" data-id="' + esc(actor.id) + '" type="color" value="' + esc(current) + '" aria-label="Свой цвет" title="Свой цвет"></div></div>';
-    }
-
     function faceBox(actor) {
       const face = actor.portrait
         ? '<img alt="" src="' + esc(actor.portrait) + '">'
@@ -1243,7 +1274,19 @@
       const book = actor.side === "player" ? ""
         : '<button type="button" class="icon-btn foe-face-book" data-act="foe-face" data-id="' + esc(actor.id) + '" title="Портрет из справочника" aria-label="Портрет из справочника"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h6.2A2.8 2.8 0 0 1 14 8.3V19H7.2A2.2 2.2 0 0 0 5 21.2V5.5zM19 5.5h-6.2A2.8 2.8 0 0 0 10 8.3V19h6.8A2.2 2.2 0 0 1 19 21.2V5.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></button>';
       return '<div class="fight-face-box"><label class="fight-face" style="--ink:' + esc(actorInk(actor)) + '" title="Загрузить портрет. Картинка попадёт в библиотеку">' + face + markIcons(actor.marks) +
-        '<input type="file" accept="image/*" data-face="' + esc(actor.id) + '" aria-label="Портрет ' + esc(actor.name || "") + '"></label>' + book + "</div>";
+        '<input type="file" accept="image/*" data-face="' + esc(actor.id) + '" aria-label="Портрет ' + esc(actor.name || "") + '"></label>' +
+        '<button type="button" class="port-ink" data-act="pick-ink" data-id="' + esc(actor.id) + '" style="background:' + esc(actorInk(actor)) + '" title="Цвет рамки" aria-label="Цвет рамки"></button>' +
+        book + "</div>";
+    }
+
+    function weaponButtons(actor) {
+      return armsOf(actor).map(function (arm) {
+        const bonus = Math.round(Number(arm.bonus) || 0);
+        const sign = bonus > 0 ? "+" : "";
+        return '<button type="button" data-act="arm-hit" data-id="' + esc(actor.id) + '" data-arm="' + esc(arm.id) + '" title="Сразу бить этим оружием. Дальше только выбор цели">' +
+          esc(arm.name || "Атака") + " " + sign + bonus + "</button>";
+      }).join("") +
+        '<button type="button" data-act="custom-hurt" data-id="' + esc(actor.id) + '" title="Снять хиты своей формулой, без броска атаки">Свой урон</button>';
     }
 
     function initBonusOf(actor) {
@@ -1289,17 +1332,13 @@
         cardField("Макс.", '<input data-q="hpMax" data-id="' + esc(actor.id) + '" class="num" type="number" min="1" value="' + max + '" aria-label="Максимум хитов">') +
         "</div>" +
         '<label class="check" title="Полоса хитов на экране игроков"><input data-q="boss" data-id="' + esc(actor.id) + '" type="checkbox"' + (isBoss(actor) ? " checked" : "") + (actor.side === "player" ? " disabled" : "") + "> Полоса</label></section>" +
-        '<section class="pcard-group"><h4>Атака</h4>' +
-        '<button type="button" data-act="row-attack" data-id="' + esc(actor.id) + '" title="Выбрать, кого бьёт этот боец. Бросок сравнивается с КД цели">Атака</button>' +
-        cardField("Оружие", '<input data-q="weapon" data-id="' + esc(actor.id) + '" type="text" value="' + esc(actor.weapon || "") + '" aria-label="Оружие">') +
-        cardField("Урон", '<input data-q="damage" data-id="' + esc(actor.id) + '" type="text" value="' + esc(actor.damage || "") + '" aria-label="Урон">') +
-        "</section>" +
+        '<section class="pcard-group"><h4>Атака</h4>' + weaponButtons(actor) + "</section>" +
         '<section class="pcard-group"><h4>Таймер</h4><div class="turn-cell">' +
         cardField("Сек", '<input data-q="turnSec" data-id="' + esc(actor.id) + '" class="num" type="number" min="0" value="' + esc(String(Math.max(0, Math.round(Number(actor.turnSec) || 0)))) + '" aria-label="Секунды на ход" title="0 — без таймера">') +
         cardField("Эффект", '<select class="turn-fx" data-turn-fx data-id="' + esc(actor.id) + '" aria-label="Эффект таймера">' + fxOptions(actor.turnFx) + "</select>") +
         '<button type="button" class="turn-go" data-act="turn-toggle" data-id="' + esc(actor.id) + '" title="Пуск или пауза. Эффект виден игрокам">Старт</button>' +
         '<b class="turn-left" data-turn="' + esc(actor.id) + '"></b></div></section>' +
-        '<section class="pcard-group"><h4>Отряд</h4>' + inkField(actor) +
+        '<section class="pcard-group"><h4>Отряд</h4>' +
         cardField("Отряд", '<select data-move-squad="' + esc(actor.id) + '" aria-label="Отряд бойца">' + squadOptions(home && home.id) + "</select>") +
         '<div class="pcard-row"><button type="button" data-act="copy-fighter" data-id="' + esc(actor.id) + '" title="Скопировать бойца в этот же отряд">Копия</button>' +
         '<button type="button" data-act="drop-fighter" data-id="' + esc(actor.id) + '" title="Убрать этого бойца с экрана боя">Убрать</button></div></section>' +
@@ -1451,16 +1490,6 @@
     }
 
     function openAttackPick(actor) {
-      armsOf(actor);
-      const arms = actor.weapons || [];
-      const armHtml = arms.length > 1
-        ? '<label title="Чем бить">Чем<select id="atk-arm">' + arms.map(function (arm) {
-          const on = arm.id === actor.armId || (!actor.armId && arm.name === actor.weapon);
-          const bonus = Math.round(Number(arm.bonus) || 0);
-          return '<option value="' + esc(arm.id) + '"' + (on ? " selected" : "") + ">" +
-            esc(arm.name || "Атака") + " · " + (bonus > 0 ? "+" : "") + bonus + "</option>";
-        }).join("") + "</select></label>"
-        : "";
       const list = rows().map(function (row) { return row.actor; });
       const html = list.length ? list.map(function (row) {
         const ac = Math.max(0, Math.round(Number(row.ac) || 10));
@@ -1468,10 +1497,45 @@
         return '<button type="button" data-target="' + esc(row.id) + '"><b>' + esc(row.name || "—") +
           (self ? " · себя" : "") + (row.dead ? " †" : "") + "</b><span>КД " + ac + "</span></button>";
       }).join("") : '<p class="note">В бою никого нет.</p>';
-      openPop("Кого бьёт " + (actor.name || "боец"), armHtml +
+      const arm = armsOf(actor).find(function (row) { return row.id === actor.armId; }) || armsOf(actor)[0];
+      openPop((arm && arm.name) || "Кого бить",
         '<p class="note">Бросок к20 сравнивается с классом доспеха. Попадание сразу снимает хиты.</p>' +
         '<div class="battle-hits">' + html + "</div>");
       popActorId = actor.id;
+    }
+
+    function openCustomHurt(actor) {
+      const list = rows().map(function (row) { return row.actor; });
+      const html = list.length ? list.map(function (row) {
+        return '<button type="button" data-hurt="' + esc(row.id) + '"><b>' + esc(row.name || "—") +
+          (row.id === actor.id ? " · себя" : "") + (row.dead ? " †" : "") + "</b></button>";
+      }).join("") : '<p class="note">В бою никого нет.</p>';
+      openPop("Свой урон",
+        '<label>Формула<input id="custom-damage" type="text" value="' + esc(actor.damage || "1d6") + '" placeholder="2d6+4" aria-label="Формула урона"></label>' +
+        '<p class="note">Хиты снимаются сразу, без броска атаки.</p>' +
+        '<div class="battle-hits">' + html + "</div>");
+      popActorId = actor.id;
+    }
+
+    function openInk(actor) {
+      const colors = actor.side === "player" ? FOE_INKS.concat(HERO_EXTRA) : FOE_INKS.slice();
+      const dots = colors.map(function (color) {
+        const on = inkOk(actor.color) && actor.color.toLowerCase() === color.toLowerCase() ? " is-on" : "";
+        return '<button type="button" class="ink-dot' + on + '" data-ink="' + color + '" style="background:' + color + '" title="' + color + '"></button>';
+      }).join("");
+      const custom = actor.side === "player"
+        ? '<label>Свой<input id="ink-custom" type="color" value="' + esc(actorInk(actor)) + '" aria-label="Свой цвет"></label>'
+        : "";
+      openPop("Цвет рамки", '<div class="ink-picks">' + dots + "</div>" + custom);
+      popActorId = actor.id;
+      const input = pop && pop.querySelector("#ink-custom");
+      if (input) input.addEventListener("change", function () {
+        const who = popActor();
+        if (!who || who.side !== "player" || !inkOk(input.value)) return;
+        who.color = input.value;
+        save();
+        paint();
+      });
     }
 
     function openQuickAttack() {
@@ -1836,6 +1900,7 @@
             if (arm && key === "weapon") arm.name = input.value;
             if (arm && key === "damage") arm.damage = input.value;
           } else if (key === "color") {
+            if (actor.side !== "player" && !foeInkOk(input.value)) return key;
             actor.color = inkOk(input.value) ? input.value : "";
           } else {
             const next = Math.round(Number(input.value) || 0);
@@ -2097,9 +2162,36 @@
         const actor = battle.actors.find(function (row) { return row.id === button.getAttribute("data-id"); });
         if (!actor) return;
         const box = button.getBoundingClientRect();
-        popX = box.right + 6;
-        popY = box.top;
+        popX = box.left;
+        popY = box.bottom + 6;
         openAttackPick(actor);
+      }
+      if (act === "arm-hit") {
+        const actor = battle.actors.find(function (row) { return row.id === button.getAttribute("data-id"); });
+        const arm = actor && armsOf(actor).find(function (row) { return row.id === button.getAttribute("data-arm"); });
+        if (!actor || !arm) return;
+        useArm(actor, arm);
+        actor.armId = arm.id;
+        const box = button.getBoundingClientRect();
+        popX = box.left;
+        popY = box.bottom + 6;
+        openAttackPick(actor);
+      }
+      if (act === "custom-hurt") {
+        const actor = battle.actors.find(function (row) { return row.id === button.getAttribute("data-id"); });
+        if (!actor) return;
+        const box = button.getBoundingClientRect();
+        popX = box.left;
+        popY = box.bottom + 6;
+        openCustomHurt(actor);
+      }
+      if (act === "pick-ink") {
+        const actor = battle.actors.find(function (row) { return row.id === button.getAttribute("data-id"); });
+        if (!actor) return;
+        const box = button.getBoundingClientRect();
+        popX = box.left;
+        popY = box.bottom + 6;
+        openInk(actor);
       }
     }
 
@@ -2151,17 +2243,33 @@
         const actor = popActor();
         const foe = battle.actors.find(function (row) { return row.id === targetBtn.getAttribute("data-target"); });
         if (!actor || !foe) return;
-        const armPick = pop.querySelector("#atk-arm");
-        if (armPick) {
-          const arm = armsOf(actor).find(function (row) { return row.id === armPick.value; });
-          if (arm) {
-            useArm(actor, arm);
-            actor.armId = arm.id;
-          }
-        }
         actor.targetId = foe.id;
         closePop();
         attack(actor);
+        return;
+      }
+      const hurtBtn = event.target.closest("[data-hurt]");
+      if (hurtBtn && pop && pop.contains(hurtBtn)) {
+        const actor = popActor();
+        const foe = battle.actors.find(function (row) { return row.id === hurtBtn.getAttribute("data-hurt"); });
+        const typed = field("custom-damage");
+        if (!actor || !foe) return;
+        actor.targetId = foe.id;
+        const text = (typed && typed.value) || actor.damage || "1d6";
+        closePop();
+        damage(actor, true, false, text);
+        return;
+      }
+      const inkBtn = event.target.closest("[data-ink]");
+      if (inkBtn && pop && pop.contains(inkBtn)) {
+        const actor = popActor();
+        const color = inkBtn.getAttribute("data-ink");
+        if (!actor || !inkOk(color)) return;
+        if (actor.side !== "player" && !foeInkOk(color)) return;
+        actor.color = color;
+        closePop();
+        save();
+        paint();
         return;
       }
       const whoBtn = event.target.closest("[data-attacker]");
