@@ -1462,7 +1462,9 @@
       if (opts.saveNote) box._saveNote = opts.saveNote;
       if (opts.pin === true && box._setPinned) box._setPinned(true);
       else if (opts.unpin === true && box._setPinned) box._setPinned(false);
-      else {
+      else if (opts.silent) {
+        if (box._wake) box._wake();
+      } else {
         box.hidden = false;
         if (box._wake) box._wake();
         if (box._place) box._place();
@@ -1879,10 +1881,10 @@
         const left = mode === "run" || mode === "pause" ? Math.max(0, remain) : readSet(false);
         return { running: mode === "run", left: left };
       },
-      arm: function (seconds) {
+      arm: function (seconds, forceRun) {
         const total = Math.max(0, Math.round(Number(seconds) || 0));
         if (!total) return;
-        const was = mode === "run";
+        const was = mode === "run" || forceRun === true;
         minInput.value = String(Math.floor(total / 60));
         secInput.value = String(total % 60);
         span = total * 1000;
@@ -2238,6 +2240,11 @@
       };
       return Object.assign(bag, extra || {});
     }
+    window.ShirmoTurn = function (seconds) {
+      const existed = !!document.getElementById("timer-layer");
+      openTimer(timerBag(existed ? { silent: true } : {}));
+      if (window.ShirmoClock && window.ShirmoClock.arm) window.ShirmoClock.arm(seconds, true);
+    };
     function paintChoices() {
       const lib = shelf();
       const current = scenePage();

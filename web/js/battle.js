@@ -373,7 +373,7 @@
       const prev = battle.turn;
       if (at >= 0) battle.turn = at;
       const sec = Math.max(0, Math.round(Number(actor && actor.turnSec) || 0));
-      if (at >= 0 && at !== prev && sec && window.ShirmoClock && window.ShirmoClock.arm) window.ShirmoClock.arm(sec);
+      if (at >= 0 && at !== prev && sec && window.ShirmoTurn) window.ShirmoTurn(sec);
     }
 
     function findMarker(id) {
@@ -1168,7 +1168,8 @@
         '<input data-q="hp" data-id="' + esc(actor.id) + '" type="range" min="0" max="' + max + '" value="' + hp + '" aria-label="Хиты"></span>' +
         '<input data-q="hp" data-id="' + esc(actor.id) + '" class="num hp-read" type="number" min="0" max="' + max + '" value="' + hp + '" aria-label="Хиты числом" title="Текущие хиты"></td>' +
         '<td><button type="button" data-fold="' + esc(actor.id) + '" title="Параметры">' + (open ? "▴" : "▾") + "</button></td>" +
-        '<td><button type="button" data-go="' + esc(actor.id) + '" title="Сделать ход этого бойца">ход</button></td>' +
+        '<td class="turn-cell"><label class="turn-sec" title="Секунды на ход этого бойца. 0 — без таймера">сек<input data-q="turnSec" data-id="' + esc(actor.id) + '" class="num" type="number" min="0" value="' + esc(String(Math.max(0, Math.round(Number(actor.turnSec) || 0)))) + '" aria-label="Секунды на ход"></label>' +
+        '<button type="button" data-go="' + esc(actor.id) + '" title="Сделать ход этого бойца">ход</button></td>' +
         '<td><button type="button" data-act="life" data-id="' + esc(actor.id) + '">' + (actor.dead ? "Оживить" : "Убить") + "</button></td></tr>";
       const home = groupOfActor(actor.id);
       const squadPick = '<label title="Перенести бойца в другой отряд">Отряд<select data-move-squad="' + esc(actor.id) + '" aria-label="Отряд бойца">' +
@@ -1176,7 +1177,6 @@
         '<button type="button" data-act="copy-fighter" data-id="' + esc(actor.id) + '" title="Скопировать бойца в этот же отряд">Копия</button>';
       const more = '<tr class="fighter-more" data-more="' + esc(actor.id) + '"' + (open ? "" : " hidden") + '><td colspan="9"><div class="more-grid">' +
         '<label>Макс.<input data-q="hpMax" data-id="' + esc(actor.id) + '" class="num" type="number" min="1" value="' + max + '" aria-label="Максимум хитов"></label>' +
-        '<label title="Секунды на ход этого бойца. 0 — без своего таймера">Ход, с<input data-q="turnSec" data-id="' + esc(actor.id) + '" class="num" type="number" min="0" value="' + esc(String(Math.max(0, Math.round(Number(actor.turnSec) || 0)))) + '" aria-label="Секунды на ход"></label>' +
         '<label class="check">Полоса<input data-q="boss" data-id="' + esc(actor.id) + '" type="checkbox"' + (isBoss(actor) ? " checked" : "") + (actor.side === "player" ? " disabled" : "") + ' aria-label="Полоса хитов" title="Полоса хитов на экране игроков"></label>' +
         '<label>Оружие<input data-q="weapon" data-id="' + esc(actor.id) + '" type="text" value="' + esc(actor.weapon || "") + '" aria-label="Оружие"></label>' +
         '<label>Урон<input data-q="damage" data-id="' + esc(actor.id) + '" type="text" value="' + esc(actor.damage || "") + '" aria-label="Урон"></label>' +
