@@ -1223,8 +1223,10 @@
         });
         box.querySelector(".lib-pick-grid").innerHTML = rows.map(function (row) {
           const bit = String(row.note.text || "").replace(/\s+/g, " ").slice(0, 80);
-          return '<button type="button" class="lib-pick-card" data-note="' + row.index + '"><strong>' + esc(row.note.name || "Заметка") + "</strong><small>" + esc(bit) + "</small></button>";
-        }).join("") || '<p class="note">Нет заметок</p>';
+          return '<button type="button" class="libx-card" data-note="' + row.index + '" title="' + esc(row.note.name || "Заметка") + '">' +
+            '<div class="libx-thumb"><span class="libx-glyph">≡</span></div>' +
+            "<strong>" + esc(row.note.name || "Заметка") + "</strong><small>" + esc(bit) + "</small></button>";
+        }).join("") || '<p class="roll-empty libx-empty">Нет заметок</p>';
         return;
       }
       const all = folders();
@@ -1244,20 +1246,28 @@
         return { acc: acc, html: html.html + " / <button type=\"button\" data-path=\"" + esc(acc) + "\">" + esc(part) + "</button>" };
       }, { acc: "", html: "" }).html : "");
       box.querySelector(".lib-pick-crumbs").innerHTML = crumbs;
+      function countIn(folderPath) {
+        return images.filter(function (item) {
+          const folder = String(item && item.folder || "");
+          return folder === folderPath || folder.indexOf(folderPath + "/") === 0;
+        }).length;
+      }
       box.querySelector(".lib-pick-grid").innerHTML = dirs.map(function (folder) {
         const name = folder.split("/").pop();
-        return '<button type="button" class="lib-pick-card is-dir" data-path="' + esc(folder) + '"><strong>' + esc(name) + "</strong><small>папка</small></button>";
+        return '<button type="button" class="libx-card is-dir" data-path="' + esc(folder) + '" title="' + esc(name) + '">' +
+          '<div class="libx-thumb libx-folder-art" aria-hidden="true"></div>' +
+          "<strong>" + esc(name) + "</strong><small>" + countIn(folder) + " шт.</small></button>";
       }).join("") + files.map(function (item) {
-        return '<button type="button" class="lib-pick-card" data-url="' + esc(item.url || "") + '" data-name="' + esc(item.name || "") + '">' +
-          (item.url ? '<img alt="" src="' + esc(item.url) + '">' : "") +
+        return '<button type="button" class="libx-card" data-url="' + esc(item.url || "") + '" data-name="' + esc(item.name || "") + '" title="' + esc(item.name || "Картинка") + '">' +
+          '<div class="libx-thumb">' + (item.url ? '<img alt="" src="' + esc(item.url) + '">' : "") + "</div>" +
           "<strong>" + esc(item.name || "Картинка") + "</strong></button>";
-      }).join("") || '<p class="note">Пусто</p>';
+      }).join("") || '<p class="roll-empty libx-empty">Пусто</p>';
     }
-    box.innerHTML = '<div class="pop-card shelf-pick"><header class="clock-bar"><b>' + (opts.kind === "note" ? "Заметки" : "Картинки") + '</b>' +
-      (opts.kind === "note" ? "" : '<button type="button" data-clear>Без картинки</button>') +
-      '<button type="button" data-close aria-label="Закрыть">×</button></header>' +
+    box.innerHTML = '<div class="pop-card shelf-pick"><div class="pop-head"><h2>' + (opts.kind === "note" ? "Заметки" : "Картинки") + "</h2>" +
+      '<div class="pop-acts">' + (opts.kind === "note" ? "" : '<button type="button" data-clear>Без картинки</button>') +
+      '<button type="button" data-close aria-label="Закрыть">×</button></div></div>' +
       '<input class="lib-pick-search" type="search" placeholder="Поиск" aria-label="Поиск">' +
-      '<div class="lib-pick-crumbs"></div><div class="lib-pick-grid"></div></div>';
+      '<div class="lib-pick-crumbs"></div><div class="lib-pick-grid libx-grid"></div></div>';
     document.body.appendChild(box);
     box.querySelector("[data-close]").addEventListener("click", function () { box.remove(); });
     const clearBtn = box.querySelector("[data-clear]");
@@ -1408,13 +1418,13 @@
       '<div class="clock-acts" data-fx="free-acts" hidden><button type="button" data-fx="play">Запустить эффект</button><button type="button" data-fx="halt">Стоп</button></div>' +
       '<label class="clock-size">Текст в конце<textarea data-fx="end-text" rows="2" placeholder="Время вышло"></textarea></label>' +
       '<div class="clock-acts"><button type="button" data-fx="pick-note">Из заметок</button><button type="button" data-fx="save-note">В справочник</button></div>' +
-      '<div class="clock-file"><span>Картинка в конце</span><b data-fx="end-image-name">Нет</b>' +
-      '<button type="button" data-fx="pick-end">Справочник</button>' +
-      '<label class="file-btn" title="Загрузить картинку">Файл<input type="file" accept="image/*" data-fx="file-end" aria-label="Загрузить картинку в конец"></label></div>' +
+      '<div class="clock-file"><span>Картинка в конце <b data-fx="end-image-name">Нет</b></span>' +
+      '<div class="clock-acts"><button type="button" data-fx="pick-end">Справочник</button>' +
+      '<label class="clock-upload">Файл<input type="file" accept="image/*" data-fx="file-end" aria-label="Загрузить картинку в конец"></label></div></div>' +
       '<input type="hidden" data-fx="end-image" value="">' +
-      '<div class="clock-file"><span>Фон таймера</span><b data-fx="back-name">Нет</b>' +
-      '<button type="button" data-fx="pick-back">Справочник</button>' +
-      '<label class="file-btn" title="Загрузить фон">Файл<input type="file" accept="image/*" data-fx="file-back" aria-label="Загрузить фон таймера"></label></div>' +
+      '<div class="clock-file"><span>Фон таймера <b data-fx="back-name">Нет</b></span>' +
+      '<div class="clock-acts"><button type="button" data-fx="pick-back">Справочник</button>' +
+      '<label class="clock-upload">Файл<input type="file" accept="image/*" data-fx="file-back" aria-label="Загрузить фон таймера"></label></div></div>' +
       '<input type="hidden" data-fx="back" value="">';
     document.body.appendChild(box);
     const leftNode = box.querySelector("[data-clock=left]");
