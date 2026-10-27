@@ -177,31 +177,16 @@
 
   function drawMagic() {
     const leftMs = state.linked ? Math.max(0, state.left || 0) : state.t * 1000;
-    const sec = (leftMs / 1000) % 60;
+    const secLeft = (leftMs / 1000) % 60;
+    const sec = state.linked ? (60 - secLeft) % 60 : secLeft;
     const minute = (leftMs / 60000) % 60;
     const cx = w / 2;
     const cy = h / 2;
     const R = Math.min(w, h) * 0.26;
-    const sw = R * 0.72;
     ctx.save();
     ctx.globalAlpha = state.appear;
     ctx.fillStyle = "rgba(6, 5, 4, " + (0.32 + state.progress * 0.28) + ")";
     ctx.fillRect(0, 0, w, h);
-    const strap = ctx.createLinearGradient(cx - sw / 2, 0, cx + sw / 2, 0);
-    strap.addColorStop(0, "#24160f");
-    strap.addColorStop(0.18, "#6a4328");
-    strap.addColorStop(0.5, "#3d2618");
-    strap.addColorStop(0.82, "#6a4328");
-    strap.addColorStop(1, "#24160f");
-    ctx.fillStyle = strap;
-    ctx.beginPath();
-    ctx.roundRect(cx - sw / 2, cy - R * 2.2, sw, R * 4.4, 16);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(230, 196, 140, 0.28)";
-    ctx.lineWidth = 1;
-    ctx.setLineDash([2, 4]);
-    ctx.strokeRect(cx - sw / 2 + 7, cy - R * 2.08, sw - 14, R * 4.16);
-    ctx.setLineDash([]);
     ctx.beginPath();
     ctx.arc(cx, cy + 3, R * 1.22, 0, Math.PI * 2);
     ctx.fillStyle = "rgba(0,0,0,0.35)";
@@ -297,7 +282,57 @@
     }
     ctx.globalAlpha = 1;
   }
-    ctx.beginPath();
+
+  function snowBed() {
+    if (!bed || bed.width !== Math.max(1, Math.floor(w)) || bed.height !== Math.max(1, Math.floor(h))) {
+      bed = document.createElement("canvas");
+      bed.width = Math.max(1, Math.floor(w));
+      bed.height = Math.max(1, Math.floor(h));
+      bedCtx = bed.getContext("2d");
+    }
+    return bedCtx;
+  }
+
+  function drawBlizzard(dt) {
+    const n = many(140);
+    const cover = snowBed();
+    while (bits.length < n) {
+      bits.push({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        r: 1.2 + Math.random() * 3.2,
+        v: 40 + Math.random() * 110,
+        wind: 20 + Math.random() * 80
+      });
+    }
+    if (bits.length > n) bits.length = n;
+    const floor = h * (1 - state.progress * 0.92);
+    bits.forEach(function (flake) {
+      flake.y += flake.v * dt;
+      flake.x += flake.wind * dt * (0.4 + state.power / 120);
+      if (flake.x > w) flake.x -= w;
+      if (flake.y > floor) {
+        cover.fillStyle = "rgba(255,255,255," + (0.35 + Math.random() * 0.5) + ")";
+        cover.beginPath();
+        cover.arc(flake.x, Math.min(h - 2, flake.y), flake.r + state.progress * 1.4, 0, Math.PI * 2);
+        cover.fill();
+        flake.y = -8;
+        flake.x = Math.random() * w;
+      }
+    });
+    ctx.drawImage(bed, 0, 0, w, h);
+    ctx.fillStyle = "rgba(236, 242, 248, " + (state.progress * 0.42) + ")";
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+    bits.forEach(function (flake) {
+      ctx.globalAlpha = 0.75 * state.appear;
+      ctx.beginPath();
+      ctx.arc(flake.x, flake.y, flake.r, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+  }
+
   function puff(x, y, r, alpha, gray) {
     const g = ctx.createRadialGradient(x, y, r * 0.1, x, y, r);
     g.addColorStop(0, "rgba(" + gray + "," + gray + "," + (gray - 4) + "," + alpha + ")");
