@@ -957,6 +957,151 @@
     };
   }
 
+  function openClock() {
+    let box = document.getElementById("clock-layer");
+    if (box) {
+      box.hidden = false;
+      if (box._wake) box._wake();
+      return;
+    }
+    box = document.createElement("div");
+    box.id = "clock-layer";
+    box.className = "clock-layer";
+    box.setAttribute("role", "dialog");
+    box.setAttribute("aria-label", "Часы и таймер");
+    box.innerHTML = '<header class="clock-bar"><b>Часы</b><button type="button" data-clock="close" title="Закрыть" aria-label="Закрыть">×</button></header>' +
+      '<p class="clock-cap">Сейчас</p><p class="clock-face" data-clock="now">00:00:00</p>' +
+      '<p class="clock-cap">Таймер</p><p class="clock-timer" data-clock="left">00:00</p>' +
+      '<div class="clock-set"><label>мин<input data-clock="min" type="number" min="0" max="599" value="5"></label>' +
+      '<label>сек<input data-clock="sec" type="number" min="0" max="59" value="0"></label></div>' +
+      '<div class="clock-presets"><button type="button" data-clock-min="1">1</button><button type="button" data-clock-min="5">5</button><button type="button" data-clock-min="10">10</button><button type="button" data-clock-min="30">30</button></div>' +
+      '<div class="clock-acts"><button type="button" data-clock="run">Старт</button><button type="button" data-clock="reset">Сброс</button></div>';
+    document.body.appendChild(box);
+    const nowNode = box.querySelector("[data-clock=now]");
+    const leftNode = box.querySelector("[data-clock=left]");
+    const runBtn = box.querySelector("[data-clock=run]");
+    const minInput = box.querySelector("[data-clock=min]");
+    const secInput = box.querySelector("[data-clock=sec]");
+    let mode = "idle";
+    let remain = 0;
+    let tickAt = 0;
+    let beat = 0;
+    let audio = null;
+    function pad(n) { return String(n).padStart(2, "0"); }
+    function readSet(commit) {
+      const minutes = Math.min(599, Math.max(0, Math.round(Number(minInput.value) || 0)));
+      const seconds = Math.min(59, Math.max(0, Math.round(Number(secInput.value) || 0)));
+      if (commit) {
+        minInput.value = String(minutes);
+        secInput.value = String(seconds);
+      }
+      return (minutes * 60 + seconds) * 1000;
+    }
+    function showLeft(ms) {
+      const total = Math.max(0, Math.ceil(ms / 1000));
+      const hours = Math.floor(total / 3600);
+      const minutes = Math.floor((total % 3600) / 60);
+      const seconds = total % 60;
+      leftNode.textContent = hours ? pad(hours) + ":" + pad(minutes) + ":" + pad(seconds) : pad(minutes) + ":" + pad(seconds);
+    }
+    function paint() {
+      const now = new Date();
+      nowNode.textContent = pad(now.getHours()) + ":" + pad(now.getMinutes()) + ":" + pad(now.getSeconds());
+      if (mode === "run") remain = Math.max(0, remain - (Date.now() - tickAt));
+      tickAt = Date.now();
+      if (mode === "run" && remain <= 0) {
+        mode = "done";
+        remain = 0;
+        ring();
+      }
+      showLeft(mode === "idle" ? readSet(false) : remain);
+      leftNode.classList.toggle("is-run", mode === "run");
+      leftNode.classList.toggle("is-done", mode === "done");
+      runBtn.textContent = mode === "run" ? "Пауза" : "Старт";
+      minInput.disabled = mode === "run";
+      secInput.disabled = mode === "run";
+      if (box.hidden && mode !== "run") {
+        clearInterval(beat);
+        beat = 0;
+      }
+    }
+    function arm() {
+      try {
+        if (!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
+        if (audio.state === "suspended") audio.resume();
+      } catch (err) { /* без звука */ }
+    }
+    function ring() {
+      if (!audio) return;
+      try {
+        const tone = audio.createOscillator();
+        const gain = audio.createGain();
+        tone.frequency.value = 880;
+        tone.connect(gain);
+        gain.connect(audio.destination);
+        gain.gain.setValueAtTime(0.06, audio.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audio.currentTime + 0.7);
+        tone.start();
+        tone.stop(audio.currentTime + 0.7);
+      } catch (err) { /* без звука */ }
+    }
+    function wake() {
+      if (beat) return;
+      paint();
+      beat = setInterval(paint, 250);
+    }
+    box._wake = wake;
+    box.querySelector("[data-clock=close]").addEventListener("click", function () { box.hidden = true; });
+    runBtn.addEventListener("click", function () {
+      if (mode === "run") {
+        mode = "pause";
+        paint();
+        return;
+      }
+      if (mode === "idle" || mode === "done" || remain <= 0) {
+        remain = readSet(true);
+        if (!remain) return;
+      }
+      arm();
+      mode = "run";
+      tickAt = Date.now();
+      paint();
+    });
+    box.querySelector("[data-clock=reset]").addEventListener("click", function () {
+      mode = "idle";
+      remain = 0;
+      paint();
+    });
+    box.querySelectorAll("[data-clock-min]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        if (mode === "run") return;
+        minInput.value = button.getAttribute("data-clock-min");
+        secInput.value = "0";
+        mode = "idle";
+        remain = 0;
+        paint();
+      });
+    });
+    const bar = box.querySelector(".clock-bar");
+    let drag = null;
+    bar.addEventListener("pointerdown", function (event) {
+      if (event.target.closest("button")) return;
+      const rect = box.getBoundingClientRect();
+      drag = { id: event.pointerId, dx: event.clientX - rect.left, dy: event.clientY - rect.top };
+      bar.setPointerCapture(event.pointerId);
+    });
+    bar.addEventListener("pointermove", function (event) {
+      if (!drag || event.pointerId !== drag.id) return;
+      const left = Math.max(8, Math.min(window.innerWidth - box.offsetWidth - 8, event.clientX - drag.dx));
+      const top = Math.max(8, Math.min(window.innerHeight - 48, event.clientY - drag.dy));
+      box.style.left = left + "px";
+      box.style.top = top + "px";
+      box.style.right = "auto";
+    });
+    bar.addEventListener("pointerup", function () { drag = null; });
+    wake();
+  }
+
   function openRollMenu(roomId, headers, state, err, anchor) {
     const old = document.getElementById("roll-menu");
     if (old) {
@@ -1225,6 +1370,7 @@
       '<button type="button" id="top-kebab" class="kebab-btn" title="Меню" aria-label="Меню" aria-expanded="false">' + glyph('<circle cx="12" cy="6" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="18" r="1.5" fill="currentColor"/>') + "</button>" +
       '<div class="kebab-menu" id="kebab-menu" hidden>' +
       '<button type="button" id="roll" title="Бросок с преимуществом или помехой, закреплённые и история">Броски</button>' +
+      '<button type="button" id="clock-open" title="Часы и таймер поверх ширмы">Часы</button>' +
       '<button type="button" id="roll-look" title="Скорость, цвет и текстура кубика">Кубик</button>' +
       '<button type="button" id="library" title="Открыть библиотеку файлов">Библиотека</button>' +
       '<div class="kebab-gap"></div>' +
@@ -1893,6 +2039,7 @@
       if (look && look._close) look._close();
       openRollMenu(id, headers, state, err, app.querySelector("#roll"));
     });
+    app.querySelector("#clock-open").addEventListener("click", function () { openClock(); });
     app.querySelector("#roll-look").addEventListener("click", function () {
       openRollLook(state, err, save, app.querySelector("#roll-look"));
     });
