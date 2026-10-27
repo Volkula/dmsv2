@@ -318,6 +318,7 @@
       initBonus: 0,
       portrait: "",
       note: "",
+      turnSec: 0,
       marks: [],
       dead: false,
       markerId: ""
@@ -348,6 +349,10 @@
     let query = "";
     let hits = [];
     let alive = true;
+    const turnBeat = setInterval(function () {
+      if (!alive) return;
+      refreshTurnClocks(host);
+    }, 250);
     let custom = { name: "Огр", hp: 59, ac: 11, bonus: 6, damage: "2d8+4", weapon: "Дубина", count: 1 };
 
     function save() { if (ctx.save) ctx.save(); }
@@ -365,7 +370,10 @@
     function selectActor(actor) {
       const list = rows();
       const at = list.findIndex(function (row) { return row.actor.id === actor.id; });
+      const prev = battle.turn;
       if (at >= 0) battle.turn = at;
+      const sec = Math.max(0, Math.round(Number(actor && actor.turnSec) || 0));
+      if (at >= 0 && at !== prev && sec && window.ShirmoClock && window.ShirmoClock.arm) window.ShirmoClock.arm(sec);
     }
 
     function findMarker(id) {
@@ -1032,7 +1040,7 @@
         '<label>Герои<input id="battle-player" type="color" value="' + esc(battle.player) + '"></label>' +
         '<label>Враги<input id="battle-foe" type="color" value="' + esc(battle.foe) + '"></label>' +
         '<label>Активный<input id="battle-brass" type="color" value="' + esc(battle.brass) + '"></label></div>' +
-        '<label>Из библиотеки<select id="battle-image">' + options + "</select></label>" +
+        '<label>Из библиотеки<select id="battle-image">' + options + '</select><button type="button" id="battle-image-open">Справочник</button></label>' +
         '<label class="battle-upload" title="Свой фон. Картинка попадёт в библиотеку">Загрузить фон<input id="battle-file" type="file" accept="image/*" aria-label="Загрузить фон"></label>' +
         '<details class="drop"><summary>Размер и смещение</summary>' +
         '<label>Размер <b>' + esc(String(battle.imageScale || 100)) + '%</b><input id="battle-scale" type="range" min="20" max="200" value="' + esc(String(battle.imageScale || 100)) + '"></label>' +
@@ -1168,6 +1176,7 @@
         '<button type="button" data-act="copy-fighter" data-id="' + esc(actor.id) + '" title="Скопировать бойца в этот же отряд">Копия</button>';
       const more = '<tr class="fighter-more" data-more="' + esc(actor.id) + '"' + (open ? "" : " hidden") + '><td colspan="9"><div class="more-grid">' +
         '<label>Макс.<input data-q="hpMax" data-id="' + esc(actor.id) + '" class="num" type="number" min="1" value="' + max + '" aria-label="Максимум хитов"></label>' +
+        '<label title="Секунды на ход этого бойца. 0 — без своего таймера">Ход, с<input data-q="turnSec" data-id="' + esc(actor.id) + '" class="num" type="number" min="0" value="' + esc(String(Math.max(0, Math.round(Number(actor.turnSec) || 0)))) + '" aria-label="Секунды на ход"></label>' +
         '<label class="check">Полоса<input data-q="boss" data-id="' + esc(actor.id) + '" type="checkbox"' + (isBoss(actor) ? " checked" : "") + (actor.side === "player" ? " disabled" : "") + ' aria-label="Полоса хитов" title="Полоса хитов на экране игроков"></label>' +
         '<label>Оружие<input data-q="weapon" data-id="' + esc(actor.id) + '" type="text" value="' + esc(actor.weapon || "") + '" aria-label="Оружие"></label>' +
         '<label>Урон<input data-q="damage" data-id="' + esc(actor.id) + '" type="text" value="' + esc(actor.damage || "") + '" aria-label="Урон"></label>' +
@@ -1199,7 +1208,7 @@
       const style = "--b-player:" + esc(battle.player || "#3ecf78") + ";--b-foe:" + esc(battle.foe || "#e4533e") + ";--b-brass:" + esc(battle.brass || "#e6c36a");
       return '<div class="battle-screen master-rail" style="' + style + '">' +
         '<p class="fight-round"><span>Раунд</span><b>' + esc(String(battle.round || 1)) + "</b></p>" +
-        '<div class="battle-track">' + trackHtml(actors, true, now && now.id) + "</div>" +
+        '<div class="battle-track">' + trackHtml(actors, true, now && now.id, true) + "</div>" +
         bossHtml(actors, true) +
         "</div>";
     }
@@ -1219,6 +1228,7 @@
       if (sheet) sheet.scrollTop = scroll;
       bind();
       revealActive(host.querySelector(".master-rail"));
+      refreshTurnClocks(host);
     }
 
     function loadItems() {
@@ -1623,6 +1633,19 @@
       if (image) image.addEventListener("change", function () {
         battle.image = image.value;
         save();
+      });
+      const imageOpen = host.querySelector("#battle-image-open");
+      if (imageOpen && window.ShirmoShelf) imageOpen.addEventListener("click", function () {
+        const lib = window.ShirmoShelf.library();
+        window.ShirmoShelf.pick({
+          kind: "image",
+          images: lib.images || [],
+          onPick: function (url) {
+            if (!image || !url) return;
+            image.value = url;
+            image.dispatchEvent(new Event("change"));
+          }
+        });
       });
       const file = host.querySelector("#battle-file");
       if (file) file.addEventListener("change", function () {
@@ -2136,6 +2159,7 @@
     };
     host._battleOff = function () {
       alive = false;
+      clearInterval(turnBeat);
       if (window.ShirmoBattle) window.ShirmoBattle.sync = null;
       closeWheel();
       closePop();
@@ -2182,14 +2206,39 @@
     return '<div class="face face-empty side-glyph"' + frame + '><svg viewBox="0 0 24 24" aria-hidden="true">' + draw + "</svg></div>";
   }
 
-  function trackHtml(actors, clickable, activeId) {
+  function turnMark(actor, withTime) {
+    if (!withTime) return "";
+    const sec = Math.max(0, Math.round(Number(actor && actor.turnSec) || 0));
+    if (!sec) return "";
+    return '<span class="token-time" data-budget="' + sec + '"></span>';
+  }
+
+  function clockText(ms) {
+    const total = Math.max(0, Math.ceil(Number(ms) / 1000));
+    const minutes = Math.floor(total / 60);
+    const seconds = total % 60;
+    return minutes + ":" + String(seconds).padStart(2, "0");
+  }
+
+  function refreshTurnClocks(root) {
+    if (!root) return;
+    const clock = window.ShirmoClock && window.ShirmoClock.read ? window.ShirmoClock.read() : null;
+    root.querySelectorAll(".token-time").forEach(function (node) {
+      const sec = Number(node.getAttribute("data-budget")) || 0;
+      const budget = clockText(sec * 1000);
+      const on = !!node.closest(".active");
+      node.textContent = on && clock && clock.running ? budget + " / " + clockText(clock.left) : budget;
+    });
+  }
+
+  function trackHtml(actors, clickable, activeId, withTime) {
     if (!actors.length) return '<p class="note">Бой пуст.</p>';
     return groupsOf(actors).map(function (group) {
       const tokens = group.actors.map(function (actor) {
         const on = activeId ? actor.id === activeId : !!actor.active;
         const side = actor.side === "player" ? "player" : "npc";
         const cls = "battle-token " + side + (on ? " active" : "") + (actor.dead ? " dead" : "");
-        const inner = '<span class="battle-face">' + faceOf(actor) + '</span>' + markUnder(actor.marks) + '<span class="token-name">' + esc(actor.name || "—") + "</span>";
+        const inner = '<span class="battle-face">' + faceOf(actor) + '</span>' + markUnder(actor.marks) + '<span class="token-name">' + esc(actor.name || "—") + "</span>" + turnMark(actor, withTime);
         if (!clickable) return '<div class="' + cls + '">' + inner + "</div>";
         return '<button type="button" class="' + cls + '" data-go="' + esc(actor.id) + '" title="Ход: ' + esc(actor.name || "") + '">' + inner + "</button>";
       }).join("");

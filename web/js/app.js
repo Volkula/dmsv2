@@ -828,6 +828,8 @@
       node.innerHTML = raw.split("").map(function (ch) {
         return '<span class="' + (ch === ":" ? "colon" : "digit") + '">' + ch + "</span>";
       }).join("");
+      const showDigits = !effect || event.digits === true;
+      node.hidden = !showDigits;
       const finished = left <= 0 && (event.done === true || running);
       node.classList.toggle("is-run", running && !finished);
       node.classList.toggle("is-done", finished);
@@ -844,6 +846,7 @@
         }
         if (endText) endText.textContent = finished ? (event.endText || "") : "";
       }
+      layer.classList.toggle("is-quiet", !showDigits && (!endBox || endBox.hidden));
       if (linked && effect && window.ShirmoFx && window.ShirmoFx.setProgress) {
         window.ShirmoFx.setProgress(1 - left / span);
       }
@@ -1184,13 +1187,157 @@
     if (opts.pin) setPinned(true);
   }
 
+  function openShelfPick(opts) {
+    opts = opts || {};
+    const old = document.getElementById("shelf-pick");
+    if (old) old.remove();
+    const box = document.createElement("div");
+    box.id = "shelf-pick";
+    box.className = "pop";
+    const images = opts.images || [];
+    const notes = opts.notes || [];
+    let path = "";
+    let query = "";
+    function folders() {
+      const set = {};
+      images.forEach(function (item) {
+        const folder = String(item && item.folder || "").trim();
+        if (!folder) return;
+        const parts = folder.split("/");
+        let acc = "";
+        parts.forEach(function (part) {
+          acc = acc ? acc + "/" + part : part;
+          set[acc] = true;
+        });
+      });
+      return Object.keys(set).sort(function (a, b) { return a.localeCompare(b, "ru"); });
+    }
+    function paint() {
+      const q = query.trim().toLowerCase();
+      if (opts.kind === "note") {
+        const rows = notes.map(function (note, index) {
+          return { note: note, index: index };
+        }).filter(function (row) {
+          if (!q) return true;
+          return (String(row.note.name || "") + " " + String(row.note.text || "")).toLowerCase().indexOf(q) >= 0;
+        });
+        box.querySelector(".lib-pick-grid").innerHTML = rows.map(function (row) {
+          const bit = String(row.note.text || "").replace(/\s+/g, " ").slice(0, 80);
+          return '<button type="button" class="lib-pick-card" data-note="' + row.index + '"><strong>' + esc(row.note.name || "Заметка") + "</strong><small>" + esc(bit) + "</small></button>";
+        }).join("") || '<p class="note">Нет заметок</p>';
+        return;
+      }
+      const all = folders();
+      const dirs = q ? [] : all.filter(function (folder) {
+        if (path && folder.indexOf(path + "/") !== 0) return false;
+        const rest = path ? folder.slice(path.length + 1) : folder;
+        return rest.indexOf("/") < 0;
+      });
+      const files = images.filter(function (item) {
+        const folder = String(item && item.folder || "");
+        const name = String(item && item.name || "");
+        if (q) return (name + " " + folder).toLowerCase().indexOf(q) >= 0;
+        return folder === path;
+      });
+      const crumbs = '<button type="button" data-path="">Справочник</button>' + (path ? path.split("/").reduce(function (html, part) {
+        const acc = html.acc ? html.acc + "/" + part : part;
+        return { acc: acc, html: html.html + " / <button type=\"button\" data-path=\"" + esc(acc) + "\">" + esc(part) + "</button>" };
+      }, { acc: "", html: "" }).html : "");
+      box.querySelector(".lib-pick-crumbs").innerHTML = crumbs;
+      box.querySelector(".lib-pick-grid").innerHTML = dirs.map(function (folder) {
+        const name = folder.split("/").pop();
+        return '<button type="button" class="lib-pick-card is-dir" data-path="' + esc(folder) + '"><strong>' + esc(name) + "</strong><small>папка</small></button>";
+      }).join("") + files.map(function (item) {
+        return '<button type="button" class="lib-pick-card" data-url="' + esc(item.url || "") + '" data-name="' + esc(item.name || "") + '">' +
+          (item.url ? '<img alt="" src="' + esc(item.url) + '">' : "") +
+          "<strong>" + esc(item.name || "Картинка") + "</strong></button>";
+      }).join("") || '<p class="note">Пусто</p>';
+    }
+    box.innerHTML = '<div class="pop-card shelf-pick"><header class="clock-bar"><b>' + (opts.kind === "note" ? "Заметки" : "Картинки") + '</b>' +
+      (opts.kind === "note" ? "" : '<button type="button" data-clear>Без картинки</button>') +
+      '<button type="button" data-close aria-label="Закрыть">×</button></header>' +
+      '<input class="lib-pick-search" type="search" placeholder="Поиск" aria-label="Поиск">' +
+      '<div class="lib-pick-crumbs"></div><div class="lib-pick-grid"></div></div>';
+    document.body.appendChild(box);
+    box.querySelector("[data-close]").addEventListener("click", function () { box.remove(); });
+    const clearBtn = box.querySelector("[data-clear]");
+    if (clearBtn) clearBtn.addEventListener("click", function () {
+      box.remove();
+      if (opts.onPick) opts.onPick("", "");
+    });
+    box.addEventListener("click", function (event) {
+      if (event.target === box) box.remove();
+    });
+    box.querySelector(".lib-pick-search").addEventListener("input", function (event) {
+      query = event.target.value;
+      paint();
+    });
+    box.querySelector(".lib-pick-grid").addEventListener("click", function (event) {
+      const dir = event.target.closest("[data-path]");
+      if (dir && event.currentTarget.contains(dir)) {
+        path = dir.getAttribute("data-path") || "";
+        paint();
+        return;
+      }
+      const card = event.target.closest("[data-url]");
+      if (card) {
+        const url = card.getAttribute("data-url") || "";
+        const name = card.getAttribute("data-name") || "";
+        box.remove();
+        if (opts.onPick) opts.onPick(url, name);
+        return;
+      }
+      const noteBtn = event.target.closest("[data-note]");
+      if (noteBtn) {
+        const note = notes[Number(noteBtn.getAttribute("data-note"))];
+        box.remove();
+        if (note && opts.onPick) opts.onPick(note);
+      }
+    });
+    box.querySelector(".lib-pick-crumbs").addEventListener("click", function (event) {
+      const dir = event.target.closest("[data-path]");
+      if (!dir) return;
+      path = dir.getAttribute("data-path") || "";
+      paint();
+    });
+    paint();
+  }
+
+  window.ShirmoShelf = {
+    pick: openShelfPick,
+    library: function () { return { images: [], notes: [] }; },
+    arm: function (root) {
+      (root || document).querySelectorAll("[data-shelf]").forEach(function (select) {
+        if (select._shelf) return;
+        select._shelf = true;
+        select.addEventListener("mousedown", function (event) {
+          event.preventDefault();
+          const kind = select.getAttribute("data-shelf") === "note" ? "note" : "image";
+          const lib = window.ShirmoShelf.library() || {};
+          openShelfPick({
+            kind: kind,
+            images: lib.images || [],
+            notes: lib.notes || [],
+            onPick: function (picked) {
+              select.value = kind === "note" ? (picked && picked.id || "") : (picked || "");
+              select.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+          });
+        });
+      });
+    }
+  };
+
   function openTimer(opts) {
     opts = opts || {};
     let box = document.getElementById("timer-layer");
     if (box) {
       if (opts.roomId) box._roomId = opts.roomId;
       if (opts.headers) box._headers = opts.headers;
-      if (opts.images && box._fillPics) box._fillPics(opts.images);
+      if (opts.upload) box._upload = opts.upload;
+      if (opts.keep) box._keep = opts.keep;
+      if (opts.library) box._library = opts.library;
+      if (opts.saveNote) box._saveNote = opts.saveNote;
       if (opts.pin === true && box._setPinned) box._setPinned(true);
       else if (opts.unpin === true && box._setPinned) box._setPinned(false);
       else {
@@ -1214,6 +1361,7 @@
       shapeButtons() +
       '<div class="clock-acts"><button type="button" data-clock="run">Старт</button><button type="button" data-clock="reset">Сброс</button></div>' +
       '<button type="button" class="clock-players" data-clock="players">Вывести таймер для игроков</button>' +
+      '<label class="check" title="Показывать цифры таймера поверх эффекта. Без эффекта цифры видны всегда"><input data-fx="digits" type="checkbox"> Цифры поверх эффекта</label>' +
       '<p class="clock-cap">Эффект</p>' +
       '<label class="clock-size">Вид<select data-fx="kind">' +
       '<option value="">Нет</option>' +
@@ -1232,8 +1380,15 @@
       '<label class="check fx-extra" data-fx="flood" hidden><input data-fx="storm" type="checkbox"> Дождь и ураган</label>' +
       '<div class="clock-acts" data-fx="free-acts" hidden><button type="button" data-fx="play">Запустить эффект</button><button type="button" data-fx="halt">Стоп</button></div>' +
       '<label class="clock-size">Текст в конце<textarea data-fx="end-text" rows="2" placeholder="Время вышло"></textarea></label>' +
-      '<label class="clock-size">Картинка в конце<select data-fx="end-image"><option value="">Нет</option></select></label>' +
-      '<label class="clock-size">Фон таймера<select data-fx="back"><option value="">Нет</option></select></label>';
+      '<div class="clock-acts"><button type="button" data-fx="pick-note">Из заметок</button><button type="button" data-fx="save-note">В справочник</button></div>' +
+      '<div class="clock-file"><span>Картинка в конце</span><b data-fx="end-image-name">Нет</b>' +
+      '<button type="button" data-fx="pick-end">Справочник</button>' +
+      '<label class="file-btn" title="Загрузить картинку">Файл<input type="file" accept="image/*" data-fx="file-end" aria-label="Загрузить картинку в конец"></label></div>' +
+      '<input type="hidden" data-fx="end-image" value="">' +
+      '<div class="clock-file"><span>Фон таймера</span><b data-fx="back-name">Нет</b>' +
+      '<button type="button" data-fx="pick-back">Справочник</button>' +
+      '<label class="file-btn" title="Загрузить фон">Файл<input type="file" accept="image/*" data-fx="file-back" aria-label="Загрузить фон таймера"></label></div>' +
+      '<input type="hidden" data-fx="back" value="">';
     document.body.appendChild(box);
     const leftNode = box.querySelector("[data-clock=left]");
     const runBtn = box.querySelector("[data-clock=run]");
@@ -1249,6 +1404,9 @@
     const endText = box.querySelector("[data-fx=end-text]");
     const endImage = box.querySelector("[data-fx=end-image]");
     const backImage = box.querySelector("[data-fx=back]");
+    const endName = box.querySelector("[data-fx=end-image-name]");
+    const backName = box.querySelector("[data-fx=back-name]");
+    const digitsInput = box.querySelector("[data-fx=digits]");
     let mode = "idle";
     let remain = 0;
     let span = 5 * 60 * 1000;
@@ -1263,18 +1421,22 @@
     let pinned = false;
     box._roomId = opts.roomId || "";
     box._headers = opts.headers || null;
-    function fillPics(images) {
-      [endImage, backImage].forEach(function (sel) {
-        const current = sel.value;
-        sel.innerHTML = '<option value="">Нет</option>' + (images || []).map(function (item) {
-          const url = item && item.url || "";
-          return '<option value="' + esc(url) + '">' + esc(item.name || "Картинка") + "</option>";
-        }).join("");
-        if (current) sel.value = current;
-      });
+    box._upload = opts.upload || box._upload || null;
+    box._keep = opts.keep || box._keep || null;
+    box._library = opts.library || box._library || function () { return { images: [], notes: [] }; };
+    box._saveNote = opts.saveNote || box._saveNote || null;
+    function picName(url) {
+      const lib = box._library();
+      const hit = (lib.images || []).find(function (item) { return item && item.url === url; });
+      if (hit) return hit.name || "Картинка";
+      if (!url) return "Нет";
+      const bit = String(url).split("/").pop();
+      return bit || "Картинка";
     }
-    box._fillPics = fillPics;
-    fillPics(opts.images || []);
+    function showPic(which) {
+      if (which === "end") endName.textContent = picName(endImage.value);
+      else backName.textContent = picName(backImage.value);
+    }
     function readSet(commit) {
       const minutes = Math.min(599, Math.max(0, Math.round(Number(minInput.value) || 0)));
       const seconds = Math.min(59, Math.max(0, Math.round(Number(secInput.value) || 0)));
@@ -1313,6 +1475,7 @@
         hand: handInput.value,
         face: faceInput.value,
         storm: stormInput.checked,
+        digits: digitsInput.checked,
         endText: endText.value || "",
         endImage: endImage.value || "",
         back: backImage.value || ""
@@ -1405,8 +1568,56 @@
       pushPlayers();
     });
     endText.addEventListener("input", pushPlayers);
-    endImage.addEventListener("change", pushPlayers);
-    backImage.addEventListener("change", pushPlayers);
+    digitsInput.addEventListener("change", pushPlayers);
+    function chooseImage(which) {
+      const lib = box._library();
+      openShelfPick({
+        kind: "image",
+        images: lib.images || [],
+        onPick: function (url, name) {
+          const input = which === "end" ? endImage : backImage;
+          input.value = url || "";
+          showPic(which);
+          if (name && box._keep && url) box._keep(url, name);
+          pushPlayers();
+        }
+      });
+    }
+    box.querySelector("[data-fx=pick-end]").addEventListener("click", function () { chooseImage("end"); });
+    box.querySelector("[data-fx=pick-back]").addEventListener("click", function () { chooseImage("back"); });
+    box.querySelector("[data-fx=pick-note]").addEventListener("click", function () {
+      const lib = box._library();
+      openShelfPick({
+        kind: "note",
+        notes: lib.notes || [],
+        onPick: function (note) {
+          endText.value = note && note.text || "";
+          pushPlayers();
+        }
+      });
+    });
+    box.querySelector("[data-fx=save-note]").addEventListener("click", function () {
+      const text = endText.value || "";
+      if (!text.trim() || !box._saveNote) return;
+      const name = window.prompt("Название заметки", "Таймер") || "";
+      if (!name.trim()) return;
+      box._saveNote(name.trim(), text);
+    });
+    function takeFile(input, which) {
+      const file = input.files && input.files[0];
+      input.value = "";
+      if (!file || !box._upload) return;
+      box._upload(file).then(function (url) {
+        if (!url) return;
+        const target = which === "end" ? endImage : backImage;
+        target.value = url;
+        if (box._keep) box._keep(url, file.name || "Картинка");
+        showPic(which);
+        pushPlayers();
+      }).catch(function () {});
+    }
+    box.querySelector("[data-fx=file-end]").addEventListener("change", function (event) { takeFile(event.target, "end"); });
+    box.querySelector("[data-fx=file-back]").addEventListener("change", function (event) { takeFile(event.target, "back"); });
     box.querySelector("[data-fx=play]").addEventListener("click", function () {
       if (!kindSel.value) return;
       fxOn = true;
@@ -1521,6 +1732,31 @@
     syncFxBoxes();
     applyDigitLook(box, size, shape);
     wake();
+    window.ShirmoClock = {
+      read: function () {
+        const left = mode === "run" || mode === "pause" ? Math.max(0, remain) : readSet(false);
+        return { running: mode === "run", left: left };
+      },
+      arm: function (seconds) {
+        const total = Math.max(0, Math.round(Number(seconds) || 0));
+        if (!total) return;
+        const was = mode === "run";
+        minInput.value = String(Math.floor(total / 60));
+        secInput.value = String(total % 60);
+        span = total * 1000;
+        if (was) {
+          remain = span;
+          mode = "run";
+          tickAt = Date.now();
+        } else {
+          mode = "idle";
+          remain = 0;
+        }
+        paint();
+        pushPlayers();
+        wake();
+      }
+    };
     if (opts.pin) setPinned(true);
   }
 
@@ -1826,8 +2062,8 @@
       '<label title="Цвет букв на сцене">Цвет текста<input id="page-ink" type="color"></label>' +
       '<label title="Размер заголовка">Размер <input id="page-size" type="range" min="24" max="140" value="64"></label>' +
       '<label title="Шрифт сцены">Шрифт<select id="page-font"></select></label>' +
-      '<label title="Картинка из библиотеки на фон">Картинка<select id="page-pick"></select></label>' +
-      '<label title="Текст заметки вместо своего текста">Заметка<select id="page-note"></select></label>' +
+      '<label title="Картинка из библиотеки на фон">Картинка<select id="page-pick" data-shelf="image"></select></label>' +
+      '<label title="Текст заметки вместо своего текста">Заметка<select id="page-note" data-shelf="note"></select></label>' +
       '<p class="note">В режиме «Сразу» правки этой страницы уходят игрокам сами. «Показать» публикует кадр в любом режиме. Бросок виден игрокам карточкой с кубиком и остаётся в истории.</p>' +
       '<p class="error" id="err"></p></aside>' +
       '<div class="stage-wrap" id="preview"></div></div><div class="work" id="work-map" hidden></div><div class="work" id="work-codex" hidden></div><div class="work" id="work-battle" hidden></div><div class="work" id="work-library" hidden></div></div><aside id="dock" class="dock"></aside></div></section>';
@@ -1842,6 +2078,23 @@
       lib.images = lib.images || [];
       lib.notes = lib.notes || [];
       return lib;
+    }
+    function timerBag(extra) {
+      const bag = {
+        roomId: id,
+        headers: headers,
+        upload: function (file) { return uploadFile(id, key, file); },
+        keep: function (url, name) {
+          if (window.ShirmoLib) window.ShirmoLib.keep(shelf(), { url: url, name: name || "Картинка", section: "Таймер" });
+          save();
+        },
+        library: function () { return { images: shelf().images || [], notes: shelf().notes || [] }; },
+        saveNote: function (name, text) {
+          shelf().notes.unshift({ id: crypto.randomUUID(), name: name, text: text, folder: "" });
+          save();
+        }
+      };
+      return Object.assign(bag, extra || {});
     }
     function paintChoices() {
       const lib = shelf();
@@ -2113,6 +2366,10 @@
       if (!app.querySelector("#page-title").value) app.querySelector("#page-title").value = note.name || "";
       schedule();
     });
+    window.ShirmoShelf.library = function () {
+      return { images: shelf().images || [], notes: shelf().notes || [] };
+    };
+    window.ShirmoShelf.arm(app);
     app.querySelector("#library").addEventListener("click", function () { showModule("library"); });
     app.querySelector("#mod-scene").addEventListener("click", function () { showModule("scene"); });
     app.querySelector("#mod-map").addEventListener("click", function () { showModule("map"); });
@@ -2307,7 +2564,7 @@
         }).join("") || '<p class="note">Нет заметок на панели.</p>';
         const freeNotes = notes().filter(function (note) { return note && dock.notes.indexOf(note.id) < 0; });
         const noteForm = noteOpen
-          ? '<div class="dock-form"><label>Из библиотеки<select data-dock-note-pick><option value="">Выберите заметку</option>' +
+          ? '<div class="dock-form"><label>Из библиотеки<select data-dock-note-pick data-shelf="note"><option value="">Выберите заметку</option>' +
             freeNotes.map(function (note) { return '<option value="' + esc(note.id) + '">' + esc(note.name || "Заметка") + "</option>"; }).join("") +
             "</select></label>" +
             '<button type="button" data-dock="note-take">Взять</button>' +
@@ -2323,6 +2580,13 @@
           '<details class="dock-fold" data-fold="notes"' + (folds.notes ? " open" : "") + "><summary>Заметки</summary>" + noteRows +
           '<button type="button" data-dock="note-add">' + (noteOpen ? "Скрыть" : "Из библиотеки или новая") + "</button>" + noteForm + "</details>" +
           "</div></div>";
+        if (window.ShirmoShelf) window.ShirmoShelf.arm(root);
+        const notePick = root.querySelector("[data-dock-note-pick]");
+        if (notePick) notePick.addEventListener("change", function () {
+          if (!notePick.value) return;
+          const take = root.querySelector("[data-dock=note-take]");
+          if (take) take.click();
+        });
         bind();
       }
       function rollSpec() {
@@ -2381,9 +2645,8 @@
           if (act === "timer") {
             const layer = document.getElementById("timer-layer");
             const held = layer && layer.classList.contains("is-pinned") && !layer.hidden;
-            const images = shelf().images || [];
             if (held) {
-              openTimer({ unpin: true, roomId: id, headers: headers, images: images });
+              openTimer(timerBag({ unpin: true }));
               paint();
               return;
             }
@@ -2391,7 +2654,7 @@
               dock.open = true;
               save();
             }
-            openTimer({ pin: true, roomId: id, headers: headers, images: images });
+            openTimer(timerBag({ pin: true }));
             paint();
             return;
           }
@@ -2506,7 +2769,7 @@
     });
     app.querySelector("#clock-open").addEventListener("click", function () { openClock({ roomId: id, headers: headers }); });
     app.querySelector("#timer-open").addEventListener("click", function () {
-      openTimer({ roomId: id, headers: headers, images: shelf().images || [] });
+      openTimer(timerBag());
     });
     app.querySelector("#roll-look").addEventListener("click", function () {
       openRollLook(state, err, save, app.querySelector("#roll-look"));

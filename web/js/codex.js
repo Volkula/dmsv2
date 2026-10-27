@@ -718,9 +718,24 @@ window.ShirmoCodex = (function () {
     return changed;
   }
 
+  function filterCodex(host, query) {
+    const q = String(query || "").trim().toLowerCase();
+    const main = host.querySelector(".codex-main");
+    if (!main) return;
+    main.querySelectorAll("article, tbody tr, .cat-hit").forEach(function (node) {
+      if (node.querySelector && node.querySelector(".codex-search")) return;
+      if (!q) {
+        node.hidden = false;
+        return;
+      }
+      node.hidden = (node.textContent || "").toLowerCase().indexOf(q) < 0;
+    });
+  }
+
   function mount(host, ctx) {
     if (host._codexOff) host._codexOff();
     let tab = "places";
+    let codexQuery = "";
     try {
       const savedTab = sessionStorage.getItem("shirmo-codex-tab");
       if (TABS.some(function (item) { return item[0] === savedTab; })) tab = savedTab;
@@ -2203,6 +2218,7 @@ window.ShirmoCodex = (function () {
       host.innerHTML = '<aside class="side codex-nav"><div class="codex-tabs-col">' + nav + "</div>" +
         (tab === "places" ? placeIndexHtml() : "") + "</aside>" +
         '<div class="codex-main"><div class="codex-head"><b class="codex-tab-name">' + esc(current[1]) + "</b>" +
+        '<input class="codex-search" type="search" placeholder="Поиск" value="' + esc(codexQuery) + '" aria-label="Поиск по справочнику">' +
         (tab === "heroes" ? '<label class="hero-load" title="Файл JSON из Long Story Short">Загрузить лист<input type="file" accept="application/json,.json" data-hero-file aria-label="Загрузить лист"></label>' : (catalogKind() || tab === "squads" || tab === "names" || tab === "wares" || tab === "coins" ? "" : '<button type="button" data-act="add" title="Новая запись на этой вкладке">Добавить</button>')) + "</div>" +
         (tab === "places" ? '<div class="place-bar"><p class="note">Места с карты попадают сюда сами. Сюда же ставятся персонажи.</p><div class="place-cols" title="Сколько карточек в ряд">' +
           [1, 2, 3, 4].map(function (count) {
@@ -2212,6 +2228,15 @@ window.ShirmoCodex = (function () {
         body +
         '<p class="error" id="codex-err"></p></div><footer class="codex-foot">.</footer>';
       if (catalogKind()) paintResults();
+      const seek = host.querySelector(".codex-search");
+      if (seek && !seek._bound) {
+        seek._bound = true;
+        seek.addEventListener("input", function () {
+          codexQuery = seek.value;
+          filterCodex(host, codexQuery);
+        });
+      }
+      filterCodex(host, codexQuery);
       const main = host.querySelector(".codex-main");
       if (main && tab === "places" && codexScroll) main.scrollTop = codexScroll;
       if (main && !main._scrollWatch) {

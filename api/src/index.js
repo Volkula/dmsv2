@@ -783,6 +783,7 @@ const server = http.createServer(async function (req, res) {
           event.hand = /^#[0-9a-fA-F]{6}$/.test(body.hand || "") ? body.hand : "#f6e7b0";
           event.face = /^#[0-9a-fA-F]{6}$/.test(body.face || "") ? body.face : "#1a140c";
           event.storm = body.storm === true;
+          event.digits = body.digits === true;
           event.fxReset = body.fxReset === true;
           event.span = Math.min(24 * 60 * 60 * 1000, Math.max(0, Math.round(Number(body.span) || remain)));
           event.endText = String(body.endText || "").slice(0, 400);
@@ -805,6 +806,7 @@ const server = http.createServer(async function (req, res) {
             hand: event.hand,
             face: event.face,
             storm: event.storm,
+            digits: event.digits,
             span: event.span,
             endText: event.endText,
             endImage: event.endImage,

@@ -678,7 +678,7 @@
       '<div class="row"><button type="button" id="map-bold" title="Жирный">Ж</button><button type="button" id="map-italic" title="Курсив">К</button><button type="button" id="map-under" title="Подчёркнутый">Ч</button></div>' +
       '<label title="Размер новой надписи">Размер<input id="map-label-size" type="range" min="14" max="96" value="28"></label></div>' +
       '<div id="map-image-box" hidden>' +
-      '<label title="Картинка из библиотеки">Из библиотеки<select id="map-image-lib"><option value="">Выберите картинку</option></select></label>' +
+      '<label title="Картинка из библиотеки">Из библиотеки<select id="map-image-lib" data-shelf="image"><option value="">Выберите картинку</option></select></label>' +
       '<label class="file-btn" title="Загрузить картинку на карту">Загрузить<input type="file" id="map-image-file" accept="image/*" aria-label="Загрузить картинку"></label>' +
       '<label title="Размер новой картинки на карте">Размер<input id="map-image-size" type="range" min="32" max="400" value="120"></label>' +
       '<p class="note">Клик по карте ставит выбранную картинку. Потом можно скрыть или изменить размер.</p></div>' +
@@ -897,6 +897,7 @@
         return '<option value="' + esc(image.url) + '"' + (image.url === cur ? " selected" : "") + ">" + esc(image.name || "Картинка") + "</option>";
       }).join("");
       if (cur) pick.value = cur;
+      if (window.ShirmoShelf) window.ShirmoShelf.arm(host);
     }
     function treeHtml(parentId, depth) {
       return view().locations.filter(function (item) { return (item.parentId || "") === parentId && !item.trashed; }).map(function (item) {
@@ -2506,7 +2507,7 @@
       const imageShot = kind === "image"
         ? (item.url ? '<img class="loc-shot" alt="" src="' + esc(item.url) + '">' : '<p class="note">Картинки пока нет.</p>') +
           '<label class="file-btn" title="Загрузить другую картинку">Загрузить<input type="file" id="image-pin-file" accept="image/*" aria-label="Загрузить картинку"></label>' +
-          '<label title="Картинка из библиотеки">Из библиотеки<select id="image-pin-lib"><option value="">Нет</option>' + ((ctx.library().images) || []).map(function (image) {
+          '<label title="Картинка из библиотеки">Из библиотеки<select id="image-pin-lib" data-shelf="image"><option value="">Нет</option>' + ((ctx.library().images) || []).map(function (image) {
             return '<option value="' + esc(image.url) + '"' + (image.url === item.url ? " selected" : "") + ">" + esc(image.name || "Картинка") + "</option>";
           }).join("") + "</select></label>"
         : "";
@@ -2752,6 +2753,7 @@
         paintBoard();
         dirty();
       });
+      if (window.ShirmoShelf) window.ShirmoShelf.arm(menu);
       const imageFile = menu.querySelector("#image-pin-file");
       if (imageFile) imageFile.addEventListener("change", function (event) {
         const file = event.target.files && event.target.files[0];
