@@ -3951,6 +3951,116 @@ button.ware-face-btn img { width: 100%; height: 100%; object-fit: cover; display
   font-size: 22px;
 }
 .fight-face input { display: none; }
+
+.fight-cast { display: flex; flex-direction: column; gap: 10px; }
+.squad-block { display: flex; flex-direction: column; gap: 8px; }
+.squad-banner, .sep-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(230, 195, 106, 0.4);
+  border-radius: 8px;
+  background: linear-gradient(90deg, rgba(230, 195, 106, 0.16), rgba(230, 195, 106, 0.04));
+}
+.squad-banner > input[type="text"], .squad-banner > input:not([type]) {
+  flex: 1;
+  min-width: 120px;
+  font-size: 18px;
+  background: transparent;
+  border-color: transparent;
+}
+.sep-banner { background: transparent; border-style: dashed; }
+.sep-banner input { flex: 1; background: transparent; border-color: transparent; color: var(--muted); }
+.pcard {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px;
+  border: 1px solid #5a4630;
+  border-radius: 12px;
+  background:
+    radial-gradient(120% 80% at 0% 0%, rgba(230, 195, 106, 0.08), transparent 42%),
+    linear-gradient(180deg, #1b1612 0%, #100e0c 100%);
+  box-shadow: inset 0 0 0 1px rgba(230, 195, 106, 0.08);
+}
+.pcard.is-on {
+  border-color: var(--brass);
+  box-shadow: 0 0 0 1px var(--brass), 0 10px 28px rgba(0, 0, 0, 0.35);
+}
+.pcard.is-dead { filter: grayscale(0.75); opacity: 0.62; }
+.pcard-port .fight-face { width: 84px; height: 108px; }
+.pcard-port .fight-face img,
+.pcard-port .fight-face .letter {
+  border-radius: 8px 8px 26px 26px;
+  border: 2px solid #c6a15a;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
+}
+.pcard-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.pcard-name {
+  flex: 1;
+  font-size: 22px;
+  line-height: 1.1;
+  background: transparent;
+  border-color: transparent;
+  padding: 2px 4px;
+}
+.pcard-name:focus { border-color: var(--brass); background: #120f0c; }
+.pcard.is-on .pcard-turn { color: #1a140c; background: var(--brass); border-color: var(--brass); }
+.pcard-groups {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  gap: 8px;
+}
+.pcard-group {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  padding: 8px;
+  border: 1px solid rgba(230, 195, 106, 0.18);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.28);
+}
+.pcard-group h4 {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--brass);
+}
+.pcard-group > button { width: 100%; }
+.pcard-field { display: grid; gap: 2px; min-width: 0; }
+.pcard-field > span {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.pcard input, .pcard select, .squad-banner input, .squad-banner select {
+  padding: 4px 8px;
+}
+.pcard-row, .pcard .turn-cell, .squad-banner .turn-cell {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 6px;
+  white-space: normal;
+}
+.pcard-row .pcard-field, .pcard .turn-cell .pcard-field, .squad-banner .turn-cell .pcard-field { flex: 1 1 72px; }
+.pcard .hp-cell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 6px;
+  align-items: end;
+  min-width: 0;
+}
+.pcard .hp-stack { width: auto; }
+.pcard .hp-meter { height: 12px; border-radius: 2px; border: 1px solid #3a2a18; }
+.pcard .ink-picks { max-width: none; }
+@media (max-width: 1100px) {
+  .pcard { grid-template-columns: 76px minmax(0, 1fr); }
+  .pcard-groups { grid-template-columns: 1fr 1fr; }
+}
 .hp-cell { display: flex; align-items: center; gap: 6px; min-width: 160px; }
 .hp-cell input[type="range"] { width: 100%; }
 .hp-read { min-width: 3.5ch; width: 52px; font-weight: 500; text-align: center; }
