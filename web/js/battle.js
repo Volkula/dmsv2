@@ -351,7 +351,7 @@
     let alive = true;
     const turnBeat = setInterval(function () {
       if (!alive) return;
-      refreshTurnClocks(host);
+      paintClocks();
     }, 250);
     let custom = { name: "Огр", hp: 59, ac: 11, bonus: 6, damage: "2d8+4", weapon: "Дубина", count: 1 };
 
@@ -370,10 +370,68 @@
     function selectActor(actor) {
       const list = rows();
       const at = list.findIndex(function (row) { return row.actor.id === actor.id; });
-      const prev = battle.turn;
       if (at >= 0) battle.turn = at;
-      const sec = Math.max(0, Math.round(Number(actor && actor.turnSec) || 0));
-      if (at >= 0 && at !== prev && sec && window.ShirmoTurn) window.ShirmoTurn(sec);
+    }
+
+    function readClock(row) {
+      const budget = Math.max(0, Math.round(Number(row && row.turnSec) || 0)) * 1000;
+      if (!row || !budget) return { budget: 0, left: 0, running: false, paused: false };
+      if (row.turnRun && row.turnUntil) {
+        const left = Math.max(0, row.turnUntil - Date.now());
+        if (left <= 0) {
+          row.turnRun = false;
+          row.turnUntil = 0;
+          row.turnLeft = 0;
+          return { budget: budget, left: 0, running: false, paused: false };
+        }
+        return { budget: budget, left: left, running: true, paused: false };
+      }
+      if (row.turnLeft > 0 && row.turnLeft < budget) return { budget: budget, left: row.turnLeft, running: false, paused: true };
+      return { budget: budget, left: budget, running: false, paused: false };
+    }
+
+    function toggleClock(row) {
+      const state = readClock(row);
+      if (!state.budget) return;
+      if (state.running) {
+        row.turnLeft = state.left;
+        row.turnRun = false;
+        row.turnUntil = 0;
+        return;
+      }
+      const left = state.paused ? state.left : state.budget;
+      row.turnLeft = left;
+      row.turnRun = true;
+      row.turnUntil = Date.now() + left;
+    }
+
+    function paintClock(node, button, row) {
+      const state = readClock(row);
+      if (node) node.textContent = state.budget ? clockText(state.left) : "";
+      if (!button) return;
+      button.textContent = state.running ? "Пауза" : (state.paused ? "Дальше" : "Старт");
+    }
+
+    function paintClocks() {
+      host.querySelectorAll("[data-turn]").forEach(function (node) {
+        const actor = battle.actors.find(function (row) { return row.id === node.getAttribute("data-turn"); });
+        const button = host.querySelector('[data-act="turn-toggle"][data-id="' + node.getAttribute("data-turn") + '"]');
+        paintClock(node, button, actor);
+      });
+      host.querySelectorAll("[data-squad-clock]").forEach(function (node) {
+        const group = (battle.board || []).find(function (row) { return row.id === node.getAttribute("data-squad-clock"); });
+        const button = host.querySelector('[data-act="squad-toggle"][data-id="' + node.getAttribute("data-squad-clock") + '"]');
+        paintClock(node, button, group);
+      });
+      host.querySelectorAll(".token-time").forEach(function (node) {
+        const actor = battle.actors.find(function (row) { return row.id === node.getAttribute("data-actor"); });
+        const state = readClock(actor);
+        if (!state.budget) {
+          node.textContent = "";
+          return;
+        }
+        node.textContent = state.running || state.paused ? clockText(state.budget) + " / " + clockText(state.left) : clockText(state.budget);
+      });
     }
 
     function findMarker(id) {
@@ -1169,6 +1227,8 @@
         '<input data-q="hp" data-id="' + esc(actor.id) + '" class="num hp-read" type="number" min="0" max="' + max + '" value="' + hp + '" aria-label="Хиты числом" title="Текущие хиты"></td>' +
         '<td><button type="button" data-fold="' + esc(actor.id) + '" title="Параметры">' + (open ? "▴" : "▾") + "</button></td>" +
         '<td class="turn-cell"><label class="turn-sec" title="Секунды на ход этого бойца. 0 — без таймера">сек<input data-q="turnSec" data-id="' + esc(actor.id) + '" class="num" type="number" min="0" value="' + esc(String(Math.max(0, Math.round(Number(actor.turnSec) || 0)))) + '" aria-label="Секунды на ход"></label>' +
+        '<button type="button" class="turn-go" data-act="turn-toggle" data-id="' + esc(actor.id) + '" title="Пуск или пауза таймера этого бойца">Старт</button>' +
+        '<b class="turn-left" data-turn="' + esc(actor.id) + '"></b>' +
         '<button type="button" data-go="' + esc(actor.id) + '" title="Сделать ход этого бойца">ход</button></td>' +
         '<td><button type="button" data-act="life" data-id="' + esc(actor.id) + '">' + (actor.dead ? "Оживить" : "Убить") + "</button></td></tr>";
       const home = groupOfActor(actor.id);
@@ -1196,7 +1256,10 @@
         const members = (group.memberIds || []).map(function (id) {
           return battle.actors.find(function (actor) { return actor.id === id; });
         }).filter(Boolean);
-        const head = '<tr class="squad-row" data-board="' + esc(group.id) + '"><td colspan="8"><input data-squad="' + esc(group.id) + '" value="' + esc(group.name || "Отряд") + '" aria-label="Отряд"></td>' +
+        const head = '<tr class="squad-row" data-board="' + esc(group.id) + '"><td colspan="6"><input data-squad="' + esc(group.id) + '" value="' + esc(group.name || "Отряд") + '" aria-label="Отряд"></td>' +
+          '<td class="turn-cell" colspan="2"><label class="turn-sec" title="Секунды на ход этого отряда. 0 — без таймера">сек<input data-squad-sec data-id="' + esc(group.id) + '" class="num" type="number" min="0" value="' + esc(String(Math.max(0, Math.round(Number(group.turnSec) || 0)))) + '" aria-label="Секунды отряда"></label>' +
+          '<button type="button" class="turn-go" data-act="squad-toggle" data-id="' + esc(group.id) + '" title="Пуск или пауза таймера отряда">Старт</button>' +
+          '<b class="turn-left" data-squad-clock="' + esc(group.id) + '"></b></td>' +
           '<td><button type="button" data-act="squad-del" data-id="' + esc(group.id) + '" title="Убрать отряд из боя целиком">×</button></td></tr>';
         return head + members.map(function (actor) { return fighterRow(actor, now, group.id); }).join("");
       }).join("");
@@ -1228,7 +1291,7 @@
       if (sheet) sheet.scrollTop = scroll;
       bind();
       revealActive(host.querySelector(".master-rail"));
-      refreshTurnClocks(host);
+      paintClocks();
     }
 
     function loadItems() {
@@ -1709,8 +1772,14 @@
             if (arm && key === "damage") arm.damage = input.value;
           } else if (key === "color") {
             actor.color = inkOk(input.value) ? input.value : "";
-          }           else {
-            actor[key] = Math.round(Number(input.value) || 0);
+          } else {
+            const next = Math.round(Number(input.value) || 0);
+            if (key === "turnSec" && next !== Math.round(Number(actor.turnSec) || 0)) {
+              actor.turnRun = false;
+              actor.turnUntil = 0;
+              actor.turnLeft = 0;
+            }
+            actor[key] = key === "turnSec" ? Math.max(0, next) : next;
             if (key === "hpMax") actor.hpMax = Math.max(1, actor.hpMax || 1);
             if (key === "hp" || key === "hpMax") setHp(actor, key === "hp" ? actor.hp : actor.hp);
           }
@@ -1746,7 +1815,23 @@
           if (!key) return;
           if (key === "init" && battle.autoSort) sortBoard();
           save();
-          if (key !== "name" && key !== "weapon" && key !== "damage") paint();
+          if (key === "turnSec") paintClocks();
+          else if (key !== "name" && key !== "weapon" && key !== "damage") paint();
+        });
+      });
+      host.querySelectorAll("[data-squad-sec]").forEach(function (input) {
+        input.addEventListener("change", function () {
+          const group = battle.board.find(function (row) { return row.id === input.getAttribute("data-id"); });
+          if (!group) return;
+          const next = Math.max(0, Math.round(Number(input.value) || 0));
+          if (next !== Math.round(Number(group.turnSec) || 0)) {
+            group.turnRun = false;
+            group.turnUntil = 0;
+            group.turnLeft = 0;
+          }
+          group.turnSec = next;
+          save();
+          paintClocks();
         });
       });
       host.querySelectorAll("[data-squad]").forEach(function (input) {
@@ -1809,6 +1894,20 @@
       const act = button.getAttribute("data-act");
       if (act === "next") step(1);
       if (act === "prev") step(-1);
+      if (act === "turn-toggle" || act === "squad-toggle") {
+        const id = button.getAttribute("data-id");
+        const row = act === "turn-toggle"
+          ? battle.actors.find(function (actor) { return actor.id === id; })
+          : (battle.board || []).find(function (group) { return group.id === id; });
+        if (row) {
+          const field = button.parentElement && button.parentElement.querySelector(act === "turn-toggle" ? "[data-q=turnSec]" : "[data-squad-sec]");
+          if (field) row.turnSec = Math.max(0, Math.round(Number(field.value) || 0));
+          toggleClock(row);
+          save();
+          paintClocks();
+        }
+        return;
+      }
       if (act === "round-up") {
         battle.round = (Number(battle.round) || 1) + 1;
         save();
@@ -2210,7 +2309,7 @@
     if (!withTime) return "";
     const sec = Math.max(0, Math.round(Number(actor && actor.turnSec) || 0));
     if (!sec) return "";
-    return '<span class="token-time" data-budget="' + sec + '"></span>';
+    return '<span class="token-time" data-actor="' + esc(actor.id) + '"></span>';
   }
 
   function clockText(ms) {
