@@ -354,6 +354,7 @@
       paintClocks();
     }, 250);
     let custom = { name: "Огр", hp: 59, ac: 11, bonus: 6, damage: "2d8+4", weapon: "Дубина", count: 1 };
+    let timerOwner = "";
 
     function save() { if (ctx.save) ctx.save(); }
 
@@ -368,9 +369,20 @@
     }
 
     function selectActor(actor) {
+      const prev = active();
       const list = rows();
       const at = list.findIndex(function (row) { return row.actor.id === actor.id; });
-      if (at >= 0) battle.turn = at;
+      if (at < 0) return;
+      battle.turn = at;
+      const now = active();
+      if (prev && now && prev.id !== now.id) holdTurn(prev, now);
+    }
+
+    function fxOptions(current) {
+      const list = [["", "Без эффекта"], ["sand", "Песок"], ["magic", "Часы"], ["smoke", "Дым"], ["blizzard", "Вьюга"], ["fire", "Пожар"], ["flood", "Потоп"]];
+      return list.map(function (item) {
+        return '<option value="' + item[0] + '"' + (item[0] === (current || "") ? " selected" : "") + ">" + item[1] + "</option>";
+      }).join("");
     }
 
     function readClock(row) {
@@ -379,9 +391,11 @@
       if (row.turnRun && row.turnUntil) {
         const left = Math.max(0, row.turnUntil - Date.now());
         if (left <= 0) {
+          const id = row.id;
           row.turnRun = false;
           row.turnUntil = 0;
           row.turnLeft = 0;
+          if (timerOwner === id && window.ShirmoClock && window.ShirmoClock.pause) window.ShirmoClock.pause();
           return { budget: budget, left: 0, running: false, paused: false };
         }
         return { budget: budget, left: left, running: true, paused: false };
@@ -403,6 +417,40 @@
       row.turnLeft = left;
       row.turnRun = true;
       row.turnUntil = Date.now() + left;
+    }
+
+    function follow(row) {
+      if (!row) return;
+      timerOwner = row.id;
+      const state = readClock(row);
+      if (!window.ShirmoFight) return;
+      window.ShirmoFight({
+        seconds: Math.round(Number(row.turnSec) || 0),
+        left: state.left,
+        running: !!state.running,
+        paused: !state.running,
+        kind: row.turnFx || "",
+        showPlayers: !!state.running
+      });
+    }
+
+    function pauseClock(row) {
+      const state = readClock(row);
+      if (!state.running) return false;
+      row.turnLeft = state.left;
+      row.turnRun = false;
+      row.turnUntil = 0;
+      return true;
+    }
+
+    function holdTurn(prev, now) {
+      if (battle.turnPause === false || !prev) return;
+      const stopped = {};
+      if (pauseClock(prev)) stopped[prev.id] = true;
+      const left = groupOfActor(prev.id);
+      const right = now && groupOfActor(now.id);
+      if (left && (!right || left.id !== right.id) && pauseClock(left)) stopped[left.id] = true;
+      if (timerOwner && stopped[timerOwner] && window.ShirmoClock && window.ShirmoClock.pause) window.ShirmoClock.pause();
     }
 
     function paintClock(node, button, row) {
@@ -627,6 +675,7 @@
     function step(dir) {
       const list = rows();
       if (!list.length) return;
+      const prev = active();
       let at = battle.turn;
       for (let n = 0; n < list.length; n++) {
         at = (at + dir + list.length) % list.length;
@@ -634,6 +683,8 @@
         if (!list[at].actor.dead) break;
       }
       battle.turn = at;
+      const now = active();
+      if (prev && now && prev.id !== now.id) holdTurn(prev, now);
       save();
       paint();
     }
@@ -1152,7 +1203,8 @@
       return '<div class="queue-tools"><div class="tool-side">' +
         '<button type="button" data-act="prev" title="Предыдущий живой ход">Назад</button>' +
         '<button type="button" data-act="next" title="Следующий живой ход">Дальше</button>' +
-        '<span class="turn-name">' + esc(now ? now.name : "Нет хода") + "</span></div>" +
+        '<span class="turn-name">' + esc(now ? now.name : "Нет хода") + "</span>" +
+        '<label class="check" title="Когда ход переходит к другому бойцу, таймер этого бойца и ушедшего отряда ставится на паузу"><input id="battle-turn-pause" type="checkbox"' + (battle.turnPause === false ? "" : " checked") + "> Пауза при смене хода</label></div>" +
         '<div class="round-bar"><button type="button" data-act="round-down" title="Предыдущий раунд">−</button>' +
         '<input id="battle-round" class="round-num" type="number" min="1" value="' + esc(String(battle.round || 1)) + '" aria-label="Раунд">' +
         '<button type="button" data-act="round-up" title="Следующий раунд">+</button>' +
@@ -1227,7 +1279,8 @@
         '<input data-q="hp" data-id="' + esc(actor.id) + '" class="num hp-read" type="number" min="0" max="' + max + '" value="' + hp + '" aria-label="Хиты числом" title="Текущие хиты"></td>' +
         '<td><button type="button" data-fold="' + esc(actor.id) + '" title="Параметры">' + (open ? "▴" : "▾") + "</button></td>" +
         '<td class="turn-cell"><label class="turn-sec" title="Секунды на ход этого бойца. 0 — без таймера">сек<input data-q="turnSec" data-id="' + esc(actor.id) + '" class="num" type="number" min="0" value="' + esc(String(Math.max(0, Math.round(Number(actor.turnSec) || 0)))) + '" aria-label="Секунды на ход"></label>' +
-        '<button type="button" class="turn-go" data-act="turn-toggle" data-id="' + esc(actor.id) + '" title="Пуск или пауза таймера этого бойца">Старт</button>' +
+        '<select class="turn-fx" data-turn-fx data-id="' + esc(actor.id) + '" title="Эффект таймера этого бойца на экране игроков" aria-label="Эффект таймера">' + fxOptions(actor.turnFx) + "</select>" +
+        '<button type="button" class="turn-go" data-act="turn-toggle" data-id="' + esc(actor.id) + '" title="Пуск или пауза таймера этого бойца. Эффект виден игрокам">Старт</button>' +
         '<b class="turn-left" data-turn="' + esc(actor.id) + '"></b>' +
         '<button type="button" data-go="' + esc(actor.id) + '" title="Сделать ход этого бойца">ход</button></td>' +
         '<td><button type="button" data-act="life" data-id="' + esc(actor.id) + '">' + (actor.dead ? "Оживить" : "Убить") + "</button></td></tr>";
@@ -1258,7 +1311,8 @@
         }).filter(Boolean);
         const head = '<tr class="squad-row" data-board="' + esc(group.id) + '"><td colspan="6"><input data-squad="' + esc(group.id) + '" value="' + esc(group.name || "Отряд") + '" aria-label="Отряд"></td>' +
           '<td class="turn-cell" colspan="2"><label class="turn-sec" title="Секунды на ход этого отряда. 0 — без таймера">сек<input data-squad-sec data-id="' + esc(group.id) + '" class="num" type="number" min="0" value="' + esc(String(Math.max(0, Math.round(Number(group.turnSec) || 0)))) + '" aria-label="Секунды отряда"></label>' +
-          '<button type="button" class="turn-go" data-act="squad-toggle" data-id="' + esc(group.id) + '" title="Пуск или пауза таймера отряда">Старт</button>' +
+          '<select class="turn-fx" data-squad-fx data-id="' + esc(group.id) + '" title="Эффект таймера этого отряда на экране игроков" aria-label="Эффект отряда">' + fxOptions(group.turnFx) + "</select>" +
+          '<button type="button" class="turn-go" data-act="squad-toggle" data-id="' + esc(group.id) + '" title="Пуск или пауза таймера отряда. Эффект виден игрокам">Старт</button>' +
           '<b class="turn-left" data-squad-clock="' + esc(group.id) + '"></b></td>' +
           '<td><button type="button" data-act="squad-del" data-id="' + esc(group.id) + '" title="Убрать отряд из боя целиком">×</button></td></tr>';
         return head + members.map(function (actor) { return fighterRow(actor, now, group.id); }).join("");
@@ -1669,6 +1723,11 @@
         save();
         paint();
       });
+      const turnPause = host.querySelector("#battle-turn-pause");
+      if (turnPause) turnPause.addEventListener("change", function () {
+        battle.turnPause = turnPause.checked;
+        save();
+      });
       const round = host.querySelector("#battle-round");
       if (round) round.addEventListener("change", function () {
         battle.round = Math.max(1, Math.round(Number(round.value) || 1));
@@ -1774,11 +1833,12 @@
             actor.color = inkOk(input.value) ? input.value : "";
           } else {
             const next = Math.round(Number(input.value) || 0);
-            if (key === "turnSec" && next !== Math.round(Number(actor.turnSec) || 0)) {
-              actor.turnRun = false;
-              actor.turnUntil = 0;
-              actor.turnLeft = 0;
-            }
+          if (key === "turnSec" && next !== Math.round(Number(actor.turnSec) || 0)) {
+            actor.turnRun = false;
+            actor.turnUntil = 0;
+            actor.turnLeft = 0;
+            if (timerOwner === actor.id && window.ShirmoClock && window.ShirmoClock.pause) window.ShirmoClock.pause();
+          }
             actor[key] = key === "turnSec" ? Math.max(0, next) : next;
             if (key === "hpMax") actor.hpMax = Math.max(1, actor.hpMax || 1);
             if (key === "hp" || key === "hpMax") setHp(actor, key === "hp" ? actor.hp : actor.hp);
@@ -1828,10 +1888,32 @@
             group.turnRun = false;
             group.turnUntil = 0;
             group.turnLeft = 0;
+            if (timerOwner === group.id && window.ShirmoClock && window.ShirmoClock.pause) window.ShirmoClock.pause();
           }
           group.turnSec = next;
           save();
           paintClocks();
+        });
+      });
+      host.querySelectorAll("[data-turn-fx], [data-squad-fx]").forEach(function (input) {
+        input.addEventListener("change", function () {
+          const id = input.getAttribute("data-id");
+          const row = input.hasAttribute("data-turn-fx")
+            ? battle.actors.find(function (actor) { return actor.id === id; })
+            : (battle.board || []).find(function (group) { return group.id === id; });
+          if (!row) return;
+          const kinds = { "": 1, sand: 1, magic: 1, smoke: 1, blizzard: 1, fire: 1, flood: 1 };
+          row.turnFx = kinds[input.value] === 1 ? input.value : "";
+          save();
+          if (timerOwner !== row.id || !row.turnRun || !window.ShirmoFight) return;
+          const state = readClock(row);
+          window.ShirmoFight({
+            seconds: Math.round(Number(row.turnSec) || 0),
+            left: state.left,
+            running: true,
+            kind: row.turnFx,
+            showPlayers: true
+          });
         });
       });
       host.querySelectorAll("[data-squad]").forEach(function (input) {
@@ -1902,7 +1984,11 @@
         if (row) {
           const field = button.parentElement && button.parentElement.querySelector(act === "turn-toggle" ? "[data-q=turnSec]" : "[data-squad-sec]");
           if (field) row.turnSec = Math.max(0, Math.round(Number(field.value) || 0));
+          const fx = button.parentElement && button.parentElement.querySelector("[data-turn-fx], [data-squad-fx]");
+          if (fx) row.turnFx = fx.value || "";
           toggleClock(row);
+          if (row.turnRun) follow(row);
+          else if (timerOwner === row.id && window.ShirmoClock && window.ShirmoClock.pause) window.ShirmoClock.pause();
           save();
           paintClocks();
         }

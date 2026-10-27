@@ -1899,9 +1899,46 @@
         paint();
         pushPlayers();
         wake();
+      },
+      pause: function () {
+        if (mode !== "run") return;
+        mode = "pause";
+        paint();
+        pushPlayers();
+      },
+      drive: function (opts) {
+        opts = opts || {};
+        const kinds = { "": 1, sand: 1, magic: 1, smoke: 1, blizzard: 1, fire: 1, flood: 1 };
+        if (opts.kind != null && kinds[opts.kind] === 1) {
+          kindSel.value = opts.kind;
+          syncFxBoxes();
+        }
+        const total = Math.max(0, Math.round(Number(opts.seconds) || 0));
+        if (total) {
+          minInput.value = String(Math.floor(total / 60));
+          secInput.value = String(total % 60);
+          span = total * 1000;
+        }
+        const left = Math.max(0, Number(opts.left) || 0);
+        if (opts.running && (left || span)) {
+          remain = left || span;
+          mode = "run";
+          tickAt = Date.now();
+        } else if (opts.paused) {
+          remain = left;
+          mode = remain ? "pause" : "idle";
+        }
+        if (opts.showPlayers && !playersOn) {
+          playersOn = true;
+          markPlayers();
+        }
+        paint();
+        pushPlayers();
+        wake();
       }
     };
     if (opts.pin) setPinned(true);
+    if (opts.hidden) box.hidden = true;
   }
 
   function openRollMenu(roomId, headers, state, err, anchor) {
@@ -2244,6 +2281,11 @@
       const existed = !!document.getElementById("timer-layer");
       openTimer(timerBag(existed ? { silent: true } : {}));
       if (window.ShirmoClock && window.ShirmoClock.arm) window.ShirmoClock.arm(seconds, true);
+    };
+    window.ShirmoFight = function (opts) {
+      const existed = !!document.getElementById("timer-layer");
+      openTimer(timerBag(existed ? { silent: true } : { hidden: true }));
+      if (window.ShirmoClock && window.ShirmoClock.drive) window.ShirmoClock.drive(opts || {});
     };
     function paintChoices() {
       const lib = shelf();
