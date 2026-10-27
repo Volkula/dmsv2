@@ -812,6 +812,8 @@
           face: event.face,
           storm: !!event.storm,
           linked: linked,
+          until: running ? until : 0,
+          left: running ? Math.max(0, until - Date.now()) : remain,
           reset: !!event.fxReset,
           progress: linked ? 1 - remain / span : undefined
         });
@@ -848,13 +850,45 @@
       }
       layer.classList.toggle("is-quiet", !showDigits && (!endBox || endBox.hidden));
       if (linked && effect && window.ShirmoFx && window.ShirmoFx.setProgress) {
-        window.ShirmoFx.setProgress(1 - left / span);
+        const live = running ? Math.max(0, until - Date.now()) : left;
+        if (window.ShirmoFx.setLeft) window.ShirmoFx.setLeft(live);
+        window.ShirmoFx.setProgress(1 - live / span);
       }
     }
     clearInterval(layer._beat);
     function tick() { draw(running ? until - Date.now() : remain); }
     tick();
     layer._beat = setInterval(tick, 250);
+  }
+
+  function showPlayerClock(event) {
+    let layer = document.getElementById("play-clock");
+    if (!event || event.on === false) {
+      if (layer) {
+        clearInterval(layer._beat);
+        layer.remove();
+      }
+      return;
+    }
+    if (!layer) {
+      layer = document.createElement("div");
+      layer.id = "play-clock";
+      layer.innerHTML = '<p class="clock-face" data-now></p>';
+      document.body.appendChild(layer);
+    }
+    const shapes = { square: 1, round: 1, narrow: 1, segment: 1 };
+    const shape = shapes[event.shape] ? event.shape : "square";
+    const size = Math.min(120, Math.max(28, Math.round(Number(event.size) || 48)));
+    layer.className = "play-clock shape-" + shape;
+    layer.style.setProperty("--clock-size", size + "px");
+    const node = layer.querySelector("[data-now]");
+    function paint() {
+      const now = new Date();
+      node.innerHTML = digitHtml(pad2(now.getHours()) + ":" + pad2(now.getMinutes()) + ":" + pad2(now.getSeconds()));
+    }
+    clearInterval(layer._beat);
+    paint();
+    layer._beat = setInterval(paint, 250);
   }
 
   function viewer(id) {
@@ -864,6 +898,10 @@
     function paint(frame, event) {
       if (event && event.type === "timer") {
         showPlayerTimer(event);
+        return;
+      }
+      if (event && event.type === "clock") {
+        showPlayerClock(event);
         return;
       }
       if (event && event.type === "ping") {
@@ -1082,6 +1120,13 @@
     });
     bar.addEventListener("pointerup", function () { drag = null; });
   }
+  function clockTools() {
+    return '<span class="clock-tools">' +
+      '<button type="button" data-clock="pin" title="В сайдбар" aria-label="В сайдбар"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4.5h6l-.8 5.2 2.8 1.8v2H7v-2l2.8-1.8z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 13.5V20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>' +
+      '<button type="button" data-clock="eye" title="Показать игрокам" aria-label="Показать игрокам"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6S2 12 2 12z" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></button>' +
+      '<button type="button" data-clock="close" title="Закрыть" aria-label="Закрыть">×</button></span>';
+  }
+
   function shapeButtons() {
     return '<div class="clock-shapes" role="group" aria-label="Форма цифр">' +
       '<button type="button" data-clock-shape="square" title="Прямые цифры">Прямые</button>' +
@@ -1094,6 +1139,8 @@
     opts = opts || {};
     let box = document.getElementById("clock-layer");
     if (box) {
+      if (opts.roomId) box._roomId = opts.roomId;
+      if (opts.headers) box._headers = opts.headers;
       if (opts.pin === true && box._setPinned) box._setPinned(true);
       else if (opts.unpin === true && box._setPinned) box._setPinned(false);
       else {
@@ -1108,7 +1155,7 @@
     box.className = "clock-layer";
     box.setAttribute("role", "dialog");
     box.setAttribute("aria-label", "Часы");
-    box.innerHTML = '<header class="clock-bar"><b>Часы</b><button type="button" data-clock="close" title="Закрыть" aria-label="Закрыть">×</button></header>' +
+    box.innerHTML = '<header class="clock-bar"><b>Часы</b>' + clockTools() + '</header>' +
       '<p class="clock-face" data-clock="now">00:00:00</p>' +
       '<label class="clock-size">Размер<input data-clock="size" type="range" min="28" max="120" value="48"></label>' +
       shapeButtons();
@@ -1118,6 +1165,26 @@
     let shape = "square";
     let pinned = false;
     let beat = 0;
+    let clockPlayers = false;
+    const eyeBtn = box.querySelector("[data-clock=eye]");
+    const pinHead = box.querySelector("[data-clock=pin]");
+    function markEye() {
+      eyeBtn.classList.toggle("is-on", clockPlayers);
+      const label = clockPlayers ? "Скрыть у игроков" : "Показать игрокам";
+      eyeBtn.title = label;
+      eyeBtn.setAttribute("aria-label", label);
+    }
+    function pushClock() {
+      const roomId = box._roomId;
+      if (!roomId) return;
+      fetch("/api/rooms/" + roomId + "/events", {
+        method: "POST",
+        headers: box._headers || { "content-type": "application/json" },
+        body: JSON.stringify({ type: "clock", on: clockPlayers, size: size, shape: shape })
+      }).catch(function () {});
+    }
+    box._roomId = opts.roomId || "";
+    box._headers = opts.headers || null;
     function paint() {
       const now = new Date();
       nowNode.innerHTML = digitHtml(pad2(now.getHours()) + ":" + pad2(now.getMinutes()) + ":" + pad2(now.getSeconds()));
@@ -1135,11 +1202,13 @@
     box.querySelector("[data-clock=size]").addEventListener("input", function (event) {
       size = Math.min(120, Math.max(28, Math.round(Number(event.target.value) || 48)));
       applyDigitLook(box, size, shape);
+      if (clockPlayers) pushClock();
     });
     box.querySelectorAll("[data-clock-shape]").forEach(function (button) {
       button.addEventListener("click", function () {
         shape = button.getAttribute("data-clock-shape") || "square";
         applyDigitLook(box, size, shape);
+        if (clockPlayers) pushClock();
       });
     });
     dragLayer(box, box.querySelector(".clock-bar"), function () { return pinned; });
@@ -1153,6 +1222,12 @@
         pinBtn.classList.toggle("is-on", held);
         pinBtn.title = label;
         pinBtn.setAttribute("aria-label", label);
+      }
+      if (pinHead) {
+        pinHead.classList.toggle("is-on", pinned);
+        const label = pinned ? "Убрать из сайдбара" : "В сайдбар";
+        pinHead.title = label;
+        pinHead.setAttribute("aria-label", label);
       }
       box.classList.toggle("is-pinned", pinned);
       if (pinned && main) {
@@ -1174,6 +1249,16 @@
     box.querySelector("[data-clock=close]").addEventListener("click", function () {
       box.hidden = true;
       place();
+    });
+    pinHead.addEventListener("click", function () {
+      const rail = document.querySelector("#dock [data-dock=clock]");
+      if (rail) { rail.click(); return; }
+      setPinned(!pinned);
+    });
+    eyeBtn.addEventListener("click", function () {
+      clockPlayers = !clockPlayers;
+      markEye();
+      pushClock();
     });
     if (!box._watch) {
       const dock = document.getElementById("dock");
@@ -1389,7 +1474,7 @@
     box.className = "clock-layer timer-layer";
     box.setAttribute("role", "dialog");
     box.setAttribute("aria-label", "Таймер");
-    box.innerHTML = '<header class="clock-bar"><b>Таймер</b><button type="button" data-clock="close" title="Закрыть" aria-label="Закрыть">×</button></header>' +
+    box.innerHTML = '<header class="clock-bar"><b>Таймер</b>' + clockTools() + '</header>' +
       '<p class="clock-timer" data-clock="left">05:00</p>' +
       '<div class="clock-set"><label>мин<input data-clock="min" type="number" min="0" max="599" value="5"></label>' +
       '<label>сек<input data-clock="sec" type="number" min="0" max="59" value="0"></label></div>' +
@@ -1412,8 +1497,8 @@
       '<label class="clock-size">Интенсивность<input data-fx="power" type="range" min="1" max="100" value="50"></label>' +
       '<label class="clock-size" data-fx="speed-row" hidden>Скорость заполнения<input data-fx="speed" type="range" min="1" max="100" value="40"></label>' +
       '<div class="fx-extra" data-fx="magic" hidden>' +
-      '<label class="clock-size">Стрелки<input data-fx="hand" type="color" value="#f6e7b0"></label>' +
-      '<label class="clock-size">Фон часов<input data-fx="face" type="color" value="#1a140c"></label></div>' +
+      '<label class="clock-size">Стрелки<input data-fx="hand" type="color" value="#1a2744"></label>' +
+      '<label class="clock-size">Фон часов<input data-fx="face" type="color" value="#f4e7c8"></label></div>' +
       '<label class="check fx-extra" data-fx="flood" hidden><input data-fx="storm" type="checkbox"> Дождь и ураган</label>' +
       '<div class="clock-acts" data-fx="free-acts" hidden><button type="button" data-fx="play">Запустить эффект</button><button type="button" data-fx="halt">Стоп</button></div>' +
       '<label class="clock-size">Текст в конце<textarea data-fx="end-text" rows="2" placeholder="Время вышло"></textarea></label>' +
@@ -1660,8 +1745,7 @@
       fxOn = true;
       if (!playersOn) {
         playersOn = true;
-        playersBtn.textContent = "Убрать таймер у игроков";
-        playersBtn.classList.add("is-on");
+        markPlayers();
       }
       sendPlayers(snapshot(true));
     });
@@ -1718,12 +1802,26 @@
       });
     });
     const playersBtn = box.querySelector("[data-clock=players]");
-    playersBtn.addEventListener("click", function () {
-      playersOn = !playersOn;
+    const eyeBtn = box.querySelector("[data-clock=eye]");
+    function markPlayers() {
       playersBtn.textContent = playersOn ? "Убрать таймер у игроков" : "Вывести таймер для игроков";
       playersBtn.classList.toggle("is-on", playersOn);
+      eyeBtn.classList.toggle("is-on", playersOn);
+      const label = playersOn ? "Скрыть у игроков" : "Показать игрокам";
+      eyeBtn.title = label;
+      eyeBtn.setAttribute("aria-label", label);
+    }
+    playersBtn.addEventListener("click", function () {
+      playersOn = !playersOn;
+      markPlayers();
       if (playersOn) sendPlayers(snapshot());
       else sendPlayers({ type: "timer", on: false });
+    });
+    eyeBtn.addEventListener("click", function () { playersBtn.click(); });
+    box.querySelector("[data-clock=pin]").addEventListener("click", function () {
+      const rail = document.querySelector("#dock [data-dock=timer]");
+      if (rail) { rail.click(); return; }
+      setPinned(!pinned);
     });
     dragLayer(box, box.querySelector(".clock-bar"), function () { return pinned; });
     function place() {
@@ -1736,6 +1834,13 @@
         pinBtn.classList.toggle("is-on", held);
         pinBtn.title = label;
         pinBtn.setAttribute("aria-label", label);
+      }
+      const pinHead = box.querySelector("[data-clock=pin]");
+      if (pinHead) {
+        pinHead.classList.toggle("is-on", pinned);
+        const label = pinned ? "Убрать из сайдбара" : "В сайдбар";
+        pinHead.title = label;
+        pinHead.setAttribute("aria-label", label);
       }
       box.classList.toggle("is-pinned", pinned);
       if (pinned && main) {
@@ -2452,13 +2557,14 @@
       let noteOpen = false;
       let noteTimer = 0;
       let rollSides = 20;
-      const folds = { rolls: true, heroes: true, notes: true };
+      const folds = { rolls: true, heroes: true, notes: true, spans: true };
       function model() {
         if (!state.campaign.dock || typeof state.campaign.dock !== "object") state.campaign.dock = {};
         const dock = state.campaign.dock;
         if (typeof dock.open !== "boolean") dock.open = false;
         dock.heroes = Array.isArray(dock.heroes) ? dock.heroes : [];
         dock.notes = Array.isArray(dock.notes) ? dock.notes : [];
+        dock.spans = Array.isArray(dock.spans) ? dock.spans : [];
         return dock;
       }
       function heroes() {
@@ -2535,7 +2641,7 @@
         const dock = model();
         const editing = root.querySelector("[data-dock-note]:focus, [data-dock-name]:focus, .dock-form :focus");
         if (editing) return;
-        ["rolls", "heroes", "notes"].forEach(function (name) {
+        ["rolls", "heroes", "notes", "spans"].forEach(function (name) {
           const node = root.querySelector('[data-fold="' + name + '"]');
           if (node) folds[name] = node.open;
         });
@@ -2609,9 +2715,23 @@
             '<textarea data-dock-new-text placeholder="Текст"></textarea>' +
             '<button type="button" data-dock="note-create">Добавить в библиотеку</button></div>'
           : "";
+        function spanLabel(sec) {
+          const total = Math.max(0, Math.round(Number(sec) || 0));
+          const minutes = Math.floor(total / 60);
+          const seconds = total % 60;
+          return minutes + ":" + String(seconds).padStart(2, "0");
+        }
+        const spanRows = (dock.spans || []).map(function (row) {
+          return '<div class="dock-line"><button type="button" data-dock="span" data-sec="' + esc(String(row.sec || 0)) + '">' + esc(row.name || spanLabel(row.sec)) + "</button>" +
+            '<button type="button" data-dock-span-del="' + esc(row.id) + '" title="Убрать интервал" aria-label="Убрать интервал">×</button></div>';
+        }).join("") || '<p class="note">Нет закреплённых интервалов.</p>';
         root.innerHTML = rail + '<div class="dock-main"><div class="dock-body">' +
           '<details class="dock-fold" data-fold="rolls"' + (folds.rolls ? " open" : "") + "><summary>Броски</summary>" + rollRows +
           '<button type="button" data-dock="roll-add">' + (rollOpen ? "Скрыть форму" : "Закрепить бросок") + "</button>" + rollForm + "</details>" +
+          '<details class="dock-fold" data-fold="spans"' + (folds.spans ? " open" : "") + "><summary>Интервалы</summary>" + spanRows +
+          '<div class="dock-form dock-span"><label>мин<input data-span-min class="num" type="number" min="0" value="1" aria-label="Минуты"></label>' +
+          '<label>сек<input data-span-sec class="num" type="number" min="0" max="59" value="0" aria-label="Секунды"></label>' +
+          '<button type="button" data-dock="span-add">Закрепить</button></div></details>' +
           '<details class="dock-fold" data-fold="heroes"' + (folds.heroes ? " open" : "") + "><summary>Герои</summary>" + heroRows +
           '<button type="button" data-dock="hero-add">' + (heroOpen ? "Скрыть список" : "Закрепить героя") + "</button>" + heroForm + "</details>" +
           '<details class="dock-fold" data-fold="notes"' + (folds.notes ? " open" : "") + "><summary>Заметки</summary>" + noteRows +
@@ -2656,6 +2776,31 @@
           if (!button || !root.contains(button)) return;
           const act = button.getAttribute("data-dock");
           const dock = model();
+          if (act === "span-add") {
+            const minutes = Math.max(0, Math.round(Number((root.querySelector("[data-span-min]") || {}).value) || 0));
+            const seconds = Math.max(0, Math.min(59, Math.round(Number((root.querySelector("[data-span-sec]") || {}).value) || 0)));
+            const total = minutes * 60 + seconds;
+            if (!total) return;
+            const label = minutes + ":" + String(seconds).padStart(2, "0");
+            dock.spans.unshift({ id: crypto.randomUUID(), sec: total, name: label });
+            save();
+            paint();
+            return;
+          }
+          if (act === "span") {
+            const sec = Math.round(Number(button.getAttribute("data-sec")) || 0);
+            if (!sec) return;
+            openTimer(timerBag());
+            if (window.ShirmoClock && window.ShirmoClock.arm) window.ShirmoClock.arm(sec);
+            return;
+          }
+          if (button.hasAttribute("data-dock-span-del")) {
+            const sid = button.getAttribute("data-dock-span-del");
+            dock.spans = dock.spans.filter(function (row) { return row.id !== sid; });
+            save();
+            paint();
+            return;
+          }
           if (act === "toggle") {
             dock.open = !dock.open;
             save();

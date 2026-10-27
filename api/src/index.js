@@ -600,6 +600,9 @@ const server = http.createServer(async function (req, res) {
       if (room.timer && room.timer.on) {
         res.write(`data: ${JSON.stringify({ type: "event", event: room.timer })}\n\n`);
       }
+      if (room.clock && room.clock.on) {
+        res.write(`data: ${JSON.stringify({ type: "event", event: room.clock })}\n\n`);
+      }
       const drop = subscribe(id, res);
       const beat = setInterval(function () { res.write(": ping\n\n"); }, 15000);
       req.on("close", function () {
@@ -755,6 +758,18 @@ const server = http.createServer(async function (req, res) {
       if (event.type === "wares-font") {
         const fontSize = Math.round(Number(body.fontSize) || 0);
         if (fontSize >= 12 && fontSize <= 28) event.fontSize = fontSize;
+      }
+      if (event.type === "clock") {
+        const shapes = { square: 1, round: 1, narrow: 1, segment: 1 };
+        if (body.on !== true) {
+          event.on = false;
+          room.clock = null;
+        } else {
+          event.on = true;
+          event.size = Math.min(120, Math.max(28, Math.round(Number(body.size) || 48)));
+          event.shape = shapes[body.shape] ? body.shape : "square";
+          room.clock = { type: "clock", on: true, size: event.size, shape: event.shape };
+        }
       }
       if (event.type === "timer") {
         const shapes = { square: 1, round: 1, narrow: 1, segment: 1 };

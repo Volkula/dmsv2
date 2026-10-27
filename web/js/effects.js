@@ -19,6 +19,8 @@
     storm: false,
     linked: false,
     progress: 0,
+    until: 0,
+    left: 0,
     appear: 0,
     t: 0
   };
@@ -52,6 +54,8 @@
   function stop() {
     state.kind = "";
     state.progress = 0;
+    state.until = 0;
+    state.left = 0;
     state.appear = 0;
     state.t = 0;
     bits = [];
@@ -88,6 +92,8 @@
     if (state.linked && opts.progress != null && Number.isFinite(Number(opts.progress))) {
       state.progress = clamp(Number(opts.progress), 0, 1);
     }
+    if (opts.until != null) state.until = Math.max(0, Math.round(Number(opts.until) || 0));
+    if (opts.left != null && Number.isFinite(Number(opts.left))) state.left = Math.max(0, Number(opts.left));
     ensure();
   }
 
@@ -98,6 +104,7 @@
     last = now;
     state.t += dt;
     if (!state.linked) state.progress = Math.min(1, state.progress + rate() * dt);
+    if (state.linked && state.until > 0) state.left = Math.max(0, state.until - Date.now());
     state.appear = Math.min(1, state.appear + dt / 0.85);
     if (!w) resize();
     ctx.clearRect(0, 0, w, h);
@@ -168,121 +175,129 @@
     ctx.globalAlpha = 1;
   }
 
-  function gearPath(r, teeth) {
-    ctx.beginPath();
-    for (let i = 0; i < teeth; i++) {
-      const a0 = (i / teeth) * Math.PI * 2;
-      const a1 = a0 + Math.PI / teeth * 0.55;
-      const a2 = a0 + Math.PI / teeth * 1.15;
-      const a3 = a0 + (Math.PI * 2) / teeth;
-      const outer = r * 1.18;
-      if (i === 0) ctx.moveTo(Math.cos(a0) * r, Math.sin(a0) * r);
-      else ctx.lineTo(Math.cos(a0) * r, Math.sin(a0) * r);
-      ctx.lineTo(Math.cos(a1) * outer, Math.sin(a1) * outer);
-      ctx.lineTo(Math.cos(a2) * outer, Math.sin(a2) * outer);
-      ctx.lineTo(Math.cos(a3) * r, Math.sin(a3) * r);
-    }
-    ctx.closePath();
-  }
-
-  function drawGear(g) {
-    ctx.save();
-    ctx.translate(g.x * w, g.y * h);
-    ctx.rotate(g.rot);
-    ctx.globalAlpha = g.fade;
-    ctx.fillStyle = g.ink;
-    gearPath(g.r, g.teeth);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(0,0,0,0.35)";
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.arc(0, 0, g.r * 0.28, 0, Math.PI * 2);
-    ctx.fillStyle = "#120e0b";
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(0, 0, g.r * 0.12, 0, Math.PI * 2);
-    ctx.fillStyle = g.ink;
-    ctx.fill();
-    ctx.restore();
-  }
-
-  function drawMagic(dt) {
-    const n = many(42);
-    const inks = ["#8a6a3a", "#b08a4a", "#6e5a48", "#c4a574", "#4e463c"];
-    while (bits.length < n) {
-      bits.push({
-        x: 0.04 + Math.random() * 0.92,
-        y: 0.04 + Math.random() * 0.92,
-        r: 18 + Math.random() * 56,
-        teeth: 6 + Math.floor(Math.random() * 6),
-        rot: Math.random() * Math.PI * 2,
-        vr: (Math.random() < 0.5 ? -1 : 1) * (0.15 + Math.random() * 0.55),
-        show: Math.random(),
-        ink: inks[Math.floor(Math.random() * inks.length)]
-      });
-    }
-    if (bits.length > n) bits.length = n;
-    ctx.fillStyle = "rgba(8, 6, 10, " + (0.35 + state.progress * 0.45) + ")";
-    ctx.fillRect(0, 0, w, h);
-    bits.forEach(function (g) {
-      g.rot += g.vr * dt;
-      g.fade = clamp((state.progress - g.show) / 0.08, 0, 1) * state.appear;
-      if (g.fade > 0) drawGear(g);
-    });
+  function drawMagic() {
+    const leftMs = state.linked ? Math.max(0, state.left || 0) : state.t * 1000;
+    const sec = (leftMs / 1000) % 60;
+    const minute = (leftMs / 60000) % 60;
     const cx = w / 2;
     const cy = h / 2;
-    const R = Math.min(w, h) * 0.16;
+    const R = Math.min(w, h) * 0.26;
+    const sw = R * 0.72;
+    ctx.save();
     ctx.globalAlpha = state.appear;
+    ctx.fillStyle = "rgba(6, 5, 4, " + (0.32 + state.progress * 0.28) + ")";
+    ctx.fillRect(0, 0, w, h);
+    const strap = ctx.createLinearGradient(cx - sw / 2, 0, cx + sw / 2, 0);
+    strap.addColorStop(0, "#24160f");
+    strap.addColorStop(0.18, "#6a4328");
+    strap.addColorStop(0.5, "#3d2618");
+    strap.addColorStop(0.82, "#6a4328");
+    strap.addColorStop(1, "#24160f");
+    ctx.fillStyle = strap;
     ctx.beginPath();
-    ctx.arc(cx, cy, R * 1.08, 0, Math.PI * 2);
-    ctx.fillStyle = "#2a2118";
+    ctx.roundRect(cx - sw / 2, cy - R * 2.2, sw, R * 4.4, 16);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(230, 196, 140, 0.28)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 4]);
+    ctx.strokeRect(cx - sw / 2 + 7, cy - R * 2.08, sw - 14, R * 4.16);
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.arc(cx, cy + 3, R * 1.22, 0, Math.PI * 2);
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fill();
+    const bezel = ctx.createRadialGradient(cx - R * 0.35, cy - R * 0.4, R * 0.2, cx, cy, R * 1.18);
+    bezel.addColorStop(0, "#f6e7b8");
+    bezel.addColorStop(0.42, "#c6a25c");
+    bezel.addColorStop(0.72, "#8a6830");
+    bezel.addColorStop(1, "#3e2a14");
+    ctx.beginPath();
+    ctx.arc(cx, cy, R * 1.14, 0, Math.PI * 2);
+    ctx.fillStyle = bezel;
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.arc(cx, cy, R * 0.98, 0, Math.PI * 2);
     ctx.fillStyle = state.face;
     ctx.fill();
-    ctx.strokeStyle = state.hand;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.save();
+    const shade = ctx.createRadialGradient(cx, cy - R * 0.15, R * 0.1, cx, cy, R);
+    shade.addColorStop(0, "rgba(255,255,255,0.14)");
+    shade.addColorStop(1, "rgba(0,0,0,0.32)");
+    ctx.fillStyle = shade;
+    ctx.fill();
     ctx.translate(cx, cy);
-    for (let i = 0; i < 12; i++) {
-      const a = (i / 12) * Math.PI * 2;
+    ctx.strokeStyle = state.hand;
+    for (let i = 0; i < 60; i++) {
+      const a = (i / 60) * Math.PI * 2 - Math.PI / 2;
+      const inner = i % 5 === 0 ? R * 0.78 : R * 0.86;
       ctx.beginPath();
-      ctx.moveTo(Math.cos(a) * R * 0.82, Math.sin(a) * R * 0.82);
-      ctx.lineTo(Math.cos(a) * R * 0.94, Math.sin(a) * R * 0.94);
-      ctx.strokeStyle = state.hand;
-      ctx.lineWidth = i % 3 === 0 ? 3 : 1.4;
+      ctx.moveTo(Math.cos(a) * inner, Math.sin(a) * inner);
+      ctx.lineTo(Math.cos(a) * R * 0.92, Math.sin(a) * R * 0.92);
+      ctx.lineWidth = i % 5 === 0 ? 2.6 : 1;
       ctx.stroke();
     }
-    const now = new Date();
-    const sec = now.getSeconds() + now.getMilliseconds() / 1000;
-    const minute = now.getMinutes() + sec / 60;
-    const hour = (now.getHours() % 12) + minute / 60;
-    function hand(angle, len, width) {
+    ctx.font = "600 " + Math.round(R * 0.14) + "px Georgia, serif";
+    ctx.fillStyle = state.hand;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    for (let n = 1; n <= 12; n++) {
+      const a = (n / 12) * Math.PI * 2 - Math.PI / 2;
+      ctx.fillText(String(n), Math.cos(a) * R * 0.62, Math.sin(a) * R * 0.62 + 1);
+    }
+    const remainFrac = state.linked ? clamp(1 - state.progress, 0, 1) : (sec / 60);
+    ctx.beginPath();
+    ctx.strokeStyle = "#e6c36a";
+    ctx.lineWidth = Math.max(3, R * 0.025);
+    ctx.lineCap = "round";
+    ctx.arc(0, 0, R * 0.99, -Math.PI / 2, -Math.PI / 2 + remainFrac * Math.PI * 2);
+    ctx.stroke();
+    function leaf(angle, len, width) {
       ctx.save();
       ctx.rotate(angle);
       ctx.beginPath();
-      ctx.moveTo(0, 8);
-      ctx.lineTo(0, -len);
-      ctx.strokeStyle = state.hand;
-      ctx.lineWidth = width;
-      ctx.lineCap = "round";
-      ctx.stroke();
+      ctx.moveTo(0, width * 1.4);
+      ctx.quadraticCurveTo(width, 0, 0, -len);
+      ctx.quadraticCurveTo(-width, 0, 0, width * 1.4);
+      ctx.closePath();
+      ctx.fillStyle = state.hand;
+      ctx.fill();
       ctx.restore();
     }
-    hand((hour / 12) * Math.PI * 2, R * 0.5, 4);
-    hand((minute / 60) * Math.PI * 2, R * 0.72, 2.5);
-    hand((sec / 60) * Math.PI * 2, R * 0.82, 1.2);
+    leaf((minute / 60) * Math.PI * 2, R * 0.5, R * 0.04);
+    ctx.save();
+    ctx.rotate((sec / 60) * Math.PI * 2);
     ctx.beginPath();
-    ctx.arc(0, 0, 4, 0, Math.PI * 2);
-    ctx.fillStyle = state.hand;
+    ctx.moveTo(0, R * 0.18);
+    ctx.lineTo(0, -R * 0.76);
+    ctx.strokeStyle = "#8d2a22";
+    ctx.lineWidth = Math.max(1.4, R * 0.012);
+    ctx.lineCap = "round";
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, R * 0.22, R * 0.045, 0, Math.PI * 2);
+    ctx.fillStyle = "#8d2a22";
     ctx.fill();
     ctx.restore();
+    ctx.beginPath();
+    ctx.arc(0, 0, R * 0.04, 0, Math.PI * 2);
+    ctx.fillStyle = "#e6c36a";
+    ctx.fill();
+    ctx.restore();
+    ctx.fillStyle = "#c4a15a";
+    ctx.beginPath();
+    ctx.roundRect(cx + R * 1.08, cy - R * 0.09, R * 0.14, R * 0.18, 3);
+    ctx.fill();
+    ctx.strokeStyle = "#6a4e22";
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 4; i++) {
+      const y = cy - R * 0.06 + i * R * 0.04;
+      ctx.beginPath();
+      ctx.moveTo(cx + R * 1.09, y);
+      ctx.lineTo(cx + R * 1.2, y);
+      ctx.stroke();
+    }
     ctx.globalAlpha = 1;
   }
-
+    ctx.beginPath();
   function puff(x, y, r, alpha, gray) {
     const g = ctx.createRadialGradient(x, y, r * 0.1, x, y, r);
     g.addColorStop(0, "rgba(" + gray + "," + gray + "," + (gray - 4) + "," + alpha + ")");
@@ -471,6 +486,10 @@
     setProgress: function (value) {
       if (!state.kind || !state.linked) return;
       state.progress = clamp(Number(value) || 0, 0, 1);
+    },
+    setLeft: function (value) {
+      if (!state.kind) return;
+      state.left = Math.max(0, Number(value) || 0);
     },
     stop: stop,
     read: function () {
