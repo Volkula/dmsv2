@@ -4223,7 +4223,7 @@ body > .clock-layer.is-pinned { display: none !important; }
 
 .play-timer {
   position: fixed;
-  z-index: 40;
+  z-index: 80;
   top: 18px;
   left: 50%;
   transform: translateX(-50%);
@@ -4235,6 +4235,17 @@ body > .clock-layer.is-pinned { display: none !important; }
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
 }
 
+.play-timer.has-back {
+  background-color: rgba(12, 10, 8, 0.55);
+  background-size: cover;
+  background-position: center;
+}
+
+.play-end { margin-top: 8px; text-align: center; max-width: min(72vw, 680px); }
+.play-end[hidden] { display: none !important; }
+.play-end img { max-width: 100%; max-height: 42vh; object-fit: contain; }
+.play-end p { margin: 8px 0 0; color: #f6e7b0; font-size: 28px; white-space: pre-line; }
+
 .play-timer .clock-timer { padding: 0; }
 
 .timer-layer {
@@ -4243,7 +4254,9 @@ body > .clock-layer.is-pinned { display: none !important; }
   width: min(340px, calc(100vw - 24px));
 }
 
-.clock-size select { width: 100%; }
+.clock-size select,
+.clock-size textarea { width: 100%; }
+.clock-size textarea { min-height: 52px; }
 
 .fx-extra[hidden] { display: none !important; }
 

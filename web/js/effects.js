@@ -17,6 +17,7 @@
     hand: "#f6e7b0",
     face: "#1a140c",
     storm: false,
+    linked: false,
     progress: 0,
     appear: 0,
     t: 0
@@ -75,6 +76,7 @@
     if (/^#[0-9a-fA-F]{6}$/.test(opts.hand || "")) state.hand = opts.hand;
     if (/^#[0-9a-fA-F]{6}$/.test(opts.face || "")) state.face = opts.face;
     if (opts.storm != null) state.storm = !!opts.storm;
+    if (opts.linked != null) state.linked = !!opts.linked;
     if (!same || opts.reset) {
       state.progress = 0;
       state.appear = 0;
@@ -82,6 +84,9 @@
       bits = [];
       bed = null;
       bedCtx = null;
+    }
+    if (state.linked && opts.progress != null && Number.isFinite(Number(opts.progress))) {
+      state.progress = clamp(Number(opts.progress), 0, 1);
     }
     ensure();
   }
@@ -92,7 +97,7 @@
     const dt = Math.min(0.05, last ? (now - last) / 1000 : 0.016);
     last = now;
     state.t += dt;
-    state.progress = Math.min(1, state.progress + rate() * dt);
+    if (!state.linked) state.progress = Math.min(1, state.progress + rate() * dt);
     state.appear = Math.min(1, state.appear + dt / 0.85);
     if (!w) resize();
     ctx.clearRect(0, 0, w, h);
@@ -278,156 +283,123 @@
     ctx.globalAlpha = 1;
   }
 
+  function puff(x, y, r, alpha, gray) {
+    const g = ctx.createRadialGradient(x, y, r * 0.1, x, y, r);
+    g.addColorStop(0, "rgba(" + gray + "," + gray + "," + (gray - 4) + "," + alpha + ")");
+    g.addColorStop(0.45, "rgba(" + (gray - 18) + "," + (gray - 16) + "," + (gray - 14) + "," + (alpha * 0.45) + ")");
+    g.addColorStop(1, "rgba(40, 38, 36, 0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
   function drawSmoke(dt) {
-    const n = many(90);
-    const front = state.progress * h;
+    const p = state.progress;
+    const n = many(80);
+    const front = Math.max(8, p * h);
     while (bits.length < n) {
       bits.push({
         x: Math.random() * w,
-        y: Math.random() * -h * 0.3,
-        r: 16 + Math.random() * 48,
-        v: 18 + Math.random() * 50,
-        a: 0.08 + Math.random() * 0.2,
-        drift: (Math.random() - 0.5) * 20
+        y: Math.random() * -h * 0.4,
+        r: 50 + Math.random() * 140,
+        v: 12 + Math.random() * 36,
+        a: 0.05 + Math.random() * 0.1,
+        gray: 150 + Math.floor(Math.random() * 40),
+        wobble: Math.random() * Math.PI * 2,
+        drift: 8 + Math.random() * 22
       });
     }
     if (bits.length > n) bits.length = n;
-    const fog = ctx.createLinearGradient(0, 0, 0, Math.max(8, front));
-    fog.addColorStop(0, "rgba(70, 68, 66, " + (0.15 + state.progress * 0.55) + ")");
-    fog.addColorStop(1, "rgba(40, 38, 36, 0)");
+    const fog = ctx.createLinearGradient(0, 0, 0, front + 120);
+    fog.addColorStop(0, "rgba(22, 20, 18, " + (0.45 + p * 0.4) + ")");
+    fog.addColorStop(0.55, "rgba(70, 66, 60, " + (0.28 + p * 0.35) + ")");
+    fog.addColorStop(1, "rgba(120, 116, 110, 0)");
     ctx.fillStyle = fog;
-    ctx.fillRect(0, 0, w, front + 40);
-    bits.forEach(function (puff) {
-      puff.y += puff.v * dt * (0.45 + state.speed / 100);
-      puff.x += puff.drift * dt;
-      if (puff.y > front + 30 || puff.x < -40 || puff.x > w + 40) {
-        puff.y = -20 - Math.random() * 40;
-        puff.x = Math.random() * w;
+    ctx.fillRect(0, 0, w, front + 120);
+    bits.forEach(function (blob) {
+      blob.wobble += dt * 0.7;
+      blob.y += blob.v * dt * (0.55 + state.speed / 140);
+      blob.x += Math.sin(blob.wobble) * blob.drift * dt;
+      if (blob.y > front + blob.r * 0.3 || blob.x < -blob.r || blob.x > w + blob.r) {
+        blob.y = -blob.r;
+        blob.x = Math.random() * w;
       }
-      ctx.beginPath();
-      ctx.fillStyle = "rgba(180, 176, 170, " + puff.a * state.appear + ")";
-      ctx.arc(puff.x, puff.y, puff.r, 0, Math.PI * 2);
-      ctx.fill();
+      const depth = clamp(1 - blob.y / (front + 40), 0.25, 1);
+      puff(blob.x, blob.y, blob.r * (0.8 + p * 0.5), blob.a * depth * state.appear * (0.7 + state.power / 180), blob.gray);
     });
-  }
-
-  function snowBed() {
-    if (!bed || bed.width !== Math.max(1, Math.floor(w)) || bed.height !== Math.max(1, Math.floor(h))) {
-      bed = document.createElement("canvas");
-      bed.width = Math.max(1, Math.floor(w));
-      bed.height = Math.max(1, Math.floor(h));
-      bedCtx = bed.getContext("2d");
-    }
-    return bedCtx;
-  }
-
-  function drawBlizzard(dt) {
-    const n = many(140);
-    const cover = snowBed();
-    while (bits.length < n) {
-      bits.push({
-        x: Math.random() * w,
-        y: Math.random() * h,
-        r: 1.2 + Math.random() * 3.2,
-        v: 40 + Math.random() * 110,
-        wind: 20 + Math.random() * 80
-      });
-    }
-    if (bits.length > n) bits.length = n;
-    const floor = h * (1 - state.progress * 0.92);
-    bits.forEach(function (flake) {
-      flake.y += flake.v * dt;
-      flake.x += flake.wind * dt * (0.4 + state.power / 120);
-      if (flake.x > w) flake.x -= w;
-      if (flake.y > floor) {
-        cover.fillStyle = "rgba(255,255,255," + (0.35 + Math.random() * 0.5) + ")";
-        cover.beginPath();
-        cover.arc(flake.x, Math.min(h - 2, flake.y), flake.r + state.progress * 1.4, 0, Math.PI * 2);
-        cover.fill();
-        flake.y = -8;
-        flake.x = Math.random() * w;
-      }
-    });
-    ctx.drawImage(bed, 0, 0, w, h);
-    ctx.fillStyle = "rgba(236, 242, 248, " + (state.progress * 0.42) + ")";
-    ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = "rgba(255,255,255,0.9)";
-    bits.forEach(function (flake) {
-      ctx.globalAlpha = 0.75 * state.appear;
-      ctx.beginPath();
-      ctx.arc(flake.x, flake.y, flake.r, 0, Math.PI * 2);
-      ctx.fill();
-    });
-    ctx.globalAlpha = 1;
+    const band = ctx.createLinearGradient(0, Math.max(0, front - 70), 0, front + 50);
+    band.addColorStop(0, "rgba(0,0,0,0)");
+    band.addColorStop(0.5, "rgba(180, 176, 168, " + (0.08 + p * 0.12) + ")");
+    band.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = band;
+    ctx.fillRect(0, 0, w, front + 50);
   }
 
   function drawFire(dt) {
-    if (!bits.length || bits._w !== w || bits._h !== h) {
-      const cols = 16;
-      const rows = 10;
-      const origins = [[0.08, 0.08], [0.5, 0.86], [0.9, 0.32], [0.3, 0.5], [0.72, 0.14], [0.15, 0.78]];
-      bits = [];
-      bits._w = w;
-      bits._h = h;
-      for (let y = 0; y < rows; y++) {
-        for (let x = 0; x < cols; x++) {
-          const px = (x + 0.5) / cols;
-          const py = (y + 0.5) / rows;
-          let best = 2;
-          origins.forEach(function (spot) {
-            const dist = Math.hypot(px - spot[0], py - spot[1]);
-            if (dist < best) best = dist;
-          });
-          bits.push({
-            x: px,
-            y: py,
-            gate: clamp(best / 0.72, 0, 0.98),
-            phase: Math.random() * Math.PI * 2
-          });
-        }
-      }
+    const p = state.progress;
+    const tongues = many(56);
+    const base = h * (1 - p);
+    ctx.fillStyle = "rgba(30, 6, 0, " + (0.12 + p * 0.5) + ")";
+    ctx.fillRect(0, base, w, h - base);
+    const wash = ctx.createLinearGradient(0, base - 30, 0, h);
+    wash.addColorStop(0, "rgba(255, 90, 0, 0)");
+    wash.addColorStop(0.25, "rgba(255, 70, 0, " + (0.18 + p * 0.25) + ")");
+    wash.addColorStop(1, "rgba(90, 8, 0, " + (0.45 + p * 0.4) + ")");
+    ctx.fillStyle = wash;
+    ctx.fillRect(0, Math.max(0, base - 40), w, h);
+    while (bits.length < tongues) {
+      bits.push({
+        x: Math.random(),
+        gate: Math.random(),
+        phase: Math.random() * Math.PI * 2,
+        width: 16 + Math.random() * 42,
+        height: 50 + Math.random() * 120,
+        lean: (Math.random() - 0.5) * 40
+      });
     }
-    const flames = many(36);
-    ctx.fillStyle = "rgba(20, 6, 0, " + (state.progress * 0.28) + ")";
-    ctx.fillRect(0, 0, w, h);
-    bits.forEach(function (cell) {
-      if (state.progress < cell.gate) return;
-      const heat = clamp((state.progress - cell.gate) / 0.12, 0, 1);
-      const flick = 0.75 + Math.sin(state.t * 9 + cell.phase) * 0.25;
-      const radius = (28 + state.power * 0.45) * heat * flick;
-      const gx = cell.x * w;
-      const gy = cell.y * h;
-      const glow = ctx.createRadialGradient(gx, gy, 2, gx, gy, radius);
-      glow.addColorStop(0, "rgba(255, 220, 120, " + (0.55 * heat) + ")");
-      glow.addColorStop(0.45, "rgba(230, 90, 20, " + (0.35 * heat) + ")");
-      glow.addColorStop(1, "rgba(120, 20, 0, 0)");
-      ctx.fillStyle = glow;
+    if (bits.length > tongues) bits.length = tongues;
+    bits.forEach(function (tongue) {
+      if (p < tongue.gate * 0.92) return;
+      const life = clamp((p - tongue.gate * 0.92) / 0.12, 0, 1);
+      tongue.phase += dt * 8;
+      const flick = 0.72 + Math.sin(tongue.phase) * 0.28;
+      const x = tongue.x * w;
+      const rise = tongue.height * (0.45 + p * 0.7) * flick * life;
+      const top = base - rise;
+      const lean = tongue.lean * flick;
+      const flame = ctx.createLinearGradient(x, top, x, base + 16);
+      flame.addColorStop(0, "rgba(255, 250, 220, 0)");
+      flame.addColorStop(0.18, "rgba(255, 236, 170, " + (0.9 * life) + ")");
+      flame.addColorStop(0.42, "rgba(255, 140, 30, " + (0.75 * life) + ")");
+      flame.addColorStop(0.72, "rgba(220, 40, 0, " + (0.45 * life) + ")");
+      flame.addColorStop(1, "rgba(80, 0, 0, 0)");
+      ctx.fillStyle = flame;
       ctx.beginPath();
-      ctx.arc(gx, gy, radius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "rgba(255, 160, 40, " + (0.35 * heat) + ")";
-      ctx.beginPath();
-      ctx.moveTo(gx - 8, gy);
-      ctx.quadraticCurveTo(gx - 4, gy - 18 * flick, gx, gy - 28 * flick * heat);
-      ctx.quadraticCurveTo(gx + 6, gy - 16 * flick, gx + 8, gy);
+      ctx.moveTo(x - tongue.width * 0.55, base + 6);
+      ctx.quadraticCurveTo(x - tongue.width * 0.15 + lean * 0.3, base - rise * 0.45, x + lean * 0.35, top);
+      ctx.quadraticCurveTo(x + tongue.width * 0.2 + lean, base - rise * 0.5, x + tongue.width * 0.6, base + 6);
+      ctx.closePath();
       ctx.fill();
     });
-    if (!bits._sparks) bits._sparks = [];
-    const sparks = bits._sparks;
-    while (sparks.length < flames) {
-      sparks.push({ x: Math.random() * w, y: h, v: 40 + Math.random() * 80, life: Math.random() });
+    const embers = many(40);
+    if (!bits._embers) bits._embers = [];
+    const sparks = bits._embers;
+    while (sparks.length < embers) {
+      sparks.push({ x: Math.random() * w, y: h, v: 30 + Math.random() * 90, life: Math.random(), drift: (Math.random() - 0.5) * 20 });
     }
-    if (sparks.length > flames) sparks.length = flames;
+    if (sparks.length > embers) sparks.length = embers;
     sparks.forEach(function (spark) {
       spark.y -= spark.v * dt;
-      spark.life -= dt * 0.35;
-      if (spark.life <= 0 || spark.y < h * (1 - state.progress) - 20) {
+      spark.x += spark.drift * dt;
+      spark.life -= dt * 0.25;
+      if (spark.life <= 0 || spark.y < base - 80) {
         spark.x = Math.random() * w;
-        spark.y = h * (0.15 + Math.random() * 0.8);
-        spark.life = 0.6 + Math.random();
+        spark.y = base + Math.random() * Math.max(8, h - base);
+        spark.life = 0.5 + Math.random() * 1.2;
       }
-      ctx.fillStyle = "rgba(255, 190, 60, " + (spark.life * state.appear) + ")";
-      ctx.fillRect(spark.x, spark.y, 2, 6);
+      ctx.fillStyle = "rgba(255, " + Math.floor(160 + spark.life * 80) + ", 60, " + (spark.life * 0.8) + ")";
+      ctx.fillRect(spark.x, spark.y, 2.2, 2.2);
     });
   }
 
@@ -494,6 +466,11 @@
     tune: function (opts) {
       if (!state.kind) return;
       apply(Object.assign({ kind: state.kind, reset: false }, opts));
+    },
+    sync: function (opts) { apply(opts || {}); },
+    setProgress: function (value) {
+      if (!state.kind || !state.linked) return;
+      state.progress = clamp(Number(value) || 0, 0, 1);
     },
     stop: stop,
     read: function () {

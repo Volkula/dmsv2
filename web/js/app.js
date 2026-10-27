@@ -775,26 +775,52 @@
         clearInterval(layer._beat);
         layer.remove();
       }
+      if (window.ShirmoFx) window.ShirmoFx.stop();
       return;
     }
     if (!layer) {
       layer = document.createElement("div");
       layer.id = "play-timer";
-      layer.innerHTML = '<p class="clock-timer" data-left></p>';
+      layer.innerHTML = '<p class="clock-timer" data-left></p><div class="play-end" data-end hidden><img alt="" data-end-img><p data-end-text></p></div>';
       document.body.appendChild(layer);
     }
     const shapes = { square: 1, round: 1, narrow: 1, segment: 1 };
     const shape = shapes[event.shape] ? event.shape : "square";
     const size = Math.min(120, Math.max(28, Math.round(Number(event.size) || 40)));
-    layer.className = "play-timer shape-" + shape;
+    layer.className = "play-timer shape-" + shape + (event.back ? " has-back" : "");
     layer.style.setProperty("--clock-size", size + "px");
+    if (event.back) {
+      layer.style.backgroundImage = "url('" + String(event.back).replace(/'/g, "") + "')";
+    } else layer.style.backgroundImage = "";
     const node = layer.querySelector("[data-left]");
+    const endBox = layer.querySelector("[data-end]");
+    const endImg = layer.querySelector("[data-end-img]");
+    const endText = layer.querySelector("[data-end-text]");
     const until = Number(event.until) || 0;
     const remain = Math.max(0, Number(event.remain) || 0);
+    const span = Math.max(1, Number(event.span) || remain || 1);
     const running = event.running === true && until > 0;
+    const linked = event.linked !== false;
+    const effect = event.effect || "";
+    if (window.ShirmoFx) {
+      if (effect && (linked || event.fxRun)) {
+        window.ShirmoFx.sync({
+          kind: effect,
+          power: event.power,
+          speed: event.speed,
+          hand: event.hand,
+          face: event.face,
+          storm: !!event.storm,
+          linked: linked,
+          reset: !!event.fxReset,
+          progress: linked ? 1 - remain / span : undefined
+        });
+      } else window.ShirmoFx.stop();
+    }
     function pad(n) { return String(n).padStart(2, "0"); }
     function draw(ms) {
-      const total = Math.max(0, Math.ceil(ms / 1000));
+      const left = Math.max(0, ms);
+      const total = Math.ceil(left / 1000);
       const hours = Math.floor(total / 3600);
       const minutes = Math.floor((total % 3600) / 60);
       const seconds = total % 60;
@@ -802,9 +828,25 @@
       node.innerHTML = raw.split("").map(function (ch) {
         return '<span class="' + (ch === ":" ? "colon" : "digit") + '">' + ch + "</span>";
       }).join("");
-      const left = Math.max(0, ms);
-      node.classList.toggle("is-run", running && left > 0);
-      node.classList.toggle("is-done", event.done === true || (running && left <= 0));
+      const finished = left <= 0 && (event.done === true || running);
+      node.classList.toggle("is-run", running && !finished);
+      node.classList.toggle("is-done", finished);
+      if (endBox) {
+        endBox.hidden = !finished || (!event.endText && !event.endImage);
+        if (endImg) {
+          if (finished && event.endImage) {
+            endImg.hidden = false;
+            endImg.src = event.endImage;
+          } else {
+            endImg.removeAttribute("src");
+            endImg.hidden = true;
+          }
+        }
+        if (endText) endText.textContent = finished ? (event.endText || "") : "";
+      }
+      if (linked && effect && window.ShirmoFx && window.ShirmoFx.setProgress) {
+        window.ShirmoFx.setProgress(1 - left / span);
+      }
     }
     clearInterval(layer._beat);
     function tick() { draw(running ? until - Date.now() : remain); }
@@ -1148,8 +1190,14 @@
     if (box) {
       if (opts.roomId) box._roomId = opts.roomId;
       if (opts.headers) box._headers = opts.headers;
-      box.hidden = false;
-      if (box._wake) box._wake();
+      if (opts.images && box._fillPics) box._fillPics(opts.images);
+      if (opts.pin === true && box._setPinned) box._setPinned(true);
+      else if (opts.unpin === true && box._setPinned) box._setPinned(false);
+      else {
+        box.hidden = false;
+        if (box._wake) box._wake();
+        if (box._place) box._place();
+      }
       return;
     }
     box = document.createElement("div");
@@ -1175,13 +1223,17 @@
       '<option value="blizzard">Вьюга</option>' +
       '<option value="fire">Пожар</option>' +
       '<option value="flood">Потоп</option></select></label>' +
+      '<label class="check"><input data-fx="free" type="checkbox"> Отвязать от таймера</label>' +
       '<label class="clock-size">Интенсивность<input data-fx="power" type="range" min="1" max="100" value="50"></label>' +
-      '<label class="clock-size">Скорость заполнения<input data-fx="speed" type="range" min="1" max="100" value="40"></label>' +
+      '<label class="clock-size" data-fx="speed-row" hidden>Скорость заполнения<input data-fx="speed" type="range" min="1" max="100" value="40"></label>' +
       '<div class="fx-extra" data-fx="magic" hidden>' +
       '<label class="clock-size">Стрелки<input data-fx="hand" type="color" value="#f6e7b0"></label>' +
       '<label class="clock-size">Фон часов<input data-fx="face" type="color" value="#1a140c"></label></div>' +
       '<label class="check fx-extra" data-fx="flood" hidden><input data-fx="storm" type="checkbox"> Дождь и ураган</label>' +
-      '<div class="clock-acts"><button type="button" data-fx="play">Запустить эффект</button><button type="button" data-fx="halt">Стоп</button></div>';
+      '<div class="clock-acts" data-fx="free-acts" hidden><button type="button" data-fx="play">Запустить эффект</button><button type="button" data-fx="halt">Стоп</button></div>' +
+      '<label class="clock-size">Текст в конце<textarea data-fx="end-text" rows="2" placeholder="Время вышло"></textarea></label>' +
+      '<label class="clock-size">Картинка в конце<select data-fx="end-image"><option value="">Нет</option></select></label>' +
+      '<label class="clock-size">Фон таймера<select data-fx="back"><option value="">Нет</option></select></label>';
     document.body.appendChild(box);
     const leftNode = box.querySelector("[data-clock=left]");
     const runBtn = box.querySelector("[data-clock=run]");
@@ -1193,8 +1245,13 @@
     const handInput = box.querySelector("[data-fx=hand]");
     const faceInput = box.querySelector("[data-fx=face]");
     const stormInput = box.querySelector("[data-fx=storm]");
+    const freeInput = box.querySelector("[data-fx=free]");
+    const endText = box.querySelector("[data-fx=end-text]");
+    const endImage = box.querySelector("[data-fx=end-image]");
+    const backImage = box.querySelector("[data-fx=back]");
     let mode = "idle";
     let remain = 0;
+    let span = 5 * 60 * 1000;
     let tickAt = 0;
     let beat = 0;
     let audio = null;
@@ -1203,18 +1260,21 @@
     let shape = "square";
     let pushTimer = 0;
     let fxOn = false;
+    let pinned = false;
     box._roomId = opts.roomId || "";
     box._headers = opts.headers || null;
-    const runningFx = window.ShirmoFx && window.ShirmoFx.read ? window.ShirmoFx.read() : null;
-    if (runningFx && runningFx.kind) {
-      fxOn = true;
-      kindSel.value = runningFx.kind;
-      powerInput.value = String(runningFx.power);
-      speedInput.value = String(runningFx.speed);
-      handInput.value = runningFx.hand;
-      faceInput.value = runningFx.face;
-      stormInput.checked = !!runningFx.storm;
+    function fillPics(images) {
+      [endImage, backImage].forEach(function (sel) {
+        const current = sel.value;
+        sel.innerHTML = '<option value="">Нет</option>' + (images || []).map(function (item) {
+          const url = item && item.url || "";
+          return '<option value="' + esc(url) + '">' + esc(item.name || "Картинка") + "</option>";
+        }).join("");
+        if (current) sel.value = current;
+      });
     }
+    box._fillPics = fillPics;
+    fillPics(opts.images || []);
     function readSet(commit) {
       const minutes = Math.min(599, Math.max(0, Math.round(Number(minInput.value) || 0)));
       const seconds = Math.min(59, Math.max(0, Math.round(Number(secInput.value) || 0)));
@@ -1231,7 +1291,7 @@
       const seconds = total % 60;
       leftNode.innerHTML = digitHtml(hours ? pad2(hours) + ":" + pad2(minutes) + ":" + pad2(seconds) : pad2(minutes) + ":" + pad2(seconds));
     }
-    function snapshot() {
+    function snapshot(resetFx) {
       const running = mode === "run";
       const left = mode === "idle" ? readSet(false) : remain;
       return {
@@ -1242,7 +1302,20 @@
         remain: Math.max(0, Math.round(left)),
         size: size,
         shape: shape,
-        done: mode === "done"
+        done: mode === "done",
+        span: mode === "idle" ? left : Math.max(left, span),
+        effect: (freeInput.checked ? fxOn : !!kindSel.value) ? (kindSel.value || "") : "",
+        linked: !freeInput.checked,
+        fxRun: freeInput.checked ? fxOn : true,
+        fxReset: !!resetFx,
+        power: Number(powerInput.value) || 50,
+        speed: Number(speedInput.value) || 40,
+        hand: handInput.value,
+        face: faceInput.value,
+        storm: stormInput.checked,
+        endText: endText.value || "",
+        endImage: endImage.value || "",
+        back: backImage.value || ""
       };
     }
     function pushPlayers() {
@@ -1311,28 +1384,43 @@
       beat = setInterval(paint, 250);
     }
     box._wake = wake;
-    function fxPayload(resetKind) {
-      return {
-        kind: kindSel.value,
-        power: Number(powerInput.value),
-        speed: Number(speedInput.value),
-        hand: handInput.value,
-        face: faceInput.value,
-        storm: stormInput.checked,
-        reset: !!resetKind
-      };
-    }
     function syncFxBoxes() {
+      const free = freeInput.checked;
       box.querySelector("[data-fx=magic]").hidden = kindSel.value !== "magic";
       box.querySelector("[data-fx=flood]").hidden = kindSel.value !== "flood";
+      box.querySelector("[data-fx=speed-row]").hidden = !free;
+      box.querySelector("[data-fx=free-acts]").hidden = !free;
     }
-    function pushFx(resetKind) {
-      if (!window.ShirmoFx) return;
-      const payload = fxPayload(resetKind);
-      if (!fxOn || !payload.kind) return;
-      if (resetKind) window.ShirmoFx.play(payload);
-      else window.ShirmoFx.tune(payload);
-    }
+    kindSel.addEventListener("change", function () {
+      syncFxBoxes();
+      pushPlayers();
+    });
+    powerInput.addEventListener("input", pushPlayers);
+    speedInput.addEventListener("input", pushPlayers);
+    handInput.addEventListener("input", pushPlayers);
+    faceInput.addEventListener("input", pushPlayers);
+    stormInput.addEventListener("change", pushPlayers);
+    freeInput.addEventListener("change", function () {
+      syncFxBoxes();
+      pushPlayers();
+    });
+    endText.addEventListener("input", pushPlayers);
+    endImage.addEventListener("change", pushPlayers);
+    backImage.addEventListener("change", pushPlayers);
+    box.querySelector("[data-fx=play]").addEventListener("click", function () {
+      if (!kindSel.value) return;
+      fxOn = true;
+      if (!playersOn) {
+        playersOn = true;
+        playersBtn.textContent = "Убрать таймер у игроков";
+        playersBtn.classList.add("is-on");
+      }
+      sendPlayers(snapshot(true));
+    });
+    box.querySelector("[data-fx=halt]").addEventListener("click", function () {
+      fxOn = false;
+      pushPlayers();
+    });
     box.querySelector("[data-clock=close]").addEventListener("click", function () { box.hidden = true; });
     runBtn.addEventListener("click", function () {
       if (mode === "run") {
@@ -1343,6 +1431,7 @@
       }
       if (mode === "idle" || mode === "done" || remain <= 0) {
         remain = readSet(true);
+        span = remain;
         if (!remain) return;
       }
       arm();
@@ -1388,28 +1477,51 @@
       if (playersOn) sendPlayers(snapshot());
       else sendPlayers({ type: "timer", on: false });
     });
-    kindSel.addEventListener("change", function () {
-      syncFxBoxes();
-      if (fxOn) pushFx(true);
-    });
-    powerInput.addEventListener("input", function () { pushFx(false); });
-    speedInput.addEventListener("input", function () { pushFx(false); });
-    handInput.addEventListener("input", function () { pushFx(false); });
-    faceInput.addEventListener("input", function () { pushFx(false); });
-    stormInput.addEventListener("change", function () { pushFx(false); });
-    box.querySelector("[data-fx=play]").addEventListener("click", function () {
-      if (!kindSel.value || !window.ShirmoFx) return;
-      fxOn = true;
-      window.ShirmoFx.play(fxPayload(true));
-    });
-    box.querySelector("[data-fx=halt]").addEventListener("click", function () {
-      fxOn = false;
-      if (window.ShirmoFx) window.ShirmoFx.stop();
-    });
-    dragLayer(box, box.querySelector(".clock-bar"));
+    dragLayer(box, box.querySelector(".clock-bar"), function () { return pinned; });
+    function place() {
+      const dock = document.getElementById("dock");
+      const main = dock && dock.querySelector(".dock-main");
+      const pinBtn = dock && dock.querySelector("[data-dock=timer]");
+      const held = pinned && !box.hidden;
+      if (pinBtn) {
+        const label = held ? "Открепить таймер" : "Закрепить таймер";
+        pinBtn.classList.toggle("is-on", held);
+        pinBtn.title = label;
+        pinBtn.setAttribute("aria-label", label);
+      }
+      box.classList.toggle("is-pinned", pinned);
+      if (pinned && main) {
+        const clock = main.querySelector("#clock-layer");
+        const spot = clock ? clock.nextSibling : main.firstChild;
+        if (box.parentElement !== main || (clock ? clock.nextSibling !== box : main.firstChild !== box)) {
+          main.insertBefore(box, spot);
+        }
+        return;
+      }
+      if (box.parentElement !== document.body) document.body.appendChild(box);
+    }
+    function setPinned(next) {
+      pinned = !!next;
+      if (pinned) {
+        box.hidden = false;
+        wake();
+      }
+      place();
+    }
+    box._place = place;
+    box._setPinned = setPinned;
+    box.querySelector("[data-clock=close]").addEventListener("click", function () { place(); });
+    if (!box._watch) {
+      const dock = document.getElementById("dock");
+      if (dock) {
+        box._watch = new MutationObserver(function () { if (pinned) place(); });
+        box._watch.observe(dock, { childList: true });
+      }
+    }
     syncFxBoxes();
     applyDigitLook(box, size, shape);
     wake();
+    if (opts.pin) setPinned(true);
   }
 
   function openRollMenu(roomId, headers, state, err, anchor) {
@@ -2138,9 +2250,13 @@
         const layer = document.getElementById("clock-layer");
         const clockOn = !!(layer && layer.classList.contains("is-pinned") && !layer.hidden);
         const clockLabel = clockOn ? "Открепить часы" : "Закрепить часы";
+        const timerLayer = document.getElementById("timer-layer");
+        const timerOn = !!(timerLayer && timerLayer.classList.contains("is-pinned") && !timerLayer.hidden);
+        const timerLabel = timerOn ? "Открепить таймер" : "Закрепить таймер";
         const pinSvg = glyph('<path d="M9 4.5h6l-.8 5.2 2.8 1.8v2H7v-2l2.8-1.8z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 13.5V20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>');
+        const timerSvg = glyph('<circle cx="12" cy="13" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 13V9.5M9.5 4h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>');
         const toggle = '<button type="button" class="dock-toggle" data-dock="toggle" title="' + (dock.open ? "Свернуть стол" : "Открыть стол") + '" aria-expanded="' + (dock.open ? "true" : "false") + '">' + (dock.open ? "»" : "Стол") + "</button>";
-        const rail = '<div class="dock-rail"><button type="button" class="dock-pin' + (clockOn ? " is-on" : "") + '" data-dock="clock" title="' + clockLabel + '" aria-label="' + clockLabel + '">' + pinSvg + "</button>" + toggle + "</div>";
+        const rail = '<div class="dock-rail"><button type="button" class="dock-pin' + (clockOn ? " is-on" : "") + '" data-dock="clock" title="' + clockLabel + '" aria-label="' + clockLabel + '">' + pinSvg + '</button><button type="button" class="dock-pin' + (timerOn ? " is-on" : "") + '" data-dock="timer" title="' + timerLabel + '" aria-label="' + timerLabel + '">' + timerSvg + "</button>" + toggle + "</div>";
         if (!dock.open) {
           root.innerHTML = rail;
           bind();
@@ -2262,6 +2378,23 @@
             paint();
             return;
           }
+          if (act === "timer") {
+            const layer = document.getElementById("timer-layer");
+            const held = layer && layer.classList.contains("is-pinned") && !layer.hidden;
+            const images = shelf().images || [];
+            if (held) {
+              openTimer({ unpin: true, roomId: id, headers: headers, images: images });
+              paint();
+              return;
+            }
+            if (!dock.open) {
+              dock.open = true;
+              save();
+            }
+            openTimer({ pin: true, roomId: id, headers: headers, images: images });
+            paint();
+            return;
+          }
           if (act === "roll-add") { rollOpen = !rollOpen; paint(); return; }
           if (act === "hero-add") { heroOpen = !heroOpen; paint(); return; }
           if (act === "note-add") { noteOpen = !noteOpen; paint(); return; }
@@ -2372,7 +2505,9 @@
       openRollMenu(id, headers, state, err, app.querySelector("#roll"));
     });
     app.querySelector("#clock-open").addEventListener("click", function () { openClock({ roomId: id, headers: headers }); });
-    app.querySelector("#timer-open").addEventListener("click", function () { openTimer({ roomId: id, headers: headers }); });
+    app.querySelector("#timer-open").addEventListener("click", function () {
+      openTimer({ roomId: id, headers: headers, images: shelf().images || [] });
+    });
     app.querySelector("#roll-look").addEventListener("click", function () {
       openRollLook(state, err, save, app.querySelector("#roll-look"));
     });

@@ -774,6 +774,20 @@ const server = http.createServer(async function (req, res) {
           event.size = size;
           event.shape = shape;
           event.done = body.done === true && !running;
+          const kinds = { sand: 1, magic: 1, smoke: 1, blizzard: 1, fire: 1, flood: 1 };
+          event.effect = kinds[body.effect] ? body.effect : "";
+          event.linked = body.linked !== false;
+          event.fxRun = body.fxRun === true;
+          event.power = Math.min(100, Math.max(1, Math.round(Number(body.power) || 50)));
+          event.speed = Math.min(100, Math.max(1, Math.round(Number(body.speed) || 40)));
+          event.hand = /^#[0-9a-fA-F]{6}$/.test(body.hand || "") ? body.hand : "#f6e7b0";
+          event.face = /^#[0-9a-fA-F]{6}$/.test(body.face || "") ? body.face : "#1a140c";
+          event.storm = body.storm === true;
+          event.fxReset = body.fxReset === true;
+          event.span = Math.min(24 * 60 * 60 * 1000, Math.max(0, Math.round(Number(body.span) || remain)));
+          event.endText = String(body.endText || "").slice(0, 400);
+          event.endImage = safePath(body.endImage);
+          event.back = safePath(body.back);
           room.timer = {
             type: "timer",
             on: true,
@@ -782,7 +796,19 @@ const server = http.createServer(async function (req, res) {
             until: event.until,
             size: event.size,
             shape: event.shape,
-            done: event.done
+            done: event.done,
+            effect: event.effect,
+            linked: event.linked,
+            fxRun: event.fxRun,
+            power: event.power,
+            speed: event.speed,
+            hand: event.hand,
+            face: event.face,
+            storm: event.storm,
+            span: event.span,
+            endText: event.endText,
+            endImage: event.endImage,
+            back: event.back
           };
         }
       }
