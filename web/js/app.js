@@ -768,11 +768,59 @@
     });
   }
 
+  function showPlayerTimer(event) {
+    let layer = document.getElementById("play-timer");
+    if (!event || event.on === false) {
+      if (layer) {
+        clearInterval(layer._beat);
+        layer.remove();
+      }
+      return;
+    }
+    if (!layer) {
+      layer = document.createElement("div");
+      layer.id = "play-timer";
+      layer.innerHTML = '<p class="clock-timer" data-left></p>';
+      document.body.appendChild(layer);
+    }
+    const shapes = { square: 1, round: 1, narrow: 1, segment: 1 };
+    const shape = shapes[event.shape] ? event.shape : "square";
+    const size = Math.min(120, Math.max(28, Math.round(Number(event.size) || 40)));
+    layer.className = "play-timer shape-" + shape;
+    layer.style.setProperty("--clock-size", size + "px");
+    const node = layer.querySelector("[data-left]");
+    const until = Number(event.until) || 0;
+    const remain = Math.max(0, Number(event.remain) || 0);
+    const running = event.running === true && until > 0;
+    function pad(n) { return String(n).padStart(2, "0"); }
+    function draw(ms) {
+      const total = Math.max(0, Math.ceil(ms / 1000));
+      const hours = Math.floor(total / 3600);
+      const minutes = Math.floor((total % 3600) / 60);
+      const seconds = total % 60;
+      const raw = hours ? pad(hours) + ":" + pad(minutes) + ":" + pad(seconds) : pad(minutes) + ":" + pad(seconds);
+      node.innerHTML = raw.split("").map(function (ch) {
+        return '<span class="' + (ch === ":" ? "colon" : "digit") + '">' + ch + "</span>";
+      }).join("");
+      const left = Math.max(0, ms);
+      node.classList.toggle("is-run", running && left > 0);
+      node.classList.toggle("is-done", event.done === true || (running && left <= 0));
+    }
+    clearInterval(layer._beat);
+    function tick() { draw(running ? until - Date.now() : remain); }
+    tick();
+    layer._beat = setInterval(tick, 250);
+  }
+
   function viewer(id) {
     app.innerHTML = '<section class="viewer"><div class="stage-wrap" id="view"></div></section>';
     const view = app.querySelector("#view");
     let flashTimer = 0;
     function paint(frame, event) {
+      if (event && event.type === "timer") {
+        showPlayerTimer(event);
+        return;
+      }
       if (event && event.type === "ping") {
         const stage = view.querySelector(".stage");
         if (stage && window.ShirmoMap) window.ShirmoMap.ping(stage, event.x, event.y, event.look);
@@ -957,11 +1005,19 @@
     };
   }
 
-  function openClock() {
+  function openClock(opts) {
+    opts = opts || {};
     let box = document.getElementById("clock-layer");
     if (box) {
-      box.hidden = false;
-      if (box._wake) box._wake();
+      if (opts.roomId) box._roomId = opts.roomId;
+      if (opts.headers) box._headers = opts.headers;
+      if (opts.pin === true && box._setPinned) box._setPinned(true);
+      else if (opts.unpin === true && box._setPinned) box._setPinned(false);
+      else {
+        box.hidden = false;
+        if (box._wake) box._wake();
+        if (box._place) box._place();
+      }
       return;
     }
     box = document.createElement("div");
@@ -975,7 +1031,14 @@
       '<div class="clock-set"><label>мин<input data-clock="min" type="number" min="0" max="599" value="5"></label>' +
       '<label>сек<input data-clock="sec" type="number" min="0" max="59" value="0"></label></div>' +
       '<div class="clock-presets"><button type="button" data-clock-min="1">1</button><button type="button" data-clock-min="5">5</button><button type="button" data-clock-min="10">10</button><button type="button" data-clock-min="30">30</button></div>' +
-      '<div class="clock-acts"><button type="button" data-clock="run">Старт</button><button type="button" data-clock="reset">Сброс</button></div>';
+      '<label class="clock-size">Размер<input data-clock="size" type="range" min="28" max="120" value="40"></label>' +
+      '<div class="clock-shapes" role="group" aria-label="Форма цифр">' +
+      '<button type="button" data-clock-shape="square" title="Прямые цифры">Прямые</button>' +
+      '<button type="button" data-clock-shape="round" title="Круглые цифры">Круглые</button>' +
+      '<button type="button" data-clock-shape="narrow" title="Узкие цифры">Узкие</button>' +
+      '<button type="button" data-clock-shape="segment" title="Сегментные цифры">Сегмент</button></div>' +
+      '<div class="clock-acts"><button type="button" data-clock="run">Старт</button><button type="button" data-clock="reset">Сброс</button></div>' +
+      '<button type="button" class="clock-players" data-clock="players">Вывести таймер для игроков</button>';
     document.body.appendChild(box);
     const nowNode = box.querySelector("[data-clock=now]");
     const leftNode = box.querySelector("[data-clock=left]");
@@ -987,7 +1050,27 @@
     let tickAt = 0;
     let beat = 0;
     let audio = null;
+    let pinned = false;
+    let playersOn = false;
+    let size = 40;
+    let shape = "square";
+    let pushTimer = 0;
+    box._roomId = opts.roomId || "";
+    box._headers = opts.headers || null;
     function pad(n) { return String(n).padStart(2, "0"); }
+    function digits(text) {
+      return String(text).split("").map(function (ch) {
+        return '<span class="' + (ch === ":" ? "colon" : "digit") + '">' + ch + "</span>";
+      }).join("");
+    }
+    function applyLook() {
+      box.style.setProperty("--clock-size", size + "px");
+      box.classList.remove("shape-square", "shape-round", "shape-narrow", "shape-segment");
+      box.classList.add("shape-" + shape);
+      box.querySelectorAll("[data-clock-shape]").forEach(function (button) {
+        button.classList.toggle("is-on", button.getAttribute("data-clock-shape") === shape);
+      });
+    }
     function readSet(commit) {
       const minutes = Math.min(599, Math.max(0, Math.round(Number(minInput.value) || 0)));
       const seconds = Math.min(59, Math.max(0, Math.round(Number(secInput.value) || 0)));
@@ -1002,17 +1085,54 @@
       const hours = Math.floor(total / 3600);
       const minutes = Math.floor((total % 3600) / 60);
       const seconds = total % 60;
-      leftNode.textContent = hours ? pad(hours) + ":" + pad(minutes) + ":" + pad(seconds) : pad(minutes) + ":" + pad(seconds);
+      leftNode.innerHTML = digits(hours ? pad(hours) + ":" + pad(minutes) + ":" + pad(seconds) : pad(minutes) + ":" + pad(seconds));
+    }
+    function snapshot() {
+      const running = mode === "run";
+      const left = mode === "idle" ? readSet(false) : remain;
+      return {
+        type: "timer",
+        on: true,
+        running: running,
+        until: running ? Date.now() + Math.max(0, left) : 0,
+        remain: Math.max(0, Math.round(left)),
+        size: size,
+        shape: shape,
+        done: mode === "done"
+      };
+    }
+    function pushPlayers() {
+      if (!playersOn || !box._roomId) return;
+      clearTimeout(pushTimer);
+      pushTimer = setTimeout(function () {
+        const headers = box._headers || { "content-type": "application/json" };
+        fetch("/api/rooms/" + box._roomId + "/events", {
+          method: "POST",
+          headers: headers,
+          body: JSON.stringify(snapshot())
+        }).catch(function () {});
+      }, 120);
+    }
+    function sendPlayers(body) {
+      if (!box._roomId) return;
+      clearTimeout(pushTimer);
+      const headers = box._headers || { "content-type": "application/json" };
+      fetch("/api/rooms/" + box._roomId + "/events", {
+        method: "POST",
+        headers: headers,
+        body: JSON.stringify(body)
+      }).catch(function () {});
     }
     function paint() {
       const now = new Date();
-      nowNode.textContent = pad(now.getHours()) + ":" + pad(now.getMinutes()) + ":" + pad(now.getSeconds());
+      nowNode.innerHTML = digits(pad(now.getHours()) + ":" + pad(now.getMinutes()) + ":" + pad(now.getSeconds()));
       if (mode === "run") remain = Math.max(0, remain - (Date.now() - tickAt));
       tickAt = Date.now();
       if (mode === "run" && remain <= 0) {
         mode = "done";
         remain = 0;
         ring();
+        pushPlayers();
       }
       showLeft(mode === "idle" ? readSet(false) : remain);
       leftNode.classList.toggle("is-run", mode === "run");
@@ -1051,11 +1171,15 @@
       beat = setInterval(paint, 250);
     }
     box._wake = wake;
-    box.querySelector("[data-clock=close]").addEventListener("click", function () { box.hidden = true; });
+    box.querySelector("[data-clock=close]").addEventListener("click", function () {
+      box.hidden = true;
+      place();
+    });
     runBtn.addEventListener("click", function () {
       if (mode === "run") {
         mode = "pause";
         paint();
+        pushPlayers();
         return;
       }
       if (mode === "idle" || mode === "done" || remain <= 0) {
@@ -1066,11 +1190,13 @@
       mode = "run";
       tickAt = Date.now();
       paint();
+      pushPlayers();
     });
     box.querySelector("[data-clock=reset]").addEventListener("click", function () {
       mode = "idle";
       remain = 0;
       paint();
+      pushPlayers();
     });
     box.querySelectorAll("[data-clock-min]").forEach(function (button) {
       button.addEventListener("click", function () {
@@ -1080,12 +1206,33 @@
         mode = "idle";
         remain = 0;
         paint();
+        pushPlayers();
       });
+    });
+    box.querySelector("[data-clock=size]").addEventListener("input", function (event) {
+      size = Math.min(120, Math.max(28, Math.round(Number(event.target.value) || 40)));
+      applyLook();
+      pushPlayers();
+    });
+    box.querySelectorAll("[data-clock-shape]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        shape = button.getAttribute("data-clock-shape") || "square";
+        applyLook();
+        pushPlayers();
+      });
+    });
+    const playersBtn = box.querySelector("[data-clock=players]");
+    playersBtn.addEventListener("click", function () {
+      playersOn = !playersOn;
+      playersBtn.textContent = playersOn ? "Убрать таймер у игроков" : "Вывести таймер для игроков";
+      playersBtn.classList.toggle("is-on", playersOn);
+      if (playersOn) sendPlayers(snapshot());
+      else sendPlayers({ type: "timer", on: false });
     });
     const bar = box.querySelector(".clock-bar");
     let drag = null;
     bar.addEventListener("pointerdown", function (event) {
-      if (event.target.closest("button")) return;
+      if (pinned || event.target.closest("button")) return;
       const rect = box.getBoundingClientRect();
       drag = { id: event.pointerId, dx: event.clientX - rect.left, dy: event.clientY - rect.top };
       bar.setPointerCapture(event.pointerId);
@@ -1099,7 +1246,44 @@
       box.style.right = "auto";
     });
     bar.addEventListener("pointerup", function () { drag = null; });
+    function place() {
+      const dock = document.getElementById("dock");
+      const main = dock && dock.querySelector(".dock-main");
+      const pinBtn = dock && dock.querySelector("[data-dock=clock]");
+      const held = pinned && !box.hidden;
+      if (pinBtn) {
+        const label = held ? "Открепить часы" : "Закрепить часы";
+        pinBtn.classList.toggle("is-on", held);
+        pinBtn.title = label;
+        pinBtn.setAttribute("aria-label", label);
+      }
+      box.classList.toggle("is-pinned", pinned);
+      if (pinned && main) {
+        if (box.parentElement !== main) main.insertBefore(box, main.firstChild);
+        return;
+      }
+      if (box.parentElement !== document.body) document.body.appendChild(box);
+    }
+    function setPinned(next) {
+      pinned = !!next;
+      if (pinned) {
+        box.hidden = false;
+        wake();
+      }
+      place();
+    }
+    box._place = place;
+    box._setPinned = setPinned;
+    if (!box._watch) {
+      const dock = document.getElementById("dock");
+      if (dock) {
+        box._watch = new MutationObserver(function () { if (pinned) place(); });
+        box._watch.observe(dock, { childList: true });
+      }
+    }
+    applyLook();
     wake();
+    if (opts.pin) setPinned(true);
   }
 
   function openRollMenu(roomId, headers, state, err, anchor) {
@@ -1824,9 +2008,14 @@
         });
         closeHeroRoll();
         root.classList.toggle("is-shut", !dock.open);
+        const layer = document.getElementById("clock-layer");
+        const clockOn = !!(layer && layer.classList.contains("is-pinned") && !layer.hidden);
+        const clockLabel = clockOn ? "Открепить часы" : "Закрепить часы";
+        const pinSvg = glyph('<path d="M9 4.5h6l-.8 5.2 2.8 1.8v2H7v-2l2.8-1.8z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 13.5V20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>');
         const toggle = '<button type="button" class="dock-toggle" data-dock="toggle" title="' + (dock.open ? "Свернуть стол" : "Открыть стол") + '" aria-expanded="' + (dock.open ? "true" : "false") + '">' + (dock.open ? "»" : "Стол") + "</button>";
+        const rail = '<div class="dock-rail"><button type="button" class="dock-pin' + (clockOn ? " is-on" : "") + '" data-dock="clock" title="' + clockLabel + '" aria-label="' + clockLabel + '">' + pinSvg + "</button>" + toggle + "</div>";
         if (!dock.open) {
-          root.innerHTML = toggle;
+          root.innerHTML = rail;
           bind();
           return;
         }
@@ -1883,14 +2072,14 @@
             '<textarea data-dock-new-text placeholder="Текст"></textarea>' +
             '<button type="button" data-dock="note-create">Добавить в библиотеку</button></div>'
           : "";
-        root.innerHTML = toggle + '<div class="dock-body">' +
+        root.innerHTML = rail + '<div class="dock-main"><div class="dock-body">' +
           '<details class="dock-fold" data-fold="rolls"' + (folds.rolls ? " open" : "") + "><summary>Броски</summary>" + rollRows +
           '<button type="button" data-dock="roll-add">' + (rollOpen ? "Скрыть форму" : "Закрепить бросок") + "</button>" + rollForm + "</details>" +
           '<details class="dock-fold" data-fold="heroes"' + (folds.heroes ? " open" : "") + "><summary>Герои</summary>" + heroRows +
           '<button type="button" data-dock="hero-add">' + (heroOpen ? "Скрыть список" : "Закрепить героя") + "</button>" + heroForm + "</details>" +
           '<details class="dock-fold" data-fold="notes"' + (folds.notes ? " open" : "") + "><summary>Заметки</summary>" + noteRows +
           '<button type="button" data-dock="note-add">' + (noteOpen ? "Скрыть" : "Из библиотеки или новая") + "</button>" + noteForm + "</details>" +
-          "</div>";
+          "</div></div>";
         bind();
       }
       function rollSpec() {
@@ -1928,6 +2117,22 @@
             save();
             paint();
             window.dispatchEvent(new Event("resize"));
+            return;
+          }
+          if (act === "clock") {
+            const layer = document.getElementById("clock-layer");
+            const held = layer && layer.classList.contains("is-pinned") && !layer.hidden;
+            if (held) {
+              openClock({ unpin: true, roomId: id, headers: headers });
+              paint();
+              return;
+            }
+            if (!dock.open) {
+              dock.open = true;
+              save();
+            }
+            openClock({ pin: true, roomId: id, headers: headers });
+            paint();
             return;
           }
           if (act === "roll-add") { rollOpen = !rollOpen; paint(); return; }
@@ -2039,7 +2244,7 @@
       if (look && look._close) look._close();
       openRollMenu(id, headers, state, err, app.querySelector("#roll"));
     });
-    app.querySelector("#clock-open").addEventListener("click", function () { openClock(); });
+    app.querySelector("#clock-open").addEventListener("click", function () { openClock({ roomId: id, headers: headers }); });
     app.querySelector("#roll-look").addEventListener("click", function () {
       openRollLook(state, err, save, app.querySelector("#roll-look"));
     });

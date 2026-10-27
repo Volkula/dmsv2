@@ -597,6 +597,9 @@ const server = http.createServer(async function (req, res) {
         "x-accel-buffering": "no"
       });
       res.write(`data: ${JSON.stringify({ type: "frame", frame: room.frame })}\n\n`);
+      if (room.timer && room.timer.on) {
+        res.write(`data: ${JSON.stringify({ type: "event", event: room.timer })}\n\n`);
+      }
       const drop = subscribe(id, res);
       const beat = setInterval(function () { res.write(": ping\n\n"); }, 15000);
       req.on("close", function () {
@@ -752,6 +755,36 @@ const server = http.createServer(async function (req, res) {
       if (event.type === "wares-font") {
         const fontSize = Math.round(Number(body.fontSize) || 0);
         if (fontSize >= 12 && fontSize <= 28) event.fontSize = fontSize;
+      }
+      if (event.type === "timer") {
+        const shapes = { square: 1, round: 1, narrow: 1, segment: 1 };
+        if (body.on !== true) {
+          event.on = false;
+          room.timer = null;
+        } else {
+          const size = Math.min(120, Math.max(28, Math.round(Number(body.size) || 40)));
+          const shape = shapes[body.shape] ? body.shape : "square";
+          const remain = Math.min(24 * 60 * 60 * 1000, Math.max(0, Math.round(Number(body.remain) || 0)));
+          const until = Math.round(Number(body.until) || 0);
+          const running = body.running === true && until > Date.now() - 1500;
+          event.on = true;
+          event.running = running;
+          event.remain = remain;
+          event.until = running ? until : 0;
+          event.size = size;
+          event.shape = shape;
+          event.done = body.done === true && !running;
+          room.timer = {
+            type: "timer",
+            on: true,
+            running: event.running,
+            remain: event.remain,
+            until: event.until,
+            size: event.size,
+            shape: event.shape,
+            done: event.done
+          };
+        }
       }
       if (event.type === "die") {
         const roll = body.roll && typeof body.roll === "object" ? body.roll : {};

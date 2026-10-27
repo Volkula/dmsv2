@@ -322,17 +322,45 @@ label { display: flex; flex-direction: column; gap: 6px; }
   background: var(--panel);
 }
 .dock.is-shut { width: 36px; flex-basis: 36px; }
-.dock-toggle {
+.dock-rail {
   flex: 0 0 36px;
   width: 36px;
-  border: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   border-right: 1px solid var(--line);
+}
+.dock.is-shut .dock-rail { flex: 1; border-right: 0; }
+.dock-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dock-toggle {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border: 0;
   background: transparent;
   color: var(--brass);
   cursor: pointer;
   padding: 8px 0;
 }
-.dock.is-shut .dock-toggle { flex: 1; border-right: 0; writing-mode: vertical-rl; }
+.dock.is-shut .dock-toggle { flex: 1; height: auto; writing-mode: vertical-rl; }
+.dock-pin {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+.dock-pin svg { width: 18px; height: 18px; display: block; margin: 0 auto; }
+.dock-pin.is-on,
+.dock-pin:hover { color: var(--brass); }
 .dock-body {
   flex: 1;
   min-width: 0;
@@ -4005,7 +4033,8 @@ button.ware-face-btn img { width: 100%; height: 100%; object-fit: cover; display
   z-index: 11000;
   top: 72px;
   right: 18px;
-  width: 280px;
+  width: max(260px, calc(var(--clock-size, 40px) * 6.4));
+  max-width: calc(100vw - 24px);
   padding: 0 0 14px;
   background: #14110e;
   border: 1px solid #8a6a3a;
@@ -4015,7 +4044,26 @@ button.ware-face-btn img { width: 100%; height: 100%; object-fit: cover; display
   user-select: none;
 }
 
-.clock-layer[hidden] { display: none; }
+.clock-layer[hidden] { display: none !important; }
+
+body > .clock-layer.is-pinned { display: none !important; }
+
+.dock-main > .clock-layer.is-pinned {
+  position: relative;
+  top: auto;
+  right: auto;
+  left: auto;
+  z-index: 2;
+  display: block;
+  width: auto;
+  max-width: none;
+  margin: 8px 8px 0;
+  flex: 0 0 auto;
+  max-height: calc(100% - 16px);
+  overflow: auto;
+}
+
+.clock-layer.is-pinned .clock-bar { cursor: default; }
 
 .clock-bar {
   display: flex;
@@ -4054,13 +4102,63 @@ button.ware-face-btn img { width: 100%; height: 100%; object-fit: cover; display
   padding: 2px 14px 0;
   font-family: ui-monospace, Consolas, monospace;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.04em;
+  font-size: var(--clock-size, 40px);
+  line-height: 1.15;
+  letter-spacing: 0;
   text-align: center;
+  white-space: nowrap;
 }
 
-.clock-face { font-size: 40px; color: #f6e7b0; }
+.clock-face { color: #f6e7b0; }
 
-.clock-timer { font-size: 36px; color: #f3ead8; }
+.clock-timer { color: #f3ead8; }
+
+.digit,
+.colon { display: inline-block; text-align: center; }
+
+.digit { min-width: 0.62em; }
+
+.colon { min-width: 0.32em; }
+
+.shape-square .digit {
+  margin: 0 0.03em;
+  border-radius: 0.08em;
+  background: rgba(246, 231, 176, 0.07);
+}
+
+.shape-round .clock-face,
+.shape-round .clock-timer {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-weight: 300;
+}
+
+.shape-round .digit {
+  min-width: 0.7em;
+  margin: 0 0.05em;
+  border-radius: 0.45em;
+  background: rgba(246, 231, 176, 0.1);
+}
+
+.shape-narrow .clock-face,
+.shape-narrow .clock-timer {
+  font-family: "Arial Narrow", "Segoe UI", sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+}
+
+.shape-narrow .digit { min-width: 0.42em; }
+
+.shape-segment .digit {
+  margin: 0 0.04em;
+  border-radius: 0.1em;
+  background: #090807;
+  box-shadow: inset 0 0 0 1px rgba(158, 207, 154, 0.4);
+  color: #b6f0b0;
+  font-weight: 700;
+  text-shadow: 0 0 8px rgba(120, 220, 120, 0.75);
+}
+
+.shape-segment .colon { color: #b6f0b0; }
 
 .clock-timer.is-run { color: #9ecf9a; }
 
@@ -4094,3 +4192,47 @@ button.ware-face-btn img { width: 100%; height: 100%; object-fit: cover; display
 
 .clock-presets button,
 .clock-acts button { flex: 1; }
+
+.clock-size {
+  padding: 10px 14px 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.clock-shapes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 14px 0;
+}
+
+.clock-shapes button {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 4px;
+  font-size: 12px;
+}
+
+.clock-shapes button.is-on,
+.clock-players.is-on { color: var(--brass); border-color: var(--brass); }
+
+.clock-players {
+  width: calc(100% - 28px);
+  margin: 10px 14px 0;
+}
+
+.play-timer {
+  position: fixed;
+  z-index: 40;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 18px 10px;
+  pointer-events: none;
+  background: rgba(20, 17, 14, 0.9);
+  border: 1px solid #8a6a3a;
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.play-timer .clock-timer { padding: 0; }
