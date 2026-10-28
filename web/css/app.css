@@ -3029,6 +3029,22 @@ label.check input { width: auto; }
   object-position: left bottom;
   display: block;
 }
+.npc-card.is-token .npc-portrait {
+  left: 10px;
+  bottom: 52px;
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 1px solid var(--brass);
+  background: #1a1612;
+}
+.npc-card.is-token .npc-portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center center;
+}
 .npc-card.is-full .npc-portrait {
   left: 8px;
   right: 8px;

@@ -2516,10 +2516,14 @@
       const fontOptions = (known ? "" : '<option value="' + esc(currentFont) + '">Текущий</option>') + fonts.map(function (font) {
         return '<option value="' + esc(font.font) + '"' + (font.font === currentFont ? " selected" : "") + ">" + esc(font.name) + "</option>";
       }).join("");
-      const pinDefault = Number(item.pinSize) || (kind === "image" ? 120 : (faceOf(item) ? 56 : 14));
-      const pinMax = kind === "image" ? 400 : 140;
-      const pinMin = kind === "image" ? 32 : 12;
-      const pin = kind === "label" ? "" : '<label title="' + (kind === "image" ? "Размер картинки на карте" : "Размер точки на карте") + '">Размер<input id="pin-size" type="range" min="' + pinMin + '" max="' + pinMax + '" value="' + pinDefault + '"></label>';
+      const npcRec = kind === "npc" ? (linkedNpc(item) || item) : null;
+      const figureMode = !!(npcRec && (npcRec.portrait || item.portrait) && npcRec.look !== "token" && item.look !== "token");
+      const pinDefault = figureMode
+        ? figureOf(npcRec, false).h
+        : (Number(item.pinSize) || (kind === "image" ? 120 : (faceOf(item) ? 56 : 14)));
+      const pinMax = figureMode ? 220 : (kind === "image" ? 400 : 140);
+      const pinMin = figureMode ? 8 : (kind === "image" ? 32 : 12);
+      const pin = kind === "label" ? "" : '<label title="' + (figureMode ? "Размер фигуры на карте, без диалога" : (kind === "image" ? "Размер картинки на карте" : "Размер точки на карте")) + '">Размер<input id="pin-size" type="range" min="' + pinMin + '" max="' + pinMax + '" value="' + pinDefault + '"></label>';
       const note = kind === "mark" || kind === "npc" || kind === "loc" || kind === "image" || kind === "hero"
         ? '<label title="' + (kind === "loc" ? "Заметка к локации. Игроки видят её при наведении, если точка им показана" : "Текст при наведении") + '">' + (kind === "loc" ? "Заметка" : "Подсказка") + '<textarea id="pin-tip">' + esc(item.tip || "") + "</textarea></label>" +
           '<label class="check" title="Игроки это не видят"><input id="pin-hide" type="checkbox"' + (item.hidden ? " checked" : "") + "> Скрыть от игроков</label>"
@@ -2704,7 +2708,14 @@
         const pinSize = menu.querySelector("#pin-size");
         const textSize = menu.querySelector("#pin-text-size");
         const font = menu.querySelector("#pin-font");
-        if (pinSize) row.pinSize = Number(pinSize.value) || (selected.kind === "image" ? 120 : 14);
+        if (pinSize) {
+          const who = selected.kind === "npc" ? (linkedNpc(row) || row) : null;
+          const figure = who && who.look !== "token" && row.look !== "token" && (who.portrait || row.portrait);
+          if (figure) {
+            const fig = figureOf(who, false);
+            putFigure(who, false, { x: fig.x, y: fig.y, h: Number(pinSize.value) || fig.h });
+          } else row.pinSize = Number(pinSize.value) || (selected.kind === "image" ? 120 : 14);
+        }
         if (textSize) row.size = Number(textSize.value) || 14;
         if (font) {
           const found = ctx.fonts().find(function (entry) { return entry.font === font.value; });

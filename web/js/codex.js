@@ -1965,7 +1965,7 @@ window.ShirmoCodex = (function () {
         const scene = row.backdrop ? ' style="background-image:url(&quot;' + esc(row.backdrop) + '&quot;)"' : "";
         const tokenOn = row.look === "token";
         const face = row.portrait
-          ? '<button type="button" class="npc-portrait" data-act="npc-talk" data-i="' + index + '" title="Открыть диалог"><img alt="" src="' + esc(row.portrait) + '"></button>'
+          ? '<button type="button" class="npc-portrait" data-act="npc-talk" data-i="' + index + '" title="Открыть диалог"><img alt="" src="' + esc(row.portrait) + '"' + (tokenOn ? ' style="' + faceStyle(row) + '"' : "") + "></button>"
           : '<span class="npc-portrait npc-portrait-empty" data-i="' + index + '" aria-hidden="true"></span>';
         const badge = row.emoji ? '<span class="npc-emoji">' + esc(row.emoji) + "</span>" : "";
         function fieldInput(field) {
@@ -1989,7 +1989,7 @@ window.ShirmoCodex = (function () {
           (pack ? '<button type="button" data-act="squad-copy" data-npc="' + esc(row.id) + '" title="Скопировать в этот же отряд">Копия</button>' : "") +
           "</div>"
           : "";
-        return '<article class="npc-card" data-npc="' + esc(row.id) + '" title="ПКМ — перенести на место"><div class="npc-scene"' + scene + ">" + face + badge +
+        return '<article class="npc-card' + (tokenOn ? " is-token" : "") + '" data-npc="' + esc(row.id) + '" title="ПКМ — перенести на место"><div class="npc-scene"' + scene + ">" + face + badge +
           '<div class="npc-pics">' +
           '<span class="place-pair"><label class="file-btn" title="Загрузить свой портрет">' + FACE + '<input type="file" accept="image/*" data-pic="portrait" data-i="' + index + '" aria-label="Портрет"></label>' +
           '<button type="button" class="icon-btn" data-act="face" data-i="' + index + '" title="Кадр портрета" aria-label="Кадр портрета">▣</button>' +
@@ -2001,11 +2001,11 @@ window.ShirmoCodex = (function () {
           "</div></div>" +
           '<div class="npc-fields"><select class="npc-lib" data-npc-lib="' + index + '" data-shelf="image" title="Портрет из библиотеки. Коллекция токенов — папка «Токены»" aria-label="Из библиотеки"><option value="">Библиотека</option></select><div class="codex-row"><input data-field="name" data-i="' + index + '" type="text" value="' + esc(row.name || "") + '" title="Имя в справочнике и на карте" aria-label="Имя"><button type="button" data-act="rehome" data-kind="npc" data-id="' + esc(row.id) + '" title="Перенести на другое место">Перенести</button><button type="button" data-act="del" data-i="' + index + '" title="Удалить запись" aria-label="Удалить">×</button></div>' +
           homeLine +
+          '<div class="look-pick"><button type="button" data-act="npc-look" data-look="token" data-i="' + index + '"' + (tokenOn ? ' class="is-on"' : "") + ' title="Круглый портрет на карточке и метка на карте">Портрет</button>' +
+          '<button type="button" data-act="npc-look" data-look="full" data-i="' + index + '"' + (tokenOn ? "" : ' class="is-on"') + ' title="Фигура в рост, как в диалоге">Полная фигура</button></div>' +
           section("Отряд", squadLine +
             '<div class="codex-row"><button type="button" data-act="npc-side" data-side="player" data-i="' + index + '" title="Поставить на сторону героев">К героям</button>' +
-            '<button type="button" data-act="npc-side" data-side="foe" data-i="' + index + '" title="Поставить на сторону врагов">К врагам</button></div>' +
-            '<div class="look-pick"><button type="button" data-act="npc-look" data-look="full" data-i="' + index + '"' + (tokenOn ? "" : ' class="is-on"') + ' title="Фигура стоит там же, где в диалоге. Клик открывает разговор">Фигура</button>' +
-            '<button type="button" data-act="npc-look" data-look="token" data-i="' + index + '"' + (tokenOn ? ' class="is-on"' : "") + ' title="Круглая метка на карте">Метка</button></div>') +
+            '<button type="button" data-act="npc-side" data-side="foe" data-i="' + index + '" title="Поставить на сторону врагов">К врагам</button></div>') +
           section("Характеристики", abilityHtml(row, index)) +
           section("Бой", fieldsOf(["weapon", "damage", "ac", "hp", "hpMax"])) +
           section("Заметка", fieldsOf(["note"])) +
