@@ -2720,7 +2720,7 @@
         });
       });
     }
-    function showMenu() {
+    function showMenu(at) {
       closeMenu();
       const item = findItem();
       if (!item || !selected) return;
@@ -2746,9 +2746,14 @@
         ? actBtn("del", "Удалить надпись") + actBtn("rename", "Изменить текст") + actBtn("rehome", "Перенести в другую локацию")
         : actBtn("del", selected.kind === "image" ? "Удалить картинку" : "Удалить точку") + squadBtn + actBtn("copy", selected.kind === "image" ? "Копировать картинку" : "Копировать точку") + actBtn("move", "Перетащить") + (canHome ? actBtn("rehome", "Перенести в другую локацию") : "") + (selected.kind === "image" ? "" : actBtn("rename", "Изменить имя")) + (selected.kind === "loc" ? actBtn("setup", "Имя, день и ночь, фоны") : "") + (bookBtn ? actBtn("book", "Назначить запись из справочника") : "")) + "</div>";
       menu.innerHTML = styleHtml(item, selected.kind) + actions;
-      menu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 256)) + "px";
-      menu.style.top = Math.max(8, Math.min(rect.bottom + 6, window.innerHeight - Math.min(520, window.innerHeight * 0.7) - 8)) + "px";
+      const x = at && Number.isFinite(at.x) ? at.x : rect.left;
+      const y = at && Number.isFinite(at.y) ? at.y : rect.bottom + 6;
+      menu.style.left = x + "px";
+      menu.style.top = y + "px";
       document.body.appendChild(menu);
+      const box = menu.getBoundingClientRect();
+      menu.style.left = Math.max(8, Math.min(x, window.innerWidth - box.width - 8)) + "px";
+      menu.style.top = Math.max(8, Math.min(y, window.innerHeight - box.height - 8)) + "px";
       menu.addEventListener("pointerdown", function (event) { event.stopPropagation(); });
       function applyStyle() {
         const row = findItem();
@@ -3526,7 +3531,7 @@
           event.preventDefault();
           closeMenu();
           selected = { kind: hit.getAttribute("data-kind"), id: hit.getAttribute("data-pin") };
-          showMenu();
+          showMenu({ x: event.clientX, y: event.clientY });
         }
         return;
       }
