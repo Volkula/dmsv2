@@ -3380,6 +3380,7 @@ button.ware-face-btn img { width: 100%; height: 100%; object-fit: cover; display
   right: 6px;
   left: auto;
   bottom: auto;
+  z-index: 2;
   display: flex;
   flex-direction: column;
   gap: 4px;
