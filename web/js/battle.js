@@ -480,6 +480,14 @@
       return true;
     }
 
+    function resetClock(row) {
+      if (!row) return;
+      row.turnRun = false;
+      row.turnUntil = 0;
+      row.turnLeft = 0;
+      if (timerOwner === row.id) follow(row);
+    }
+
     function holdTurn(prev, now) {
       if (battle.turnPause === false || !prev) return;
       const stopped = {};
@@ -1338,8 +1346,7 @@
         return '<button type="button" data-act="arm-hit" data-id="' + esc(actor.id) + '" data-arm="' + esc(arm.id) + '" title="Сразу бить этим оружием. Дальше только выбор цели">' +
           esc(arm.name || "Атака") + " " + sign + bonus + "</button>";
       }).join("") +
-        '<button type="button" data-act="custom-hurt" data-id="' + esc(actor.id) + '" title="Снять хиты своей формулой, без броска атаки">Свой урон</button>' +
-        '<button type="button" data-act="heal" data-id="' + esc(actor.id) + '" title="Зелье или своё число">Лечить</button>';
+        '<button type="button" data-act="custom-hurt" data-id="' + esc(actor.id) + '" title="Снять хиты своей формулой, без броска атаки">Свой урон</button>';
     }
 
     function initBonusOf(actor) {
@@ -1362,6 +1369,10 @@
       return '<label class="pcard-field"><span>' + label + "</span>" + inner + "</label>";
     }
 
+    function sheetStat(label, inner) {
+      return '<label class="sheet-stat"><em>' + label + "</em>" + inner + "</label>";
+    }
+
     function fighterRow(actor, now, groupId) {
       const max = Math.max(1, Math.round(Number(actor.hpMax) || 1));
       const hp = Math.max(0, Math.min(max, Math.round(Number(actor.hp) || 0)));
@@ -1374,22 +1385,25 @@
         '<button type="button" class="pcard-turn" data-go="' + esc(actor.id) + '" title="Сделать ход этого бойца">Ход</button>' +
         '<button type="button" data-act="life" data-id="' + esc(actor.id) + '">' + (actor.dead ? "Оживить" : "Убить") + "</button></header>" +
         '<div class="pcard-groups">' +
-        '<section class="pcard-group"><h4>Бой</h4><div class="pcard-row">' +
-        cardField("Инициатива", '<input data-q="init" data-id="' + esc(actor.id) + '" class="num" type="number" value="' + esc(String(actor.init || 0)) + '" aria-label="Инициатива" title="Итог инициативы">') +
-        cardField("Бонус", '<input data-q="initBonus" data-id="' + esc(actor.id) + '" class="num" type="number" value="' + esc(String(initBonusOf(actor))) + '" aria-label="Бонус инициативы" title="Бонус к броску к20">') +
-        '<button type="button" data-act="roll-init" data-id="' + esc(actor.id) + '" title="' + esc(initRollTitle(actor)) + '">' + esc(initRollLabel(actor)) + "</button></div>" +
-        cardField("КД", '<input data-q="ac" data-id="' + esc(actor.id) + '" class="num" type="number" min="0" value="' + esc(String(Number(actor.ac) || 10)) + '" aria-label="КД" title="Класс доспеха">') +
-        '<div class="hp-cell"><span class="hp-stack">' + hpMeter(hp, max) +
+        '<section class="pcard-group"><h4>Бой</h4>' +
+        '<div class="sheet-stats">' +
+        sheetStat("КД", '<input data-q="ac" data-id="' + esc(actor.id) + '" class="num" type="number" min="0" value="' + esc(String(Number(actor.ac) || 10)) + '" aria-label="КД" title="Класс доспеха">') +
+        sheetStat("Иниц", '<input data-q="init" data-id="' + esc(actor.id) + '" class="num" type="number" value="' + esc(String(actor.init || 0)) + '" aria-label="Инициатива" title="Итог инициативы">') +
+        sheetStat("Бонус", '<input data-q="initBonus" data-id="' + esc(actor.id) + '" class="num" type="number" value="' + esc(String(initBonusOf(actor))) + '" aria-label="Бонус инициативы" title="Бонус к броску к20">') +
+        '<button type="button" class="sheet-die" data-act="roll-init" data-id="' + esc(actor.id) + '" title="' + esc(initRollTitle(actor)) + '">' + esc(initRollLabel(actor)) + "</button></div>" +
+        '<div class="sheet-hp">' +
+        '<span class="hp-stack">' + hpMeter(hp, max) +
         '<input data-q="hp" data-id="' + esc(actor.id) + '" type="range" min="0" max="' + max + '" value="' + hp + '" aria-label="Хиты"></span>' +
-        cardField("Хиты", '<input data-q="hp" data-id="' + esc(actor.id) + '" class="num hp-read" type="number" min="0" max="' + max + '" value="' + hp + '" aria-label="Хиты числом">') +
-        cardField("Макс.", '<input data-q="hpMax" data-id="' + esc(actor.id) + '" class="num" type="number" min="1" value="' + max + '" aria-label="Максимум хитов">') +
-        "</div>" +
-        '<label class="check" title="Полоса хитов на экране игроков"><input data-q="boss" data-id="' + esc(actor.id) + '" type="checkbox"' + (isBoss(actor) ? " checked" : "") + (actor.side === "player" ? " disabled" : "") + "> Полоса</label></section>" +
+        sheetStat("Хиты", '<input data-q="hp" data-id="' + esc(actor.id) + '" class="num hp-read" type="number" min="0" max="' + max + '" value="' + hp + '" aria-label="Хиты числом">') +
+        sheetStat("Макс", '<input data-q="hpMax" data-id="' + esc(actor.id) + '" class="num" type="number" min="1" value="' + max + '" aria-label="Максимум хитов">') +
+        '<button type="button" class="sheet-heal" data-act="heal" data-id="' + esc(actor.id) + '" title="Зелье или своё число">Лечить</button></div>' +
+        '<label class="check" title="Полоса хитов на экране игроков"><input data-q="boss" data-id="' + esc(actor.id) + '" type="checkbox"' + (isBoss(actor) ? " checked" : "") + "> Полоса</label></section>" +
         '<section class="pcard-group"><h4>Атака</h4>' + weaponButtons(actor) + "</section>" +
         '<section class="pcard-group"><h4>Таймер</h4><div class="turn-cell">' +
         cardField("Сек", '<input data-q="turnSec" data-id="' + esc(actor.id) + '" class="num" type="number" min="0" value="' + esc(String(Math.max(0, Math.round(Number(actor.turnSec) || 0)))) + '" aria-label="Секунды на ход" title="0 — без таймера">') +
         cardField("Эффект", '<select class="turn-fx" data-turn-fx data-id="' + esc(actor.id) + '" aria-label="Эффект таймера">' + fxOptions(actor.turnFx) + "</select>") +
         '<button type="button" class="turn-go" data-act="turn-toggle" data-id="' + esc(actor.id) + '" title="Пуск или пауза. Эффект виден игрокам">Старт</button>' +
+        '<button type="button" class="turn-go" data-act="turn-reset" data-id="' + esc(actor.id) + '" title="Вернуть полное время">Сброс</button>' +
         '<b class="turn-left" data-turn="' + esc(actor.id) + '"></b></div></section>' +
         '<section class="pcard-group"><h4>Отряд</h4>' +
         cardField("Отряд", '<select data-move-squad="' + esc(actor.id) + '" aria-label="Отряд бойца">' + squadOptions(home && home.id) + "</select>") +
@@ -1412,6 +1426,7 @@
           cardField("Сек", '<input data-squad-sec data-id="' + esc(group.id) + '" class="num" type="number" min="0" value="' + esc(String(Math.max(0, Math.round(Number(group.turnSec) || 0)))) + '" aria-label="Секунды отряда" title="0 — без таймера">') +
           cardField("Эффект", '<select class="turn-fx" data-squad-fx data-id="' + esc(group.id) + '" aria-label="Эффект отряда">' + fxOptions(group.turnFx) + "</select>") +
           '<button type="button" class="turn-go" data-act="squad-toggle" data-id="' + esc(group.id) + '" title="Пуск или пауза таймера отряда. Эффект виден игрокам">Старт</button>' +
+          '<button type="button" class="turn-go" data-act="squad-reset" data-id="' + esc(group.id) + '" title="Вернуть полное время отряда">Сброс</button>' +
           '<b class="turn-left" data-squad-clock="' + esc(group.id) + '"></b></div>' +
           '<button type="button" data-act="squad-del" data-id="' + esc(group.id) + '" title="Убрать отряд из боя целиком">×</button></header>';
         return '<section class="squad-block">' + head + members.map(function (actor) { return fighterRow(actor, now, group.id); }).join("") + "</section>";
@@ -2060,7 +2075,7 @@
         if (input.type === "range") {
           input.addEventListener("input", function () {
             apply();
-            const cell = input.closest(".hp-cell");
+            const cell = input.closest(".sheet-hp") || input.closest(".hp-cell");
             const read = cell && cell.querySelector("input.hp-read");
             if (read) read.value = input.value;
             const stack = input.closest(".hp-stack");
@@ -2199,6 +2214,20 @@
           toggleClock(row);
           if (row.turnRun) follow(row);
           else if (timerOwner === row.id && window.ShirmoClock && window.ShirmoClock.pause) window.ShirmoClock.pause();
+          save();
+          paintClocks();
+        }
+        return;
+      }
+      if (act === "turn-reset" || act === "squad-reset") {
+        const id = button.getAttribute("data-id");
+        const row = act === "turn-reset"
+          ? battle.actors.find(function (actor) { return actor.id === id; })
+          : (battle.board || []).find(function (group) { return group.id === id; });
+        if (row) {
+          const field = button.parentElement && button.parentElement.querySelector(act === "turn-reset" ? "[data-q=turnSec]" : "[data-squad-sec]");
+          if (field) row.turnSec = Math.max(0, Math.round(Number(field.value) || 0));
+          resetClock(row);
           save();
           paintClocks();
         }
@@ -2722,9 +2751,10 @@
   }
 
   function isBoss(actor) {
-    if (!actor || actor.side === "player" || actor.dead) return false;
-    if (actor.boss === false) return false;
+    if (!actor || actor.dead) return false;
     if (actor.boss === true) return true;
+    if (actor.boss === false) return false;
+    if (actor.side === "player") return false;
     return (Number(actor.hpMax) || 0) >= 40;
   }
 

@@ -4118,6 +4118,29 @@ button.ware-face-btn img { width: 100%; height: 100%; object-fit: cover; display
   white-space: normal;
 }
 .pcard-row .pcard-field, .pcard .turn-cell .pcard-field, .squad-banner .turn-cell .pcard-field { flex: 1 1 72px; }
+.sheet-stats, .sheet-hp {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 6px;
+}
+.sheet-stat {
+  display: grid;
+  gap: 2px;
+  width: 58px;
+  flex: 0 0 58px;
+}
+.sheet-stat em {
+  font-style: normal;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.sheet-stat input { width: 100%; text-align: center; padding: 4px 2px; }
+.sheet-die, .sheet-heal { align-self: end; }
+.sheet-hp .hp-stack { flex: 1 1 96px; min-width: 88px; display: grid; gap: 4px; align-content: end; }
+.sheet-hp .hp-meter { height: 10px; }
 .pcard .hp-cell {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
