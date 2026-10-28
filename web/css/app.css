@@ -560,6 +560,28 @@ label.text-file:hover { border-color: var(--brass); color: var(--brass); }
 .die-verdict.is-hit { color: #7dcea0; }
 .die-verdict.is-miss { color: #e4533e; }
 
+.hit-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 92;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: min(28vw, 220px);
+  font-weight: 700;
+  line-height: 1;
+  animation: hit-fade 3s linear forwards;
+}
+.hit-splash.is-hurt { color: #e4533e; text-shadow: 0 10px 28px rgba(0, 0, 0, 0.55); }
+.hit-splash.is-heal { color: #7dcea0; text-shadow: 0 10px 28px rgba(0, 0, 0, 0.55); }
+@keyframes hit-fade {
+  0% { opacity: 0; transform: scale(0.92); }
+  8% { opacity: 1; transform: scale(1); }
+  55% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 .strike-verdict { margin: 0; font-size: 18px; letter-spacing: 0.04em; }
 .strike-verdict.is-hit { color: #7dcea0; }
 .strike-verdict.is-miss { color: #e4533e; }
@@ -4017,16 +4039,34 @@ button.ware-face-btn img { width: 100%; height: 100%; object-fit: cover; display
   border: 2px solid #c6a15a;
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.4);
 }
+.fight-face {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+}
+.port-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 84px;
+  margin-top: 6px;
+}
 .port-ink {
   display: block;
-  width: 84px;
+  flex: 1;
+  width: auto;
   height: 12px;
-  margin-top: 6px;
+  margin: 0;
   padding: 0;
   border-radius: 99px;
   border: 1px solid rgba(243, 234, 216, 0.45);
   cursor: pointer;
 }
+.port-pic { width: 22px; height: 22px; min-width: 22px; padding: 0; display: grid; place-items: center; }
+.port-pic svg { width: 14px; height: 14px; display: block; }
 .pcard-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .pcard-name {
   flex: 1;

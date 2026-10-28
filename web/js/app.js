@@ -648,6 +648,18 @@
     });
   }
 
+  function showSplash(kind, amount) {
+    const n = Math.max(0, Math.round(Number(amount) || 0));
+    if (!n) return;
+    const old = document.querySelector(".hit-splash");
+    if (old) old.remove();
+    const el = document.createElement("div");
+    el.className = "hit-splash " + (kind === "heal" ? "is-heal" : "is-hurt");
+    el.textContent = (kind === "heal" ? "+" : "−") + n;
+    document.body.appendChild(el);
+    window.setTimeout(function () { if (el.isConnected) el.remove(); }, 3000);
+  }
+
   function boardFontSize(value) {
     const n = Math.round(Number(value) || 0);
     return Math.min(28, Math.max(12, n || 16));
@@ -923,6 +935,11 @@
       if (event && event.type === "die-hide") {
         const shown = document.querySelector(".die-show");
         if (shown) shown.remove();
+        return;
+      }
+      if (event && event.type === "splash") {
+        const parts = String(event.text || "").split(":");
+        showSplash(parts[0] === "heal" ? "heal" : "hurt", parts[1]);
         return;
       }
       if (event && event.type === "wares-hide") {
@@ -2410,6 +2427,7 @@
       roll.texture = (spec && spec.texture) || look.texture;
       roll.speed = look.speed;
       roll.animate = look.animate;
+      const quiet = !!(spec && spec.quiet);
       return api("/api/rooms/" + id + "/events", {
         method: "POST",
         headers: headers,
@@ -2417,6 +2435,18 @@
       }).then(function (data) {
         state.rolls = data.rolls || state.rolls;
         err.textContent = "";
+        if (quiet) {
+          const speed = Number(roll.speed) || 1;
+          const wait = roll.animate === false ? 1600 : Math.min(5000, Math.max(500, Math.round(2200 / speed))) + 1400;
+          window.setTimeout(function () {
+            api("/api/rooms/" + id + "/events", {
+              method: "POST",
+              headers: headers,
+              body: JSON.stringify({ type: "die-hide" })
+            }).catch(function () {});
+          }, wait);
+          return data;
+        }
         showDie((data.event && data.event.roll) || roll, function () {
           api("/api/rooms/" + id + "/events", {
             method: "POST",
@@ -2514,6 +2544,16 @@
           library: shelf,
           upload: function (file) { return uploadFile(id, key, file); },
           roll: publishRoll,
+          splash: function (kind, amount) {
+            const n = Math.max(0, Math.round(Number(amount) || 0));
+            const mode = kind === "heal" ? "heal" : "hurt";
+            showSplash(mode, n);
+            return api("/api/rooms/" + id + "/events", {
+              method: "POST",
+              headers: headers,
+              body: JSON.stringify({ type: "splash", text: mode + ":" + n })
+            }).catch(function () {});
+          },
           place: placeFoes
         });
         save();

@@ -632,6 +632,31 @@
       });
     }
 
+    function boneRoll(text, crit) {
+      const spec = formula(text);
+      const faces = [];
+      let sum = 0;
+      for (let i = 0; i < spec.count; i++) {
+        const value = 1 + Math.floor(Math.random() * spec.sides);
+        faces.push(value);
+        sum += value;
+      }
+      const bonus = Number(spec.bonus) || 0;
+      const bones = crit ? sum * 2 : sum;
+      return { total: bones + bonus, faces: faces, bonus: bonus, crit: !!crit };
+    }
+
+    function boneText(rolled) {
+      const body = rolled.faces.join("+");
+      const bones = rolled.crit ? "(" + body + ")×2" : body;
+      const sign = rolled.bonus ? (rolled.bonus > 0 ? "+" : "") + rolled.bonus : "";
+      return bones + sign + " = " + rolled.total;
+    }
+
+    function splash(kind, amount) {
+      if (ctx.splash) ctx.splash(kind, amount);
+    }
+
     function attack(actor) {
       const foe = currentFoe(actor);
       if (!foe) {
@@ -641,61 +666,83 @@
         return;
       }
       actor.targetId = foe.id;
-      const bonus = Number(actor.bonus) || 0;
+      openStrike(actor, foe);
+      castCheck(actor, foe, null);
+    }
+
+    function castCheck(actor, foe, face) {
+      const bonus = Math.round(Number(actor.bonus) || 0);
       const ac = Math.max(0, Math.round(Number(foe.ac) || 10));
-      roll({
+      const spec = {
         name: actor.name || "Боец",
         label: (actor.weapon || "Атака") + " по " + (foe.name || "цели"),
         count: 1,
         sides: 20,
         bonus: bonus,
-        ac: ac
-      }).then(function (data) {
+        ac: ac,
+        quiet: true
+      };
+      if (face != null) spec.face = face;
+      if (!ctx.roll) return;
+      ctx.roll(spec).then(function (data) {
         const rolled = data && data.event && data.event.roll ? data.event.roll : null;
-        const total = rolled ? Number(rolled.total) : null;
-        if (total == null) return;
-        const rawDie = rolled.dice && rolled.dice[0] ? Number(rolled.dice[0].value) : NaN;
-        const raw = Number.isFinite(rawDie) ? rawDie : (total - bonus);
-        const crit = raw >= 20;
-        const fumble = raw <= 1;
-        const hit = crit || (!fumble && total >= ac);
-        if (!hit) {
-          note("Не пробил · " + (actor.name || "Боец") + " → " + (foe.name || "цель") +
-            " · " + total + " против КД " + ac);
+        if (!rolled || !pop || pop._foeId !== foe.id) {
+          const rawDie = rolled && rolled.dice && rolled.dice[0] ? Number(rolled.dice[0].value) : NaN;
+          const raw = Number.isFinite(rawDie) ? rawDie : NaN;
+          const result = Number.isFinite(raw) ? handVerdict(raw, bonus, ac) : null;
+          if (result) note(result.text + " · " + (actor.name || "Боец") + " → " + (foe.name || "цель"));
           save();
-          paint();
           return;
         }
-        note("Пробил" + (crit ? " (крит)" : "") + " · " + (actor.name || "Боец") + " → " + (foe.name || "цель") +
-          " · " + total + " против КД " + ac);
-        const speed = Number(rolled.speed) || 1;
-        const spin = rolled.animate === false ? 0 : Math.min(5000, Math.max(500, Math.round(2200 / speed)));
-        window.setTimeout(function () { damage(actor, true, crit); }, spin + 1400);
+        const rawDie = rolled.dice && rolled.dice[0] ? Number(rolled.dice[0].value) : NaN;
+        const raw = Number.isFinite(rawDie) ? rawDie : (Number(rolled.total) - bonus);
+        const result = handVerdict(raw, bonus, ac);
+        if (!result) return;
+        const die = field("strike-die");
+        if (die) die.value = String(Math.round(raw));
+        paintVerdict(result);
+        note(result.text + " · " + (actor.name || "Боец") + " → " + (foe.name || "цель"));
+        save();
       });
+    }
+
+    function takeHurt(actor, foe, total, line) {
+      const n = Math.max(0, Math.round(Number(total) || 0));
+      actor.lastDamage = n;
+      if (n > 0 && foe) {
+        setHp(foe, (Number(foe.hp) || 0) - n);
+        note((line || ((actor.name || "Боец") + " бьёт " + (foe.name || "цель"))) + " на " + n +
+          (foe.dead ? " — убит" : " (" + foe.hp + "/" + (foe.hpMax || foe.hp) + ")"));
+        splash("hurt", n);
+      } else note(line || ((actor.name || "Боец") + " — урон 0"));
+      save();
+      paint();
+    }
+
+    function giveLife(actor, target, total, line) {
+      const n = Math.max(0, Math.round(Number(total) || 0));
+      if (!target || n <= 0) return;
+      const before = Number(target.hp) || 0;
+      setHp(target, before + n);
+      const gained = (Number(target.hp) || 0) - before;
+      note((line || ((actor.name || "Боец") + " лечит " + (target.name || "цель"))) + " на " + n +
+        (gained < n ? " (стало " + target.hp + "/" + (target.hpMax || target.hp) + ")" : " (" + target.hp + "/" + (target.hpMax || target.hp) + ")"));
+      splash("heal", n);
+      save();
+      paint();
     }
 
     function damage(actor, apply, crit, formulaText) {
       const foe = apply ? currentFoe(actor) : null;
-      const spec = formula(formulaText || actor.damage || "1d6");
-      const count = crit ? Math.min(12, Math.max(1, spec.count) * 2) : spec.count;
-      roll({
-        name: actor.name || "Боец",
-        label: (crit ? "крит. урон" : "урон") + (foe ? " по " + (foe.name || "цели") : ""),
-        count: count,
-        sides: spec.sides,
-        bonus: spec.bonus
-      }).then(function (data) {
-        const total = data && data.event && data.event.roll ? Number(data.event.roll.total) : 0;
-        actor.lastDamage = total;
-        if (apply && total > 0 && foe) {
-          const before = Number(foe.hp) || 0;
-          setHp(foe, before - total);
-          note((actor.name || "Боец") + " бьёт " + (foe.name || "цель") + " на " + total +
-            (foe.dead ? " — убит" : " (" + foe.hp + "/" + (foe.hpMax || foe.hp) + ")"));
-        }
+      const rolled = boneRoll(formulaText || actor.damage || "1d6", crit);
+      const line = (actor.name || "Боец") + (foe ? " → " + (foe.name || "цель") : "") + " · " + boneText(rolled);
+      if (apply && foe) takeHurt(actor, foe, rolled.total, line);
+      else {
+        note(line);
+        splash("hurt", rolled.total);
         save();
         paint();
-      });
+      }
     }
 
     function currentFoe(from) {
@@ -1276,10 +1323,12 @@
         : sideIcon(actor.side);
       const book = actor.side === "player" ? ""
         : '<button type="button" class="icon-btn foe-face-book" data-act="foe-face" data-id="' + esc(actor.id) + '" title="Портрет из справочника" aria-label="Портрет из справочника"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h6.2A2.8 2.8 0 0 1 14 8.3V19H7.2A2.2 2.2 0 0 0 5 21.2V5.5zM19 5.5h-6.2A2.8 2.8 0 0 0 10 8.3V19h6.8A2.2 2.2 0 0 1 19 21.2V5.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></button>';
-      return '<div class="fight-face-box"><label class="fight-face" style="--ink:' + esc(actorInk(actor)) + '" title="Загрузить портрет. Картинка попадёт в библиотеку">' + face + markIcons(actor.marks) +
-        '<input type="file" accept="image/*" data-face="' + esc(actor.id) + '" aria-label="Портрет ' + esc(actor.name || "") + '"></label>' +
+      return '<div class="fight-face-box"><button type="button" class="fight-face" data-act="face-turn" data-id="' + esc(actor.id) + '" style="--ink:' + esc(actorInk(actor)) + '" title="Ход этого бойца">' + face + markIcons(actor.marks) +
+        '</button><div class="port-tools">' +
         '<button type="button" class="port-ink" data-act="pick-ink" data-id="' + esc(actor.id) + '" style="background:' + esc(actorInk(actor)) + '" title="Цвет рамки" aria-label="Цвет рамки"></button>' +
-        book + "</div>";
+        '<button type="button" class="icon-btn port-pic" data-act="pick-face" data-id="' + esc(actor.id) + '" title="Сменить портрет: библиотека или файл" aria-label="Сменить портрет"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="9" cy="10" r="1.3" fill="currentColor"/><path d="M4 16l4.5-3.5 3 2.5 2.5-2 6 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></button>' +
+        book + '</div>' +
+        '<input type="file" accept="image/*" data-face="' + esc(actor.id) + '" hidden aria-label="Загрузить портрет"></div>';
     }
 
     function weaponButtons(actor) {
@@ -1289,7 +1338,8 @@
         return '<button type="button" data-act="arm-hit" data-id="' + esc(actor.id) + '" data-arm="' + esc(arm.id) + '" title="Сразу бить этим оружием. Дальше только выбор цели">' +
           esc(arm.name || "Атака") + " " + sign + bonus + "</button>";
       }).join("") +
-        '<button type="button" data-act="custom-hurt" data-id="' + esc(actor.id) + '" title="Снять хиты своей формулой, без броска атаки">Свой урон</button>';
+        '<button type="button" data-act="custom-hurt" data-id="' + esc(actor.id) + '" title="Снять хиты своей формулой, без броска атаки">Свой урон</button>' +
+        '<button type="button" data-act="heal" data-id="' + esc(actor.id) + '" title="Зелье или своё число">Лечить</button>';
     }
 
     function initBonusOf(actor) {
@@ -1502,7 +1552,7 @@
       }).join("") : '<p class="note">В бою никого нет.</p>';
       const arm = armsOf(actor).find(function (row) { return row.id === actor.armId; }) || armsOf(actor)[0];
       openPop((arm && arm.name) || "Кого бить",
-        '<p class="note">Выберите цель. Дальше можно вписать грань кубика или бросить к20.</p>' +
+        '<p class="note">Выберите цель. Дальше впишите грань или бросьте к20, затем урон.</p>' +
         '<div class="battle-hits">' + html + "</div>");
       popActorId = actor.id;
     }
@@ -1517,7 +1567,18 @@
       const sign = bonus > 0 ? "+" + bonus : (bonus < 0 ? String(bonus) : "");
       const math = sign ? die + sign + " = " + total : String(total);
       const word = crit ? "Крит" : (hit ? "Пробил" : "Не пробил");
-      return { hit: hit, text: word + " · " + math + " против КД " + ac };
+      return { hit: hit, crit: crit, face: die, text: word + " · " + math + " против КД " + ac };
+    }
+
+    function paintVerdict(result) {
+      const node = field("strike-verdict");
+      if (node) {
+        node.textContent = result.text;
+        node.className = "strike-verdict " + (result.hit ? "is-hit" : "is-miss");
+      }
+      if (pop) pop._crit = !!result.crit;
+      const rollBtn = pop && pop.querySelector("[data-act='strike-roll']");
+      if (rollBtn) rollBtn.textContent = result.crit ? "Бросить урон · крит" : "Бросить урон";
     }
 
     function openStrike(actor, foe) {
@@ -1525,17 +1586,55 @@
       const bonus = Math.round(Number(actor.bonus) || 0);
       const ac = Math.max(0, Math.round(Number(foe.ac) || 10));
       const sign = bonus > 0 ? "+" + bonus : String(bonus);
+      const spec = formula(actor.damage || "1d6");
+      const dmg = spec.count + "к" + spec.sides + (spec.bonus ? (spec.bonus > 0 ? "+" : "") + spec.bonus : "");
       openPop((actor.weapon || "Атака") + " → " + (foe.name || "цель"),
-        '<p class="note">КД ' + ac + " · бонус " + sign + "</p>" +
+        '<p class="note">КД ' + ac + " · бонус " + sign + " · урон " + dmg + ". Кубик атаки виден игрокам.</p>" +
         '<label>Кубик<input id="strike-die" type="number" min="1" max="30" inputmode="numeric" aria-label="Грань кубика"></label>' +
         '<button type="button" data-act="strike-read">Проверить</button>' +
-        '<p class="strike-verdict" id="strike-verdict">Введите грань кубика</p>' +
+        '<button type="button" data-act="strike-throw">Бросить к20</button>' +
+        '<p class="strike-verdict" id="strike-verdict">Введите грань или бросьте к20</p>' +
         '<label>Урон<input id="strike-dmg" type="number" min="0" value="0" aria-label="Урон"></label>' +
         '<button type="button" data-act="strike-apply">Снять хиты</button>' +
-        '<button type="button" data-act="strike-throw">Бросить к20</button>' +
+        '<button type="button" data-act="strike-roll">Бросить урон</button>' +
         '<button type="button" data-act="strike-back">К целям</button>');
       popActorId = actor.id;
-      if (pop) pop._foeId = foe.id;
+      if (pop) {
+        pop._foeId = foe.id;
+        pop._crit = false;
+      }
+    }
+
+    const POTIONS = [
+      ["2d4+2", "Зелье · 2к4+2"],
+      ["4d4+4", "Большое · 4к4+4"],
+      ["8d4+8", "Отличное · 8к4+8"],
+      ["10d4+20", "Превосходное · 10к4+20"]
+    ];
+
+    function openHealPick(actor) {
+      const list = rows().map(function (row) { return row.actor; });
+      const html = list.length ? list.map(function (row) {
+        const self = row.id === actor.id;
+        return '<button type="button" data-mend="' + esc(row.id) + '"><b>' + esc(row.name || "—") +
+          (self ? " · себя" : "") + (row.dead ? " †" : "") + "</b><span>" +
+          (Number(row.hp) || 0) + "/" + (Number(row.hpMax) || 0) + "</span></button>";
+      }).join("") : '<p class="note">В бою никого нет.</p>';
+      openPop("Кого лечить", '<div class="battle-hits">' + html + "</div>");
+      popActorId = actor.id;
+    }
+
+    function openHeal(actor, target) {
+      const pots = POTIONS.map(function (row) {
+        return '<button type="button" data-potion="' + row[0] + '">' + esc(row[1]) + "</button>";
+      }).join("");
+      openPop("Лечить · " + (target.name || "цель"),
+        '<div class="battle-hits">' + pots + "</div>" +
+        '<label>Своё число<input id="heal-num" type="number" min="0" value="0" aria-label="Лечение числом"></label>' +
+        '<button type="button" data-act="heal-apply">Вылечить</button>' +
+        '<button type="button" data-act="heal-back">К целям</button>');
+      popActorId = actor.id;
+      if (pop) pop._foeId = target.id;
     }
 
     function openCustomHurt(actor) {
@@ -1548,6 +1647,13 @@
         '<label>Формула<input id="custom-damage" type="text" value="' + esc(actor.damage || "1d6") + '" placeholder="2d6+4" aria-label="Формула урона"></label>' +
         '<p class="note">Хиты снимаются сразу, без броска атаки.</p>' +
         '<div class="battle-hits">' + html + "</div>");
+      popActorId = actor.id;
+    }
+
+    function openFace(actor) {
+      openPop("Портрет",
+        '<button type="button" data-act="face-lib">Из библиотеки</button>' +
+        '<button type="button" data-act="face-file">Загрузить</button>');
       popActorId = actor.id;
     }
 
@@ -1805,13 +1911,12 @@
       save();
       const button = pop && pop.querySelector('[data-mark="' + id + '"]');
       if (button) button.classList.toggle("is-on", actor.marks.indexOf(id) >= 0);
-      const face = host.querySelector('[data-face="' + actor.id + '"]');
-      const label = face && face.closest(".fight-face");
+      const label = host.querySelector('.fight-face[data-id="' + actor.id + '"]');
       if (label) {
         const old = label.querySelector(".mark-stack");
         if (old) old.remove();
         const icons = markIcons(actor.marks);
-        if (icons) face.insertAdjacentHTML("beforebegin", icons);
+        if (icons) label.insertAdjacentHTML("beforeend", icons);
       }
     }
 
@@ -2219,6 +2324,29 @@
         popY = box.bottom + 6;
         openCustomHurt(actor);
       }
+      if (act === "heal") {
+        const actor = battle.actors.find(function (row) { return row.id === button.getAttribute("data-id"); });
+        if (!actor) return;
+        const box = button.getBoundingClientRect();
+        popX = box.left;
+        popY = box.bottom + 6;
+        openHealPick(actor);
+      }
+      if (act === "face-turn") {
+        const actor = battle.actors.find(function (row) { return row.id === button.getAttribute("data-id"); });
+        if (!actor) return;
+        selectActor(actor);
+        save();
+        paint();
+      }
+      if (act === "pick-face") {
+        const actor = battle.actors.find(function (row) { return row.id === button.getAttribute("data-id"); });
+        if (!actor) return;
+        const box = button.getBoundingClientRect();
+        popX = box.left;
+        popY = box.bottom + 6;
+        openFace(actor);
+      }
       if (act === "pick-ink") {
         const actor = battle.actors.find(function (row) { return row.id === button.getAttribute("data-id"); });
         if (!actor) return;
@@ -2333,6 +2461,23 @@
         attack(actor);
         return;
       }
+      const mendBtn = event.target.closest("[data-mend]");
+      if (mendBtn && pop && pop.contains(mendBtn)) {
+        const actor = popActor();
+        const target = battle.actors.find(function (row) { return row.id === mendBtn.getAttribute("data-mend"); });
+        if (actor && target) openHeal(actor, target);
+        return;
+      }
+      const potionBtn = event.target.closest("[data-potion]");
+      if (potionBtn && pop && pop.contains(potionBtn)) {
+        const actor = popActor();
+        const target = battle.actors.find(function (row) { return row.id === pop._foeId; });
+        if (!actor || !target) return;
+        const rolled = boneRoll(potionBtn.getAttribute("data-potion"), false);
+        closePop();
+        giveLife(actor, target, rolled.total, (actor.name || "Боец") + " лечит " + (target.name || "цель") + " · " + boneText(rolled));
+        return;
+      }
       const markBtn = event.target.closest("[data-mark]");
       if (markBtn && pop && pop.contains(markBtn)) {
         const actor = popActor();
@@ -2357,52 +2502,68 @@
         const node = field("strike-verdict");
         const die = field("strike-die");
         if (!foe || !node) return;
-        const bonus = Math.round(Number(actor.bonus) || 0);
-        const ac = Math.max(0, Math.round(Number(foe.ac) || 10));
         const typed = Math.round(Number(die && die.value));
         if (!Number.isFinite(typed) || typed < 1) {
           node.textContent = "Введите грань кубика";
           node.className = "strike-verdict";
           return;
         }
-        const face = Math.min(20, typed);
-        const result = handVerdict(face, bonus, ac);
-        if (!result) {
-          node.textContent = "Введите грань кубика";
-          node.className = "strike-verdict";
-          return;
-        }
-        node.textContent = result.text;
-        node.className = "strike-verdict " + (result.hit ? "is-hit" : "is-miss");
-        note(result.text + " · " + (actor.name || "Боец") + " → " + (foe.name || "цель"));
-        save();
-        roll({
-          name: actor.name || "Боец",
-          label: (actor.weapon || "Атака") + " по " + (foe.name || "цели"),
-          count: 1,
-          sides: 20,
-          bonus: bonus,
-          ac: ac,
-          face: face
-        });
+        castCheck(actor, foe, Math.min(20, typed));
       }
       if (act === "strike-apply" && actor && pop) {
         const foe = battle.actors.find(function (row) { return row.id === pop._foeId; });
         if (!foe) return;
         const dmg = Math.max(0, Math.round(Number(field("strike-dmg") && field("strike-dmg").value) || 0));
+        if (!foe || dmg <= 0) return;
         actor.targetId = foe.id;
-        setHp(foe, (Number(foe.hp) || 0) - dmg);
-        note((actor.name || "Боец") + " наносит " + dmg + " урона " + (foe.name || "цели") +
-          (foe.dead ? " — убит" : " (" + foe.hp + "/" + (foe.hpMax || foe.hp) + ")"));
         closePop();
-        save();
-        paint();
+        takeHurt(actor, foe, dmg, (actor.name || "Боец") + " наносит " + (foe.name || "цели"));
+      }
+      if (act === "strike-roll" && actor && pop) {
+        const foe = battle.actors.find(function (row) { return row.id === pop._foeId; });
+        if (!foe) return;
+        const crit = !!pop._crit;
+        actor.targetId = foe.id;
+        const rolled = boneRoll(actor.damage || "1d6", crit);
+        closePop();
+        takeHurt(actor, foe, rolled.total, (actor.name || "Боец") + " → " + (foe.name || "цель") + " · " + boneText(rolled));
       }
       if (act === "strike-throw" && actor && pop) {
         const foe = battle.actors.find(function (row) { return row.id === pop._foeId; });
-        if (foe) actor.targetId = foe.id;
+        if (!foe) return;
+        actor.targetId = foe.id;
+        castCheck(actor, foe, null);
+      }
+      if (act === "heal-apply" && actor && pop) {
+        const target = battle.actors.find(function (row) { return row.id === pop._foeId; });
+        if (!target) return;
+        const n = Math.max(0, Math.round(Number(field("heal-num") && field("heal-num").value) || 0));
+        if (!target || n <= 0) return;
         closePop();
-        attack(actor);
+        giveLife(actor, target, n, (actor.name || "Боец") + " лечит " + (target.name || "цель"));
+      }
+      if (act === "heal-back" && actor) openHealPick(actor);
+      if (act === "face-lib" && actor) {
+        const who = actor;
+        const lib = ctx.library ? ctx.library() : (ctx.campaign && ctx.campaign.library);
+        closePop();
+        if (!window.ShirmoShelf) return;
+        window.ShirmoShelf.pick({
+          kind: "image",
+          images: (lib && lib.images) || [],
+          onPick: function (url) {
+            if (!url) return;
+            who.portrait = url;
+            syncPerson(who, ["portrait"]);
+            save();
+            paint();
+          }
+        });
+      }
+      if (act === "face-file" && actor) {
+        const input = host.querySelector('[data-face="' + actor.id + '"]');
+        closePop();
+        if (input) input.click();
       }
       if (act === "strike-back" && actor) openAttackPick(actor);
       if (act === "wound" && actor) {
