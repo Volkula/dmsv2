@@ -648,7 +648,8 @@
         label: (actor.weapon || "Атака") + " по " + (foe.name || "цели"),
         count: 1,
         sides: 20,
-        bonus: bonus
+        bonus: bonus,
+        ac: ac
       }).then(function (data) {
         const rolled = data && data.event && data.event.roll ? data.event.roll : null;
         const total = rolled ? Number(rolled.total) : null;
@@ -1499,9 +1500,40 @@
       }).join("") : '<p class="note">В бою никого нет.</p>';
       const arm = armsOf(actor).find(function (row) { return row.id === actor.armId; }) || armsOf(actor)[0];
       openPop((arm && arm.name) || "Кого бить",
-        '<p class="note">Бросок к20 сравнивается с классом доспеха. Попадание сразу снимает хиты.</p>' +
+        '<p class="note">Выберите цель. Дальше можно вписать грань кубика или бросить к20.</p>' +
         '<div class="battle-hits">' + html + "</div>");
       popActorId = actor.id;
+    }
+
+    function handVerdict(face, bonus, ac) {
+      const die = Math.round(Number(face));
+      if (!Number.isFinite(die) || die < 1) return null;
+      const total = die + bonus;
+      const crit = die >= 20;
+      const fumble = die <= 1;
+      const hit = crit || (!fumble && total >= ac);
+      const sign = bonus > 0 ? "+" + bonus : (bonus < 0 ? String(bonus) : "");
+      const math = sign ? die + sign + " = " + total : String(total);
+      const word = crit ? "Крит" : (hit ? "Пробил" : "Не пробил");
+      return { hit: hit, text: word + " · " + math + " против КД " + ac };
+    }
+
+    function openStrike(actor, foe) {
+      actor.targetId = foe.id;
+      const bonus = Math.round(Number(actor.bonus) || 0);
+      const ac = Math.max(0, Math.round(Number(foe.ac) || 10));
+      const sign = bonus > 0 ? "+" + bonus : String(bonus);
+      openPop((actor.weapon || "Атака") + " → " + (foe.name || "цель"),
+        '<p class="note">КД ' + ac + " · бонус " + sign + "</p>" +
+        '<label>Кубик<input id="strike-die" type="number" min="1" max="30" inputmode="numeric" aria-label="Грань кубика"></label>' +
+        '<button type="button" data-act="strike-read">Итог</button>' +
+        '<p class="strike-verdict" id="strike-verdict">Введите грань кубика</p>' +
+        '<label>Урон<input id="strike-dmg" type="number" min="0" value="0" aria-label="Урон"></label>' +
+        '<button type="button" data-act="strike-apply">Снять хиты</button>' +
+        '<button type="button" data-act="strike-throw">Бросить к20</button>' +
+        '<button type="button" data-act="strike-back">К целям</button>');
+      popActorId = actor.id;
+      if (pop) pop._foeId = foe.id;
     }
 
     function openCustomHurt(actor) {
@@ -2243,9 +2275,7 @@
         const actor = popActor();
         const foe = battle.actors.find(function (row) { return row.id === targetBtn.getAttribute("data-target"); });
         if (!actor || !foe) return;
-        actor.targetId = foe.id;
-        closePop();
-        attack(actor);
+        openStrike(actor, foe);
         return;
       }
       const hurtBtn = event.target.closest("[data-hurt]");
@@ -2320,6 +2350,41 @@
         chosenArm(actor);
         attack(actor);
       }
+      if (act === "strike-read" && actor && pop) {
+        const foe = battle.actors.find(function (row) { return row.id === pop._foeId; });
+        const node = field("strike-verdict");
+        const die = field("strike-die");
+        if (!foe || !node) return;
+        const result = handVerdict(die && die.value, Math.round(Number(actor.bonus) || 0), Math.max(0, Math.round(Number(foe.ac) || 10)));
+        if (!result) {
+          node.textContent = "Введите грань кубика";
+          node.className = "strike-verdict";
+          return;
+        }
+        node.textContent = result.text;
+        node.className = "strike-verdict " + (result.hit ? "is-hit" : "is-miss");
+        note(result.text + " · " + (actor.name || "Боец") + " → " + (foe.name || "цель"));
+        save();
+      }
+      if (act === "strike-apply" && actor && pop) {
+        const foe = battle.actors.find(function (row) { return row.id === pop._foeId; });
+        if (!foe) return;
+        const dmg = Math.max(0, Math.round(Number(field("strike-dmg") && field("strike-dmg").value) || 0));
+        actor.targetId = foe.id;
+        setHp(foe, (Number(foe.hp) || 0) - dmg);
+        note((actor.name || "Боец") + " наносит " + dmg + " урона " + (foe.name || "цели") +
+          (foe.dead ? " — убит" : " (" + foe.hp + "/" + (foe.hpMax || foe.hp) + ")"));
+        closePop();
+        save();
+        paint();
+      }
+      if (act === "strike-throw" && actor && pop) {
+        const foe = battle.actors.find(function (row) { return row.id === pop._foeId; });
+        if (foe) actor.targetId = foe.id;
+        closePop();
+        attack(actor);
+      }
+      if (act === "strike-back" && actor) openAttackPick(actor);
       if (act === "wound" && actor) {
         chosenArm(actor);
         damage(actor, true);

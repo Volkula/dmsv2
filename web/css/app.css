@@ -544,6 +544,21 @@ label.text-file:hover { border-color: var(--brass); color: var(--brass); }
   color: #f3e2b0;
 }
 
+.die-verdict {
+  position: relative;
+  z-index: 3;
+  margin: 4px 0 0;
+  font-size: 28px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.die-verdict.is-hit { color: #7dcea0; }
+.die-verdict.is-miss { color: #e4533e; }
+
+.strike-verdict { margin: 0; font-size: 18px; letter-spacing: 0.04em; }
+.strike-verdict.is-hit { color: #7dcea0; }
+.strike-verdict.is-miss { color: #e4533e; }
+
 .die-hole { height: 210px; }
 
 .die-name {

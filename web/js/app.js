@@ -615,9 +615,11 @@
     show.className = "die-show";
     const check = roll.label || "";
     const name = roll.name || "";
+    const verdict = roll.verdict === "Пробил" || roll.verdict === "Не пробил" || roll.verdict === "Крит" ? roll.verdict : "";
     show.innerHTML = '<div class="die-frame">' +
       (check ? '<p class="die-check">' + esc(check) + "</p>" : "") +
       '<b class="die-total">' + esc(String(roll.total)) + "</b>" +
+      (verdict ? '<p class="die-verdict' + (verdict === "Не пробил" ? " is-miss" : " is-hit") + '">' + esc(verdict) + "</p>" : "") +
       '<div class="die-hole"></div>' +
       (name ? '<p class="die-name">' + esc(name) + "</p>" : "") +
       '</div><canvas class="die-flight"></canvas>';
@@ -1074,7 +1076,8 @@
 
   function rollText(roll) {
     const title = roll.name ? roll.name + ": " : "";
-    return title + (roll.label ? roll.label + " " : "") + roll.log;
+    const verdict = roll.verdict ? roll.verdict + " · " : "";
+    return title + verdict + (roll.label ? roll.label + " " : "") + roll.log;
   }
 
   function diceLook(state) {
@@ -2376,6 +2379,15 @@
       }
       if (spec && spec.label) roll.label = spec.label;
       if (spec && spec.name) roll.name = spec.name;
+      if (spec && Number.isFinite(Number(spec.ac))) {
+        const ac = Math.max(0, Math.round(Number(spec.ac)));
+        const face = roll.dice && roll.dice[0] ? Number(roll.dice[0].value) : NaN;
+        const raw = Number.isFinite(face) ? face : roll.total - bonus;
+        const crit = raw >= 20;
+        const fumble = raw <= 1;
+        const hit = crit || (!fumble && roll.total >= ac);
+        roll.verdict = crit ? "Крит" : (hit ? "Пробил" : "Не пробил");
+      }
       roll.color = (spec && spec.color) || look.color;
       roll.texture = (spec && spec.texture) || look.texture;
       roll.speed = look.speed;

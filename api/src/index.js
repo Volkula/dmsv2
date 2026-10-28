@@ -66,6 +66,7 @@ function publicRoll(roll) {
     sides: Number(roll.sides) || 20,
     mode: roll.mode === "advantage" || roll.mode === "disadvantage" ? roll.mode : "normal",
     log: String(roll.log || "").slice(0, 120),
+    verdict: roll.verdict === "Пробил" || roll.verdict === "Не пробил" || roll.verdict === "Крит" ? roll.verdict : "",
     dice: dice,
     color: hexColor(roll.color),
     texture: safePath(roll.texture),
