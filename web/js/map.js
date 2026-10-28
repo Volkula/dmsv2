@@ -294,10 +294,14 @@
         : "";
       return '<button type="button" class="map-pin image' + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="image" aria-label="' + esc(item.name || "Картинка") + '" style="left:' + (item.x * 100) + "%;top:" + (item.y * 100) + "%;--pin:" + size + 'px">' + marks + '<img alt="" src="' + esc(url) + '">' + tip + "</button>";
     }
+    const full = item.look === "full";
     const portrait = kind === "npc" || kind === "loc" || kind === "foe" || kind === "hero" ? (item.portrait || "") : "";
     const markIcon = kind === "mark" ? (item.icon || "") : "";
     const markEmoji = kind === "mark" ? (item.emoji || "") : "";
-    const size = Math.min(160, Math.max(12, Number(item.pinSize) || (portrait ? 56 : (markIcon || markEmoji ? 36 : 14))));
+    const saved = Number(item.pinSize) || 0;
+    const size = full
+      ? Math.min(280, Math.max(72, saved > 64 ? saved : 140))
+      : Math.min(160, Math.max(12, saved || (portrait ? 56 : (markIcon || markEmoji ? 36 : 14))));
     const badge = master && item.emoji && kind !== "mark" ? '<em class="pin-emoji">' + esc(item.emoji) + "</em>" : "";
     let dot = "<i></i>";
     if (markIcon) {
@@ -305,7 +309,8 @@
     } else if (markEmoji) {
       dot = '<i class="mark-glyph">' + esc(markEmoji) + "</i>";
     } else if (portrait) {
-      dot = '<i><img alt="" src="' + esc(portrait) + '" style="' + faceStyle(item) + '">' + badge + "</i>";
+      const crop = item.look === "full" ? "" : ' style="' + faceStyle(item) + '"';
+      dot = '<i><img alt="" src="' + esc(portrait) + '"' + crop + ">" + badge + "</i>";
     }
     const marks = master && (kind === "npc" || kind === "loc" || kind === "foe" || kind === "hero" || kind === "mark")
       ? '<span class="pin-flags">' + flagMark("screen", shownScreen(item)) + flagMark("map", shownMap(item)) + "</span>"
@@ -316,7 +321,7 @@
     const named = kind === "loc" ? ' aria-label="' + esc(oneLine(item.name) || "Локация") + '"' : "";
     const cap = item.capTop ? " cap-top" : "";
     const fight = item.toBattle ? ' data-battle="1" title="Открыть экран боя"' : "";
-    return '<button type="button" class="map-pin ' + kind + cap + (portrait ? " has-face" : "") + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="' + kind + '"' + named + fight + ' style="left:' + (item.x * 100) + "%;top:" + (item.y * 100) + "%;--pin:" + size + 'px">' + marks + vitals + dot + caption + tip + "</button>";
+    return '<button type="button" class="map-pin ' + kind + cap + (portrait ? " has-face" : "") + (full ? " is-full" : "") + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="' + kind + '"' + named + fight + ' style="left:' + (item.x * 100) + "%;top:" + (item.y * 100) + "%;--pin:" + size + 'px">' + marks + vitals + dot + caption + tip + "</button>";
   }
 
   function heroVitalsHtml(item) {
@@ -778,7 +783,8 @@
             portraitX: face.x,
             portraitY: face.y,
             portraitZoom: face.zoom,
-            emoji: face.emoji || ""
+            emoji: face.emoji || "",
+            look: face.look || ""
           }) : item;
           const vitals = heroSheet(item);
           return vitals ? Object.assign({}, faced, vitals) : faced;
@@ -2183,7 +2189,7 @@
       if (!npc) return null;
       const mood = window.ShirmoNpc.apply(npc);
       if (!mood.portrait) return null;
-      return Object.assign({ url: mood.portrait, emoji: mood.emoji || "" }, focusNums(npc));
+      return Object.assign({ url: mood.portrait, emoji: mood.emoji || "", look: npc.look === "full" ? "full" : "" }, focusNums(npc));
     }
     function linkedList() {
       return selected && selected.kind === "npc" ? book().npcs : book().places;

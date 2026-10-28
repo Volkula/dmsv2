@@ -989,6 +989,7 @@
       actor.bonus = Number(person.bonus) || actor.bonus;
       actor.ac = Number(person.ac) || actor.ac;
       actor.portrait = person.portrait || actor.portrait || "";
+      actor.look = person.look === "full" ? "full" : "token";
       actor.note = person.note || actor.note || "";
       actor.codexId = person.id;
       actor.weapons = [];
@@ -1331,7 +1332,8 @@
         : sideIcon(actor.side);
       const book = actor.side === "player" ? ""
         : '<button type="button" class="icon-btn foe-face-book" data-act="foe-face" data-id="' + esc(actor.id) + '" title="Портрет из справочника" aria-label="Портрет из справочника"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h6.2A2.8 2.8 0 0 1 14 8.3V19H7.2A2.2 2.2 0 0 0 5 21.2V5.5zM19 5.5h-6.2A2.8 2.8 0 0 0 10 8.3V19h6.8A2.2 2.2 0 0 1 19 21.2V5.5z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></button>';
-      return '<div class="fight-face-box"><button type="button" class="fight-face" data-act="face-turn" data-id="' + esc(actor.id) + '" style="--ink:' + esc(actorInk(actor)) + '" title="Ход этого бойца">' + face + markIcons(actor.marks) +
+      const shape = actor.look === "full" ? " is-full" : (actor.look === "token" ? " is-token" : "");
+      return '<div class="fight-face-box"><button type="button" class="fight-face' + shape + '" data-act="face-turn" data-id="' + esc(actor.id) + '" style="--ink:' + esc(actorInk(actor)) + '" title="Ход этого бойца">' + face + markIcons(actor.marks) +
         '</button><div class="port-tools">' +
         '<button type="button" class="port-ink" data-act="pick-ink" data-id="' + esc(actor.id) + '" style="background:' + esc(actorInk(actor)) + '" title="Цвет рамки" aria-label="Цвет рамки"></button>' +
         '<button type="button" class="icon-btn port-pic" data-act="pick-face" data-id="' + esc(actor.id) + '" title="Сменить портрет: библиотека или файл" aria-label="Сменить портрет"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="9" cy="10" r="1.3" fill="currentColor"/><path d="M4 16l4.5-3.5 3 2.5 2.5-2 6 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></button>' +
@@ -1667,7 +1669,6 @@
 
     function openFace(actor) {
       openPop("Портрет",
-        '<button type="button" data-act="face-token">Токен</button>' +
         '<button type="button" data-act="face-lib">Из библиотеки</button>' +
         '<button type="button" data-act="face-file">Загрузить</button>');
       popActorId = actor.id;
@@ -2573,21 +2574,6 @@
         giveLife(actor, target, n, (actor.name || "Боец") + " лечит " + (target.name || "цель"));
       }
       if (act === "heal-back" && actor) openHealPick(actor);
-      if (act === "face-token" && actor) {
-        const who = actor;
-        closePop();
-        if (!window.ShirmoTokens) return;
-        window.ShirmoTokens.pick({
-          kind: "portrait",
-          onPick: function (url) {
-            if (!url) return;
-            who.portrait = url;
-            syncPerson(who, ["portrait"]);
-            save();
-            paint();
-          }
-        });
-      }
       if (act === "face-lib" && actor) {
         const who = actor;
         const lib = ctx.library ? ctx.library() : (ctx.campaign && ctx.campaign.library);
@@ -2828,7 +2814,8 @@
       const tokens = group.actors.map(function (actor) {
         const on = activeId ? actor.id === activeId : !!actor.active;
         const side = actor.side === "player" ? "player" : "npc";
-        const cls = "battle-token " + side + (on ? " active" : "") + (actor.dead ? " dead" : "");
+        const shape = actor.look === "full" ? " is-full" : (actor.look === "token" ? " is-token" : "");
+        const cls = "battle-token " + side + shape + (on ? " active" : "") + (actor.dead ? " dead" : "");
         const inner = '<span class="battle-face">' + faceOf(actor) + '</span>' + markUnder(actor.marks) + '<span class="token-name">' + esc(actor.name || "—") + "</span>" + turnMark(actor, withTime);
         if (!clickable) return '<div class="' + cls + '">' + inner + "</div>";
         return '<button type="button" class="' + cls + '" data-go="' + esc(actor.id) + '" title="Ход: ' + esc(actor.name || "") + '">' + inner + "</button>";
@@ -3061,6 +3048,7 @@
     actor.damage = person.damage || "1d6";
     actor.bonus = Math.round(Number(person.bonus) || 0);
     actor.portrait = person.portrait || "";
+    actor.look = person.look === "full" ? "full" : "token";
     actor.note = person.note || "";
     actor.weapons = [];
     actor.armId = "";

@@ -1308,13 +1308,17 @@
     const box = document.createElement("div");
     box.id = "shelf-pick";
     box.className = "pop";
-    const images = opts.images || [];
     const notes = opts.notes || [];
+    function pictures() {
+      const extra = window.ShirmoTokens && window.ShirmoTokens.images ? window.ShirmoTokens.images() : [];
+      const own = opts.images || [];
+      return extra.length ? extra.concat(own) : own;
+    }
     let path = "";
     let query = "";
     function folders() {
       const set = {};
-      images.forEach(function (item) {
+      pictures().forEach(function (item) {
         const folder = String(item && item.folder || "").trim();
         if (!folder) return;
         const parts = folder.split("/");
@@ -1349,6 +1353,13 @@
         const rest = path ? folder.slice(path.length + 1) : folder;
         return rest.indexOf("/") < 0;
       });
+      dirs.sort(function (a, b) {
+        const at = a.indexOf("Токены") === 0;
+        const bt = b.indexOf("Токены") === 0;
+        if (at !== bt) return at ? -1 : 1;
+        return a.localeCompare(b, "ru");
+      });
+      const images = pictures();
       const files = images.filter(function (item) {
         const folder = String(item && item.folder || "");
         const name = String(item && item.name || "");
@@ -1425,6 +1436,9 @@
       paint();
     });
     paint();
+    if (window.ShirmoTokens && window.ShirmoTokens.load && !(window.ShirmoTokens.images() || []).length) {
+      window.ShirmoTokens.load().then(function () { if (box.isConnected) paint(); });
+    }
   }
 
   window.ShirmoShelf = {
@@ -1439,7 +1453,15 @@
         images: lib.images || [],
         notes: lib.notes || [],
         onPick: function (picked) {
-          select.value = kind === "note" ? (picked && picked.id || "") : (picked || "");
+          const value = kind === "note" ? (picked && picked.id || "") : (picked || "");
+          if (kind !== "note" && value && !Array.prototype.some.call(select.options, function (opt) { return opt.value === value; })) {
+            const opt = document.createElement("option");
+            opt.value = value;
+            const file = decodeURIComponent(String(value).split("/").pop() || "Картинка");
+            opt.textContent = file.replace(/\.[a-z0-9]+$/i, "").replace(/[_]+/g, " ");
+            select.appendChild(opt);
+          }
+          select.value = value;
           select.dispatchEvent(new Event("change", { bubbles: true }));
         }
       });
@@ -3280,10 +3302,36 @@
     let unusedOnly = !!host._libUnused;
     let menu = null;
 
+    function tokenList() {
+      if (kind !== "images" || !window.ShirmoTokens || !window.ShirmoTokens.images) return [];
+      return window.ShirmoTokens.images();
+    }
+    function tokenFolderPaths() {
+      const set = {};
+      tokenList().forEach(function (item) {
+        String(item.folder || "").split("/").filter(Boolean).reduce(function (acc, part) {
+          const next = acc ? acc + "/" + part : part;
+          set[next] = true;
+          return next;
+        }, "");
+      });
+      return Object.keys(set);
+    }
+    function folderPaths(lib) {
+      const set = {};
+      (lib.folders || []).forEach(function (p) { if (p) set[p] = true; });
+      tokenFolderPaths().forEach(function (p) { set[p] = true; });
+      return Object.keys(set).sort(function (a, b) {
+        const at = a.indexOf("Токены") === 0;
+        const bt = b.indexOf("Токены") === 0;
+        if (at !== bt) return at ? -1 : 1;
+        return a.localeCompare(b, "ru");
+      });
+    }
     function rawList(lib) {
       if (kind === "fonts") return lib.fonts || [];
       if (kind === "notes") return lib.notes || [];
-      return lib.images || [];
+      return tokenList().concat(lib.images || []);
     }
 
     function folderOf(item) {
@@ -3313,7 +3361,7 @@
       const prefix = parent ? parent + "/" : "";
       const kids = [];
       const seen = {};
-      (lib.folders || []).forEach(function (p) {
+      folderPaths(lib).forEach(function (p) {
         if (!p) return;
         if (parent) {
           if (p === parent || p.indexOf(prefix) !== 0) return;
@@ -3329,7 +3377,12 @@
           kids.push({ name: name, path: name });
         }
       });
-      return kids.sort(function (a, b) { return a.name.localeCompare(b.name, "ru"); });
+      return kids.sort(function (a, b) {
+        const at = a.path.indexOf("Токены") === 0;
+        const bt = b.path.indexOf("Токены") === 0;
+        if (at !== bt) return at ? -1 : 1;
+        return a.name.localeCompare(b.name, "ru");
+      });
     }
 
     function countIn(lib, folderPath) {
@@ -3461,6 +3514,7 @@
     }
 
     function deleteItem(id) {
+      if (String(id || "").indexOf("tok:") === 0) return;
       const shelf = ctx.shelf();
       shelf[kind] = (shelf[kind] || []).filter(function (item) { return item.id !== id; });
       if (selected === id) selected = "";
@@ -3474,6 +3528,7 @@
       const lib = ctx.shelf();
       const parent = folderPath.split("/").slice(0, -1).join("/");
       rawList(lib).forEach(function (item) {
+        if (item.builtin) return;
         const f = folderOf(item);
         if (f === folderPath) setItemFolder(item, parent);
         else if (f.indexOf(folderPath + "/") === 0) setItemFolder(item, parent ? parent + f.slice(folderPath.length) : f.slice(folderPath.length + 1));
@@ -3491,6 +3546,7 @@
       ensureFolders(lib);
       if (next && lib.folders.indexOf(next) < 0) lib.folders.push(next);
       rawList(lib).forEach(function (item) {
+        if (item.builtin) return;
         if (ids.indexOf(item.id) >= 0) setItemFolder(item, next);
       });
       ctx.save();
@@ -3504,6 +3560,7 @@
       const name = from.split("/").pop();
       const dest = to ? to + "/" + name : name;
       rawList(lib).forEach(function (item) {
+        if (item.builtin) return;
         const f = folderOf(item);
         if (f === from) setItemFolder(item, dest);
         else if (f.indexOf(from + "/") === 0) setItemFolder(item, dest + f.slice(from.length));
@@ -3528,6 +3585,7 @@
           const hay = [item.name, item.folder, item.section, item.text].join(" ").toLowerCase();
           if (hay.indexOf(q) < 0) return false;
         }
+        if (item.builtin && unusedOnly) return false;
         if (unusedOnly && usesOf(item, used).length) return false;
         return true;
       });
@@ -3549,7 +3607,7 @@
 
     function treeHtml(lib) {
       const rows = ['<button type="button" class="libx-tree-item' + (path === "" ? " is-on" : "") + '" data-path="" style="--depth:0"><span class="libx-tree-ico" aria-hidden="true"></span><span>Библиотека</span><em>' + countIn(lib, "") + "</em></button>"];
-      (lib.folders || []).forEach(function (p) {
+      folderPaths(lib).forEach(function (p) {
         const depth = p.split("/").length;
         const name = p.split("/").pop();
         const on = path === p ? " is-on" : "";
@@ -3573,6 +3631,13 @@
 
     function paint() {
       hideMenu();
+      if (kind === "images" && window.ShirmoTokens && window.ShirmoTokens.load && !(window.ShirmoTokens.images() || []).length && !host._tokWait) {
+        host._tokWait = true;
+        window.ShirmoTokens.load().then(function () {
+          host._tokWait = false;
+          if (host.isConnected) paint();
+        });
+      }
       const lib = ctx.shelf();
       ensureFolders(lib);
       const used = usageIndex();
@@ -3587,7 +3652,7 @@
       host._libUnused = unusedOnly;
       const searching = !!String(query || "").trim();
       const dirs = searching || kind !== "images" ? [] : childFolders(lib, path);
-      const unusedCount = rawList(lib).filter(function (item) { return !usesOf(item, used).length; }).length;
+      const unusedCount = rawList(lib).filter(function (item) { return !item.builtin && !usesOf(item, used).length; }).length;
 
       const tree = treeHtml(lib);
 
@@ -3631,9 +3696,11 @@
         const hits = usesOf(picked, used);
         preview += hits.length
           ? '<div class="libx-used"><p>Используется</p><ul>' + hits.map(function (row) { return "<li>" + esc(row) + "</li>"; }).join("") + "</ul></div>"
-          : '<p class="libx-unused-note">Нигде не используется</p>';
-        preview += '<button type="button" data-lib-move="' + esc(picked.id) + '">Переместить</button>';
-        preview += '<button type="button" class="danger" data-lib-del="' + esc(picked.id) + '">Удалить</button>';
+          : (picked.builtin ? '<p class="note">Из коллекции токенов</p>' : '<p class="libx-unused-note">Нигде не используется</p>');
+        if (!picked.builtin) {
+          preview += '<button type="button" data-lib-move="' + esc(picked.id) + '">Переместить</button>';
+          preview += '<button type="button" class="danger" data-lib-del="' + esc(picked.id) + '">Удалить</button>';
+        }
       }
 
       const accept = kind === "fonts"
