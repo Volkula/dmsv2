@@ -4752,6 +4752,108 @@ body > .clock-layer.is-pinned { display: none !important; }
 .light-form { display: flex; align-items: center; gap: 8px; }
 .light-form input[type="color"] { width: 42px; height: 32px; padding: 2px; }
 
+.dock-fold[data-fold="light"] .dock-line > button:first-child i {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 8px;
+  border-radius: 3px;
+  vertical-align: -2px;
+  border: 1px solid rgba(243, 234, 216, 0.35);
+}
+.dock-fold[data-fold="light"] .dock-line > button.is-on { outline: 1px solid #e6c36a; }
+
+.light-studio {
+  position: fixed;
+  z-index: 11000;
+  top: 72px;
+  right: 18px;
+  width: min(440px, calc(100vw - 24px));
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  background: #14110e;
+  border: 1px solid #8a6a3a;
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.55);
+  color: #f3ead8;
+}
+.light-studio[hidden] { display: none !important; }
+.light-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px 8px 14px;
+  cursor: grab;
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+.light-bar button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  font-size: 18px;
+  line-height: 1;
+}
+.light-body {
+  overflow: auto;
+  padding: 8px 14px 16px;
+}
+.light-body h3 {
+  margin: 14px 0 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+}
+.light-device, .light-save {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+.light-device .check { flex: 1; min-width: 0; }
+.light-modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.light-mode { position: relative; }
+.light-mode > button:first-child {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+  width: 100%;
+  padding: 4px;
+  text-align: left;
+}
+.light-mode > button.is-on { outline: 1px solid #e6c36a; }
+.light-modes canvas { width: 100%; height: 48px; border-radius: 6px; display: block; }
+.light-modes .light-pin {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: #f3ead8;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.light-sliders label { display: flex; align-items: center; gap: 8px; margin: 6px 0; font-size: 13px; }
+.light-sliders input { flex: 1; }
+.light-preview {
+  display: block;
+  height: 28px;
+  margin-bottom: 8px;
+  border-radius: 6px;
+  border: 1px solid #8a6a3a;
+}
+.light-scenes .dock-line > button:last-child { flex: 0 0 auto; }
+.light-body > button { margin-top: 10px; }
+
 .plugin-layer {
   position: fixed;
   inset: 0;

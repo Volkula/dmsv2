@@ -146,6 +146,11 @@ function isLamp(device) {
   return hasColor(device);
 }
 
+function lampOn(device) {
+  const cap = (device.capabilities || []).find(function (item) { return item.type === "devices.capabilities.on_off"; });
+  return !!(cap && cap.state && cap.state.value === true);
+}
+
 function sceneList(device) {
   const color = (device.capabilities || []).find(function (item) { return item.type === "devices.capabilities.color_setting"; });
   const scenes = color && color.parameters && color.parameters.color_scene && color.parameters.color_scene.scenes;
@@ -158,6 +163,7 @@ async function listLights(token) {
     return {
       id: device.id,
       name: device.name || "Лампа",
+      on: lampOn(device),
       scenes: sceneList(device).map(function (scene) { return { id: String(scene.id || ""), name: String(scene.name || "") }; })
     };
   });
@@ -216,6 +222,21 @@ async function paint(token, ids, hsv, effect) {
   }
 }
 
+async function setPower(token, ids, on) {
+  const devices = ids.map(function (id) {
+    return {
+      id: id,
+      actions: [{ type: "devices.capabilities.on_off", state: { instance: "on", value: on } }]
+    };
+  });
+  if (!devices.length) {
+    const error = new Error("Нет выбранных ламп");
+    error.status = 400;
+    throw error;
+  }
+  return yandex(token, "POST", "/v1.0/devices/actions", { devices: devices });
+}
+
 function sceneIds(effect) {
   return FX_SCENE[effect] || null;
 }
@@ -237,7 +258,7 @@ export async function handlePlugin(ctx) {
       if (token) {
         try { lights = await listLights(token); } catch (err) { state.lightError = err.message || "Нет связи с Яндексом"; }
       }
-      state.lights = lights.map(function (item) { return { id: item.id, name: item.name }; });
+      state.lights = lights.map(function (item) { return { id: item.id, name: item.name, on: item.on === true }; });
       send(res, 200, state);
       return;
     }
@@ -321,6 +342,19 @@ export async function handlePlugin(ctx) {
       bag.light.auto = body.on !== false;
       writeRoom(room);
       send(res, 200, { auto: bag.light.auto });
+      return;
+    }
+    if (req.method === "POST" && tail === "plugins/power") {
+      const token = readToken(db, room);
+      if (!token) {
+        send(res, 409, { error: "Ключ не задан" });
+        return;
+      }
+      const ids = Array.isArray(body.ids) && body.ids.length
+        ? body.ids.map(function (id) { return String(id || "").slice(0, 80); }).filter(Boolean).slice(0, 40)
+        : bag.light.devices.slice();
+      await setPower(token, ids, body.on !== false);
+      send(res, 200, { ok: true, on: body.on !== false });
       return;
     }
     if (req.method === "POST" && tail === "plugins/apply") {
