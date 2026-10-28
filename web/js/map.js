@@ -1306,11 +1306,27 @@
       function setShot(field, url) {
         const prev = field === "portrait" ? ((loc && loc.portrait) || "") : (sheet[field] || "");
         const next = url || "";
+        const keepDay = sheet.day || "";
+        const keepNight = sheet.night || "";
+        const placeBefore = linkedPlace();
+        const keepBackdrop = (placeBefore && placeBefore.backdrop) || "";
+        const keepPortrait = (loc && loc.portrait) || "";
+        const keepPlacePortrait = (placeBefore && placeBefore.portrait) || "";
         if (field === "portrait") {
           if (!loc) return;
           loc.portrait = next;
         } else sheet[field] = next;
         syncPlaceShot(field, next, prev);
+        if (field === "portrait") {
+          sheet.day = keepDay;
+          sheet.night = keepNight;
+          const place = linkedPlace();
+          if (place) place.backdrop = keepBackdrop;
+        } else if (loc) {
+          loc.portrait = keepPortrait;
+          const place = linkedPlace();
+          if (place) place.portrait = keepPlacePortrait;
+        }
         showShot(pop.querySelector(field === "day" ? "#setup-day-img" : field === "night" ? "#setup-night-img" : "#setup-face"), next);
         paintBoard();
         dirty();
@@ -1520,7 +1536,7 @@
         id: id,
         name: loc.name || "Локация",
         people: [],
-        portrait: loc.portrait || loc.day || "",
+        portrait: loc.portrait || "",
         backdrop: loc.night || loc.day || ""
       });
       loc.placeId = id;

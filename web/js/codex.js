@@ -599,35 +599,26 @@ window.ShirmoCodex = (function () {
             place.name = loc.name;
             changed = true;
           }
-          const portrait = picture(loc.portrait || loc.day);
+          const portrait = picture(loc.portrait);
           const backdrop = picture(loc.night || loc.day);
-          if (portrait && !place.portrait) {
+          if (portrait && !picture(place.portrait)) {
             place.portrait = portrait;
             if (loc.portraitX != null) place.portraitX = loc.portraitX;
             if (loc.portraitY != null) place.portraitY = loc.portraitY;
             if (loc.portraitZoom != null) place.portraitZoom = loc.portraitZoom;
             changed = true;
           }
-          if (backdrop && !place.backdrop) {
+          if (backdrop && !picture(place.backdrop)) {
             place.backdrop = backdrop;
             changed = true;
           }
-          if (picture(place.portrait) && !picture(loc.portrait)) {
-            loc.portrait = place.portrait;
+          const face = picture(place.portrait);
+          if (face && !portrait && face !== picture(loc.day) && face !== picture(loc.night)) {
+            loc.portrait = face;
             if (place.portraitX != null) loc.portraitX = place.portraitX;
             if (place.portraitY != null) loc.portraitY = place.portraitY;
             if (place.portraitZoom != null) loc.portraitZoom = place.portraitZoom;
             changed = true;
-          }
-          if (picture(place.backdrop)) {
-            if (!picture(loc.day)) {
-              loc.day = place.backdrop;
-              changed = true;
-            }
-            if (!picture(loc.night)) {
-              loc.night = place.backdrop;
-              changed = true;
-            }
           }
         });
         (view.markers || []).forEach(function (marker) {
@@ -1260,10 +1251,6 @@ window.ShirmoCodex = (function () {
           if (place.portraitZoom != null) loc.portraitZoom = place.portraitZoom;
         } else {
           loc.portrait = "";
-        }
-        if (place.backdrop) {
-          if (!loc.day) loc.day = place.backdrop;
-          if (!loc.night) loc.night = place.backdrop;
         }
       });
     }
