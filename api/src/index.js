@@ -194,14 +194,22 @@ function isMaster(req, room) {
 
 function keepPluginSwitch(room) {
   const fresh = rowToRoom(selectRoom.get(room.id));
-  const prev = fresh && fresh.campaign && fresh.campaign.plugins && fresh.campaign.plugins.installed;
-  const next = room.campaign && room.campaign.plugins && room.campaign.plugins.installed;
-  if (!Array.isArray(next) || !Array.isArray(prev)) return;
-  next.forEach(function (row) {
-    if (!row || !row.id) return;
-    const was = prev.find(function (item) { return item && item.id === row.id; });
-    row.on = was ? was.on === true : false;
-  });
+  const prevPlugins = fresh && fresh.campaign && fresh.campaign.plugins;
+  const nextPlugins = room.campaign && room.campaign.plugins;
+  if (!nextPlugins || typeof nextPlugins !== "object" || Array.isArray(nextPlugins)) return;
+  const prev = prevPlugins && prevPlugins.installed;
+  const next = nextPlugins.installed;
+  if (Array.isArray(next) && Array.isArray(prev)) {
+    next.forEach(function (row) {
+      if (!row || !row.id) return;
+      const was = prev.find(function (item) { return item && item.id === row.id; });
+      row.on = was ? was.on === true : false;
+    });
+  }
+  const prevLight = prevPlugins && prevPlugins.light && typeof prevPlugins.light === "object" && !Array.isArray(prevPlugins.light) ? prevPlugins.light : null;
+  if (!nextPlugins.light || typeof nextPlugins.light !== "object" || Array.isArray(nextPlugins.light)) nextPlugins.light = {};
+  if (prevLight && Array.isArray(prevLight.devices)) nextPlugins.light.devices = prevLight.devices.slice();
+  if (prevLight && typeof prevLight.auto === "boolean") nextPlugins.light.auto = prevLight.auto;
 }
 
 function writeRoom(room) {

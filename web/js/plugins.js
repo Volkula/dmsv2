@@ -19,9 +19,23 @@
   }
 
   function env(state) {
+    const bag = state || latest || {};
     return {
-      post: post,
-      state: state || latest || {},
+      post: function (path, body) {
+        if (path === "/devices" && body && Array.isArray(body.ids)) {
+          const ids = body.ids.map(function (id) { return String(id || "").slice(0, 80); }).filter(Boolean);
+          bag.devices = ids.slice();
+          const light = lightBag();
+          if (light) light.devices = ids.slice();
+        }
+        if (path === "/auto" && body && typeof body.on === "boolean") {
+          bag.auto = body.on;
+          const light = lightBag();
+          if (light) light.auto = body.on;
+        }
+        return post(path, body);
+      },
+      state: bag,
       campaign: function () { return opt && opt.campaign ? opt.campaign() : {}; },
       save: function () { try { if (opt && opt.save) opt.save(); } catch (err) {} },
       fightOn: function () { try { return !!(opt && opt.fightOn && opt.fightOn()); } catch (err) { return false; } },
@@ -68,6 +82,14 @@
     return job;
   }
 
+  function lightBag() {
+    const campaign = opt && opt.campaign && opt.campaign();
+    if (!campaign) return null;
+    if (!campaign.plugins || typeof campaign.plugins !== "object" || Array.isArray(campaign.plugins)) campaign.plugins = {};
+    if (!campaign.plugins.light || typeof campaign.plugins.light !== "object" || Array.isArray(campaign.plugins.light)) campaign.plugins.light = {};
+    return campaign.plugins.light;
+  }
+
   function remember(state) {
     latest = state;
     try {
@@ -79,6 +101,9 @@
         const old = prev.find(function (item) { return item && item.id === row.id; }) || {};
         return { id: row.id, name: row.name || old.name || row.id, on: row.on === true };
       });
+      const light = lightBag();
+      if (light && Array.isArray(state.devices)) light.devices = state.devices.slice();
+      if (light && typeof state.auto === "boolean") light.auto = state.auto;
     } catch (err) {}
   }
 

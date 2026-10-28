@@ -225,9 +225,13 @@
       const input = document.createElement("input");
       input.type = "checkbox";
       input.checked = !!picked[lamp.id];
+      input.setAttribute("data-device", lamp.id);
       input.addEventListener("change", function () {
         const ids = [];
-        box.querySelectorAll("input").forEach(function (node, index) { if (node.checked) ids.push(lights[index].id); });
+        box.querySelectorAll("input[data-device]").forEach(function (node) {
+          if (node.checked) ids.push(node.getAttribute("data-device"));
+        });
+        if (env.state) env.state.devices = ids.slice();
         post(env, "/devices", { ids: ids }).catch(function (error) { env.note(error.message); });
       });
       label.append(input, document.createTextNode(lamp.name || "Лампа"));
@@ -630,11 +634,13 @@
       const input = document.createElement("input");
       input.type = "checkbox";
       input.checked = !!picked[lamp.id];
+      input.setAttribute("data-device", lamp.id);
       input.addEventListener("change", function () {
         const ids = [];
-        body.querySelectorAll(".light-device input").forEach(function (node, index) {
-          if (node.checked) ids.push(lights[index].id);
+        body.querySelectorAll(".light-device input[data-device]").forEach(function (node) {
+          if (node.checked) ids.push(node.getAttribute("data-device"));
         });
+        if (env.state) env.state.devices = ids.slice();
         post(env, "/devices", { ids: ids }).catch(function (error) { env.note(error.message); });
       });
       label.append(input, document.createTextNode(lamp.name || "Лампа"));
