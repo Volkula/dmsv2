@@ -148,6 +148,31 @@ function standOf(record, shop) {
   };
 }
 
+function seatOnStage(fig) {
+  let h = Number(fig && fig.h);
+  if (!Number.isFinite(h)) h = 86;
+  h = Math.min(98, Math.max(8, h));
+  let y = Number(fig && fig.y);
+  let x = Number(fig && fig.x);
+  if (!Number.isFinite(y)) y = 2;
+  if (!Number.isFinite(x)) x = 3;
+  if (y < 0) y = 0;
+  if (y + h > 98) y = Math.max(0, 98 - h);
+  const w = h * 0.34;
+  if (x < 0) x = 0;
+  if (x + w > 98) x = Math.max(0, 98 - w);
+  return {
+    x: Math.round(x * 10) / 10,
+    y: Math.round(y * 10) / 10,
+    h: Math.round(h * 10) / 10
+  };
+}
+
+function mapStandOf(record) {
+  if (record && record.mapStand && typeof record.mapStand === "object") return seatOnStage(record.mapStand);
+  return seatOnStage(standOf(record));
+}
+
 function replicas(record) {
   const raw = record && Array.isArray(record.lines) ? record.lines : [];
   return raw.map(function (row) {
@@ -288,7 +313,8 @@ function projectMap(page, campaign) {
       pinSize: Math.min(160, Math.max(12, Number(item.pinSize) || (portrait ? 56 : (item.kind === "mark" && (item.icon || item.emoji) ? 36 : 14)))),
       portrait: portrait,
       look: kind === "npc" && portrait && !(npc && npc.look === "token") && item.look !== "token" ? "full" : "",
-      stand: kind === "npc" && portrait ? standOf(npc || item) : null,
+      stand: kind === "npc" && portrait ? mapStandOf(npc || item) : null,
+      showName: kind === "npc" && item.showName === true,
       icon: kind === "mark" ? picture(item.icon) : "",
       emoji: kind === "mark" ? clip(item.emoji, 16) : "",
       portraitX: portrait ? face.x : 50,

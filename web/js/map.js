@@ -317,8 +317,11 @@
       : "";
     const hp = master && kind === "foe" && item.hpMax ? '<em class="pin-hp">' + esc(String(item.hp == null ? item.hpMax : item.hp)) + "/" + esc(String(item.hpMax)) + "</em>" : "";
     const vitals = master && kind === "hero" ? heroVitalsHtml(item) : "";
-    const caption = '<b style="' + captionCss(item, 14) + '">' + esc(item.name || (kind === "loc" ? "Локация" : "Без имени")) + "</b>" + hp;
-    const named = kind === "loc" ? ' aria-label="' + esc(oneLine(item.name) || "Локация") + '"' : "";
+    const showCap = kind !== "npc" || item.showName === true;
+    const caption = (showCap ? '<b style="' + captionCss(item, 14) + '">' + esc(item.name || (kind === "loc" ? "Локация" : "Без имени")) + "</b>" : "") + hp;
+    const named = kind === "loc" || (kind === "npc" && !showCap)
+      ? ' aria-label="' + esc(oneLine(item.name) || (kind === "loc" ? "Локация" : "НПС")) + '"'
+      : "";
     const cap = item.capTop ? " cap-top" : "";
     const fight = item.toBattle ? ' data-battle="1" title="Открыть экран боя"' : "";
     return '<button type="button" class="map-pin ' + kind + cap + (portrait ? " has-face" : "") + (full ? " is-full" : "") + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="' + kind + '"' + named + fight + ' style="left:' + (item.x * 100) + "%;top:" + (item.y * 100) + "%;--pin:" + size + 'px">' + marks + vitals + dot + caption + tip + "</button>";
@@ -433,8 +436,39 @@
     record[shop ? "stall" : "stand"] = fitFigure(fig);
   }
 
+  function seatFigure(fig) {
+    const h = clampNum(fig && fig.h, 8, 98, 86);
+    let y = clampNum(fig && fig.y, -80, 140, 2);
+    let x = clampNum(fig && fig.x, -80, 140, 3);
+    if (y < 0) y = 0;
+    if (y + h > 98) y = Math.max(0, 98 - h);
+    const w = h * 0.34;
+    if (x < 0) x = 0;
+    if (x + w > 98) x = Math.max(0, 98 - w);
+    return {
+      x: Math.round(x * 10) / 10,
+      y: Math.round(y * 10) / 10,
+      h: Math.round(h * 10) / 10
+    };
+  }
+
+  function mapFigureOf(record) {
+    if (record && record.mapStand && typeof record.mapStand === "object") return seatFigure(record.mapStand);
+    return seatFigure(figureOf(record, false));
+  }
+
+  function putMapFigure(record, fig) {
+    if (!record) return;
+    record.mapStand = seatFigure(fig);
+  }
+
   function figureCss(fig) {
     return "left:" + fig.x + "%;bottom:" + fig.y + "%;height:" + fig.h + "%";
+  }
+
+  function mapFigureCss(fig) {
+    const left = Math.max(0, Number(fig.x) || 0);
+    return figureCss(fig) + ";max-width:" + Math.max(18, Math.round((100 - left) * 10) / 10) + "%";
   }
 
   function talkHtml(talk, master) {
@@ -533,12 +567,13 @@
     const markers = (source.markers || []).map(function (item) {
       const kind = item.kind === "npc" ? "npc" : (item.kind === "foe" ? "foe" : (item.kind === "hero" ? "hero" : (item.kind === "image" ? "image" : "mark")));
       if (kind === "npc" && item.portrait && item.look !== "token") {
-        const fig = fitFigure(item.stand);
+        const fig = seatFigure(item.stand);
         const marks = master
           ? '<span class="pin-flags">' + flagMark("screen", shownScreen(item)) + flagMark("map", shownMap(item)) + "</span>"
           : "";
-        return '<button type="button" class="map-figure' + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="npc" data-figure="1" style="' + figureCss(fig) + '" title="Открыть диалог">' +
-          marks + '<img alt="" draggable="false" src="' + esc(item.portrait) + '"><b>' + esc(item.name || "НПС") + "</b></button>";
+        const caption = item.showName === true ? "<b>" + esc(item.name || "НПС") + "</b>" : "";
+        return '<button type="button" class="map-figure' + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="npc" data-figure="1" style="' + mapFigureCss(fig) + '" aria-label="' + esc(item.name || "НПС") + '"' + (master ? ' title="Открыть диалог"' : "") + ">" +
+          marks + '<img alt="" draggable="false" src="' + esc(item.portrait) + '">' + caption + "</button>";
       }
       return pinHtml(item, kind, master);
     }).join("");
@@ -2202,7 +2237,7 @@
         url: mood.portrait,
         emoji: mood.emoji || "",
         look: npc.look === "token" ? "token" : "full",
-        stand: figureOf(npc, false)
+        stand: mapFigureOf(npc)
       }, focusNums(npc));
     }
     function linkedList() {
@@ -2519,9 +2554,9 @@
       const npcRec = kind === "npc" ? (linkedNpc(item) || item) : null;
       const figureMode = !!(npcRec && (npcRec.portrait || item.portrait) && npcRec.look !== "token" && item.look !== "token");
       const pinDefault = figureMode
-        ? figureOf(npcRec, false).h
+        ? mapFigureOf(npcRec).h
         : (Number(item.pinSize) || (kind === "image" ? 120 : (faceOf(item) ? 56 : 14)));
-      const pinMax = figureMode ? 220 : (kind === "image" ? 400 : 140);
+      const pinMax = figureMode ? 98 : (kind === "image" ? 400 : 140);
       const pinMin = figureMode ? 8 : (kind === "image" ? 32 : 12);
       const pin = kind === "label" ? "" : '<label title="' + (figureMode ? "Размер фигуры на карте, без диалога" : (kind === "image" ? "Размер картинки на карте" : "Размер точки на карте")) + '">Размер<input id="pin-size" type="range" min="' + pinMin + '" max="' + pinMax + '" value="' + pinDefault + '"></label>';
       const note = kind === "mark" || kind === "npc" || kind === "loc" || kind === "image" || kind === "hero"
@@ -2609,7 +2644,11 @@
       const toBattle = kind === "mark" || kind === "foe"
         ? '<label class="check" title="Левый клик по этой точке открывает экран боя"><input id="pin-to-battle" type="checkbox"' + (item.toBattle ? " checked" : "") + "> Левый клик открывает бой</label>"
         : "";
+      const nameOn = kind === "npc"
+        ? '<label class="check" title="По умолчанию имя на карте скрыто"><input id="pin-name-on" type="checkbox"' + (item.showName === true ? " checked" : "") + "> Имя на карте</label>"
+        : "";
       return '<div class="pin-style">' +
+        nameOn +
         toBattle +
         group("Портрет", "Кадр, крупность и сдвиг портрета", foeFace || frame || locShot, kind === "foe") +
         group("Картинка", "Файл и библиотека", imageShot, true) +
@@ -2712,8 +2751,8 @@
           const who = selected.kind === "npc" ? (linkedNpc(row) || row) : null;
           const figure = who && who.look !== "token" && row.look !== "token" && (who.portrait || row.portrait);
           if (figure) {
-            const fig = figureOf(who, false);
-            putFigure(who, false, { x: fig.x, y: fig.y, h: Number(pinSize.value) || fig.h });
+            const fig = mapFigureOf(who);
+            putMapFigure(who, { x: fig.x, y: fig.y, h: Number(pinSize.value) || fig.h });
           } else row.pinSize = Number(pinSize.value) || (selected.kind === "image" ? 120 : 14);
         }
         if (textSize) row.size = Number(textSize.value) || 14;
@@ -2734,6 +2773,8 @@
         }
         const capTop = menu.querySelector("#pin-cap-top");
         if (capTop) row.capTop = capTop.checked;
+        const nameOn = menu.querySelector("#pin-name-on");
+        if (nameOn) row.showName = nameOn.checked;
         const toBattle = menu.querySelector("#pin-to-battle");
         if (toBattle) row.toBattle = toBattle.checked;
         paintBoard();
@@ -2756,6 +2797,8 @@
       if (pinCapTop) pinCapTop.addEventListener("change", applyStyle);
       const pinToBattle = menu.querySelector("#pin-to-battle");
       if (pinToBattle) pinToBattle.addEventListener("change", applyStyle);
+      const pinNameOn = menu.querySelector("#pin-name-on");
+      if (pinNameOn) pinNameOn.addEventListener("change", applyStyle);
       const pinName = menu.querySelector("#pin-name");
       if (pinName) pinName.addEventListener("input", function () {
         const row = findItem();
@@ -3590,8 +3633,8 @@
         if (!item) return;
         if (drag === "figure") {
           const who = linkedNpc(item) || item;
-          const fig = figureOf(who, false);
-          putFigure(who, false, { x: at.x, y: Math.max(0, Math.min(80, 100 - at.y)), h: fig.h });
+          const fig = mapFigureOf(who);
+          putMapFigure(who, { x: at.x * 100, y: (1 - at.y) * 100, h: fig.h });
         } else {
           item.x = at.x;
           item.y = at.y;

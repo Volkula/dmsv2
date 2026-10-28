@@ -822,9 +822,12 @@
     const until = Number(event.until) || 0;
     const remain = Math.max(0, Number(event.remain) || 0);
     const span = Math.max(1, Number(event.span) || remain || 1);
-    const running = event.running === true && until > 0;
+    const running = event.running === true && until > Date.now();
     const linked = event.linked !== false;
     const effect = event.effect || "";
+    const liveLeft = running ? Math.max(0, until - Date.now()) : remain;
+    if (event.fight) layer.dataset.fight = "1";
+    else delete layer.dataset.fight;
     if (window.ShirmoFx) {
       if (effect && (linked || event.fxRun)) {
         window.ShirmoFx.sync({
@@ -836,9 +839,9 @@
           storm: !!event.storm,
           linked: linked,
           until: running ? until : 0,
-          left: running ? Math.max(0, until - Date.now()) : remain,
+          left: liveLeft,
           reset: !!event.fxReset,
-          progress: linked ? 1 - remain / span : undefined
+          progress: linked ? 1 - liveLeft / span : undefined
         });
       } else window.ShirmoFx.stop();
     }
@@ -920,6 +923,11 @@
     let flashTimer = 0;
     function paint(frame, event) {
       if (event && event.type === "timer") {
+        const battleOn = frame && frame.page && frame.page.kind === "battle";
+        if (event.fight && !battleOn) {
+          showPlayerTimer({ on: false });
+          return;
+        }
         showPlayerTimer(event);
         return;
       }
@@ -1031,6 +1039,9 @@
       const data = JSON.parse(message.data);
       if (data.type === "frame") {
         frame = data.frame;
+        const battleOn = frame && frame.page && frame.page.kind === "battle";
+        const layer = document.getElementById("play-timer");
+        if (!battleOn && layer && layer.dataset.fight === "1") showPlayerTimer({ on: false });
         paint(frame, null);
       }
       if (data.type === "event" && frame) paint(frame, data.event);
@@ -1589,6 +1600,7 @@
     let beat = 0;
     let audio = null;
     let playersOn = false;
+    let fightOn = false;
     let size = 40;
     let shape = "square";
     let pushTimer = 0;
@@ -1653,7 +1665,8 @@
         digits: digitsInput.checked,
         endText: endText.value || "",
         endImage: endImage.value || "",
-        back: backImage.value || ""
+        back: backImage.value || "",
+        fight: fightOn
       };
     }
     function pushPlayers() {
@@ -1866,6 +1879,7 @@
     }
     playersBtn.addEventListener("click", function () {
       playersOn = !playersOn;
+      if (!playersOn) fightOn = false;
       markPlayers();
       if (playersOn) sendPlayers(snapshot());
       else sendPlayers({ type: "timer", on: false });
@@ -1957,6 +1971,17 @@
         paint();
         pushPlayers();
       },
+      stopFx: function () {
+        if (!fightOn) return;
+        fightOn = false;
+        clearTimeout(pushTimer);
+        if (mode === "run") mode = "pause";
+        paint();
+        if (!playersOn) return;
+        playersOn = false;
+        markPlayers();
+        sendPlayers({ type: "timer", on: false });
+      },
       drive: function (opts) {
         opts = opts || {};
         const kinds = { "": 1, sand: 1, magic: 1, smoke: 1, blizzard: 1, fire: 1, flood: 1 };
@@ -1979,13 +2004,29 @@
           remain = left;
           mode = remain ? "pause" : "idle";
         }
-        if (opts.showPlayers && !playersOn) {
-          playersOn = true;
-          markPlayers();
+        if (opts.showPlayers === false) {
+          const hide = fightOn;
+          fightOn = false;
+          paint();
+          wake();
+          if (hide && playersOn) {
+            playersOn = false;
+            markPlayers();
+            sendPlayers({ type: "timer", on: false });
+          }
+          return;
+        }
+        if (opts.showPlayers) {
+          fightOn = true;
+          if (!playersOn) {
+            playersOn = true;
+            markPlayers();
+          }
         }
         paint();
-        pushPlayers();
         wake();
+        if (opts.resetFx && playersOn) sendPlayers(snapshot(true));
+        else pushPlayers();
       }
     };
     if (opts.pin) setPinned(true);
@@ -2520,7 +2561,10 @@
       const battleHost = app.querySelector("#work-battle");
       const libraryHost = app.querySelector("#work-library");
       if (kind !== "codex" && codexHost._codexFlush) codexHost._codexFlush();
-      if (kind !== "battle" && state.campaign.battle) state.campaign.battle.screen = false;
+      if (kind !== "battle" && state.campaign.battle) {
+        state.campaign.battle.screen = false;
+        if (window.ShirmoClock && window.ShirmoClock.stopFx) window.ShirmoClock.stopFx();
+      }
       if (state.campaign.dungeon) delete state.campaign.dungeon;
       app.querySelector("#work-scene").hidden = kind !== "scene";
       mapHost.hidden = kind !== "map";
@@ -2691,7 +2735,10 @@
     });
     app.querySelector("#show").addEventListener("click", async function () {
       clearTimeout(timer);
-      if (app.querySelector("#work-battle").hidden && state.campaign.battle) state.campaign.battle.screen = false;
+      if (app.querySelector("#work-battle").hidden && state.campaign.battle) {
+        state.campaign.battle.screen = false;
+        if (window.ShirmoClock && window.ShirmoClock.stopFx) window.ShirmoClock.stopFx();
+      }
       if (state.campaign.dungeon) delete state.campaign.dungeon;
       state.campaign.shownPageId = state.campaign.activePageId;
       await save();

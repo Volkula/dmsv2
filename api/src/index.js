@@ -153,6 +153,33 @@ function roomById(id) {
   return rowToRoom(selectRoom.get(id));
 }
 
+const liveState = new Map();
+
+function liveBag(id) {
+  let bag = liveState.get(id);
+  if (!bag) {
+    bag = { timer: null };
+    liveState.set(id, bag);
+  }
+  return bag;
+}
+
+function timerReplay(saved) {
+  if (!saved || saved.on !== true) return null;
+  const event = Object.assign({}, saved);
+  if (event.running && event.until) {
+    const left = event.until - Date.now();
+    if (left > 0) event.remain = Math.round(left);
+    else {
+      event.running = false;
+      event.remain = 0;
+      event.until = 0;
+      event.done = true;
+    }
+  }
+  return event;
+}
+
 function isMaster(req, room) {
   const secret = bearer(req);
   const ok = secretMatches(secret, room.masterSalt, room.masterHash);
@@ -598,8 +625,9 @@ const server = http.createServer(async function (req, res) {
         "x-accel-buffering": "no"
       });
       res.write(`data: ${JSON.stringify({ type: "frame", frame: room.frame })}\n\n`);
-      if (room.timer && room.timer.on) {
-        res.write(`data: ${JSON.stringify({ type: "event", event: room.timer })}\n\n`);
+      const replayTimer = timerReplay(liveBag(id).timer);
+      if (replayTimer) {
+        res.write(`data: ${JSON.stringify({ type: "event", event: replayTimer })}\n\n`);
       }
       if (room.clock && room.clock.on) {
         res.write(`data: ${JSON.stringify({ type: "event", event: room.clock })}\n\n`);
@@ -776,7 +804,7 @@ const server = http.createServer(async function (req, res) {
         const shapes = { square: 1, round: 1, narrow: 1, segment: 1 };
         if (body.on !== true) {
           event.on = false;
-          room.timer = null;
+          liveBag(room.id).timer = null;
         } else {
           const size = Math.min(120, Math.max(28, Math.round(Number(body.size) || 40)));
           const shape = shapes[body.shape] ? body.shape : "square";
@@ -801,11 +829,12 @@ const server = http.createServer(async function (req, res) {
           event.storm = body.storm === true;
           event.digits = body.digits === true;
           event.fxReset = body.fxReset === true;
+          event.fight = body.fight === true;
           event.span = Math.min(24 * 60 * 60 * 1000, Math.max(0, Math.round(Number(body.span) || remain)));
           event.endText = String(body.endText || "").slice(0, 400);
           event.endImage = safePath(body.endImage);
           event.back = safePath(body.back);
-          room.timer = {
+          liveBag(room.id).timer = {
             type: "timer",
             on: true,
             running: event.running,
@@ -826,7 +855,8 @@ const server = http.createServer(async function (req, res) {
             span: event.span,
             endText: event.endText,
             endImage: event.endImage,
-            back: event.back
+            back: event.back,
+            fight: event.fight
           };
         }
       }

@@ -456,19 +456,44 @@
       row.turnUntil = Date.now() + left;
     }
 
-    function follow(row) {
+    function playersSeeFight() {
+      return battle.screen !== false;
+    }
+
+    function follow(row, reset) {
       if (!row) return;
       timerOwner = row.id;
       const state = readClock(row);
       if (!window.ShirmoFight) return;
+      const show = !!state.running && playersSeeFight();
       window.ShirmoFight({
         seconds: Math.round(Number(row.turnSec) || 0),
         left: state.left,
         running: !!state.running,
         paused: !state.running,
         kind: row.turnFx || "",
-        showPlayers: !!state.running
+        showPlayers: show,
+        resetFx: !!reset && show
       });
+    }
+
+    function clearFightFx() {
+      if (window.ShirmoClock && window.ShirmoClock.stopFx) window.ShirmoClock.stopFx();
+    }
+
+    function resumeShown() {
+      if (!playersSeeFight()) {
+        clearFightFx();
+        return;
+      }
+      const actor = active();
+      if (actor && actor.turnRun) { follow(actor, true); return; }
+      const group = actor && groupOfActor(actor.id);
+      if (group && group.turnRun) { follow(group, true); return; }
+      const running = (battle.actors || []).find(function (row) { return row && row.turnRun; });
+      if (running) { follow(running, true); return; }
+      const squad = (battle.board || []).find(function (row) { return row && row.turnRun; });
+      if (squad) follow(squad, true);
     }
 
     function pauseClock(row) {
@@ -489,13 +514,20 @@
     }
 
     function holdTurn(prev, now) {
-      if (battle.turnPause === false || !prev) return;
-      const stopped = {};
-      if (pauseClock(prev)) stopped[prev.id] = true;
-      const left = groupOfActor(prev.id);
-      const right = now && groupOfActor(now.id);
-      if (left && (!right || left.id !== right.id) && pauseClock(left)) stopped[left.id] = true;
-      if (timerOwner && stopped[timerOwner] && window.ShirmoClock && window.ShirmoClock.pause) window.ShirmoClock.pause();
+      if (!prev) return;
+      if (battle.turnPause !== false) {
+        pauseClock(prev);
+        const leftSquad = groupOfActor(prev.id);
+        const rightSquad = now && groupOfActor(now.id);
+        if (leftSquad && (!rightSquad || leftSquad.id !== rightSquad.id)) pauseClock(leftSquad);
+      }
+      const rightSquad = now && groupOfActor(now.id);
+      const leftSquad = groupOfActor(prev.id);
+      const squadSame = !!(leftSquad && rightSquad && leftSquad.id === rightSquad.id);
+      if (now && now.turnRun && playersSeeFight()) follow(now, true);
+      else if (squadSame && rightSquad && rightSquad.turnRun && timerOwner === rightSquad.id && playersSeeFight()) { /* таймер отряда остаётся */ }
+      else clearFightFx();
+      shownActor = now && now.id || "";
     }
 
     function paintClock(node, button, row) {
@@ -1942,6 +1974,8 @@
       if (shown) shown.addEventListener("change", function () {
         battle.screen = shown.checked;
         save();
+        if (shown.checked) resumeShown();
+        else clearFightFx();
       });
       const logOn = host.querySelector("#battle-log-on");
       if (logOn) logOn.addEventListener("change", function () {
@@ -2132,15 +2166,8 @@
           const kinds = { "": 1, sand: 1, magic: 1, smoke: 1, blizzard: 1, fire: 1, flood: 1 };
           row.turnFx = kinds[input.value] === 1 ? input.value : "";
           save();
-          if (timerOwner !== row.id || !row.turnRun || !window.ShirmoFight) return;
-          const state = readClock(row);
-          window.ShirmoFight({
-            seconds: Math.round(Number(row.turnSec) || 0),
-            left: state.left,
-            running: true,
-            kind: row.turnFx,
-            showPlayers: true
-          });
+          if (timerOwner !== row.id || !row.turnRun) return;
+          follow(row, true);
         });
       });
       host.querySelectorAll("[data-squad]").forEach(function (input) {
@@ -2214,7 +2241,7 @@
           const fx = button.parentElement && button.parentElement.querySelector("[data-turn-fx], [data-squad-fx]");
           if (fx) row.turnFx = fx.value || "";
           toggleClock(row);
-          if (row.turnRun) follow(row);
+          if (row.turnRun) follow(row, true);
           else if (timerOwner === row.id && window.ShirmoClock && window.ShirmoClock.pause) window.ShirmoClock.pause();
           save();
           paintClocks();
@@ -2701,8 +2728,20 @@
     window.addEventListener("pointermove", onPointerMove);
     window.addEventListener("pointerup", onPointerUp);
     document.addEventListener("pointerdown", onDocDown);
+    let shownActor = "";
+    let shownScreen = playersSeeFight();
     window.ShirmoBattle.sync = function () {
       if (!alive || !host.isConnected) return;
+      const now = active();
+      const id = now ? now.id : "";
+      const see = playersSeeFight();
+      if (shownActor && id && shownActor !== id) {
+        const prev = (battle.actors || []).find(function (row) { return row.id === shownActor; });
+        if (prev) holdTurn(prev, now);
+      } else if (see && !shownScreen) resumeShown();
+      else if (!see && shownScreen) clearFightFx();
+      shownActor = id;
+      shownScreen = see;
       paint();
     };
     host._battleFocus = function (markerId) {
@@ -2750,6 +2789,9 @@
     if (pullBattleFromCodex(false)) save();
     loadMonsters().then(function () { if (alive) paint(); });
     paint();
+    resumeShown();
+    shownActor = (active() && active().id) || "";
+    shownScreen = playersSeeFight();
   }
 
   function isBoss(actor) {
