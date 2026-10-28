@@ -337,7 +337,8 @@
       : "";
     const cap = item.capTop ? " cap-top" : "";
     const fight = item.toBattle ? ' data-battle="1" title="Открыть экран боя"' : "";
-    return '<button type="button" class="map-pin ' + kind + cap + (portrait ? " has-face" : "") + (full ? " is-full" : "") + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="' + kind + '"' + named + fight + ' style="left:' + (item.x * 100) + "%;top:" + (item.y * 100) + "%;--pin:" + size + 'px">' + marks + vitals + dot + caption + tip + "</button>";
+    const door = item.door && !item.toBattle ? ' title="Переход в уже размещённое место"' : "";
+    return '<button type="button" class="map-pin ' + kind + cap + (portrait ? " has-face" : "") + (full ? " is-full" : "") + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="' + kind + '"' + named + fight + door + ' style="left:' + (item.x * 100) + "%;top:" + (item.y * 100) + "%;--pin:" + size + 'px">' + marks + vitals + dot + caption + tip + "</button>";
   }
 
   function heroVitalsHtml(item) {
@@ -411,7 +412,7 @@
     crumbs.forEach(function (loc) {
       tabs.push({ id: loc.id, name: oneLine(loc.name) || "Локация", on: loc.id === here, hidden: !!loc.hidden });
     });
-    locs.filter(function (loc) { return (loc.parentId || "") === here && !loc.trashed; }).forEach(function (loc) {
+    locs.filter(function (loc) { return (loc.parentId || "") === here && !loc.trashed && !loc.linkId; }).forEach(function (loc) {
       tabs.push({ id: loc.id, name: oneLine(loc.name) || "Локация", on: false, hidden: !!loc.hidden });
     });
     return tabs;
@@ -763,8 +764,8 @@
       if (id) {
         const loc = current.locations.find(function (item) { return item.id === id; });
         if (!loc || loc.trashed) return;
-        const canon = canonLoc(loc);
-        id = canon ? canon.id : id;
+        const target = doorTarget(loc);
+        id = target ? target.id : id;
       }
       current.focusId = id || "";
       current.talkId = "";
@@ -803,6 +804,7 @@
         }
         current.talkId = "";
       }
+      if (foldDoors()) dirty();
       const here = current.focusId || "";
       const shot = levelImage(current, book().places);
       const draft = draw ? [draw] : [];
@@ -817,13 +819,17 @@
         tabs: tabList(current),
         locations: onLevel(current.locations, here, "parentId").filter(function (item) { return !item.trashed; }).map(function (item) {
           const place = item.placeId && (book().places || []).find(function (row) { return row.id === item.placeId; });
-          const portrait = item.portrait || (place && place.portrait) || "";
-          if (!portrait) return item;
+          const target = item.linkId ? findLoc(item.linkId) : null;
+          const named = (target && target.name) || item.name;
+          const portrait = item.portrait || (target && target.portrait) || (place && place.portrait) || "";
+          if (!portrait && named === item.name && !item.linkId) return item;
           return Object.assign({}, item, {
+            name: named,
+            door: !!item.linkId,
             portrait: portrait,
-            portraitX: item.portraitX != null ? item.portraitX : place && place.portraitX,
-            portraitY: item.portraitY != null ? item.portraitY : place && place.portraitY,
-            portraitZoom: item.portraitZoom || (place && place.portraitZoom) || 1
+            portraitX: item.portraitX != null ? item.portraitX : (target && target.portraitX != null ? target.portraitX : place && place.portraitX),
+            portraitY: item.portraitY != null ? item.portraitY : (target && target.portraitY != null ? target.portraitY : place && place.portraitY),
+            portraitZoom: item.portraitZoom || (target && target.portraitZoom) || (place && place.portraitZoom) || 1
           });
         }),
         markers: onLevel(current.markers, here, "locId").map(function (item) {
@@ -958,7 +964,7 @@
       if (window.ShirmoShelf) window.ShirmoShelf.arm(host);
     }
     function treeHtml(parentId, depth) {
-      return view().locations.filter(function (item) { return (item.parentId || "") === parentId && !item.trashed; }).map(function (item) {
+      return view().locations.filter(function (item) { return (item.parentId || "") === parentId && !item.trashed && !item.linkId; }).map(function (item) {
         const on = (view().focusId || "") === item.id ? " is-on" : "";
         const ico = function (act, label, body) {
           return '<button type="button" class="map-ico" data-act="' + act + '" data-id="' + esc(item.id) + '" title="' + label + '" aria-label="' + label + '">' + body + "</button>";
@@ -971,6 +977,7 @@
       }).join("");
     }
     function paintTree() {
+      if (foldDoors()) dirty();
       const htmlTree = treeHtml("", 0);
       host.querySelector("#map-tree").innerHTML = htmlTree || '<p class="roll-empty">Локаций нет</p>';
       paintBin();
@@ -1022,20 +1029,21 @@
       if (selected && ids[selected.id]) selected = null;
     }
     function placeMates(loc) {
-      if (!loc || !loc.placeId) return [];
+      if (!loc || !loc.placeId || loc.linkId) return [];
       return view().locations.filter(function (item) {
-        return item && item.id !== loc.id && !item.trashed && item.placeId === loc.placeId;
+        return item && item.id !== loc.id && !item.trashed && !item.linkId && item.placeId === loc.placeId;
       });
     }
     function canonLoc(loc) {
-      if (!loc || !loc.placeId) return loc;
+      if (!loc || !loc.placeId || loc.linkId) return loc;
       const mates = [loc].concat(placeMates(loc));
       if (mates.length < 2) return loc;
       const current = view();
+      const order = current.locations || [];
       function weight(item) {
         let score = 0;
-        current.locations.forEach(function (row) {
-          if (row && !row.trashed && (row.parentId || "") === item.id) score += 4;
+        order.forEach(function (row) {
+          if (row && !row.trashed && !row.linkId && (row.parentId || "") === item.id) score += 4;
         });
         (current.markers || []).forEach(function (row) {
           if (row && (row.locId || "") === item.id) score += 2;
@@ -1047,15 +1055,59 @@
         return score;
       }
       let best = mates[0];
+      let bestAt = order.indexOf(best);
       let score = weight(best);
       mates.forEach(function (item) {
         const next = weight(item);
-        if (next > score) {
+        const at = order.indexOf(item);
+        if (next > score || (next === score && at >= 0 && (bestAt < 0 || at < bestAt))) {
           best = item;
           score = next;
+          bestAt = at;
         }
       });
       return best;
+    }
+    function doorTarget(loc, seen) {
+      if (!loc) return null;
+      seen = seen || {};
+      if (seen[loc.id]) return null;
+      seen[loc.id] = true;
+      let next = null;
+      if (loc.linkId) next = findLoc(loc.linkId);
+      if ((!next || next.trashed) && loc.placeId && !loc.linkId) {
+        const canon = canonLoc(loc);
+        if (canon && canon.id !== loc.id) next = canon;
+      }
+      if (!next || next.trashed || next.id === loc.id) return null;
+      return doorTarget(next, seen) || next;
+    }
+    function foldDoors() {
+      let changed = false;
+      (view().locations || []).forEach(function (loc) {
+        if (!loc || loc.trashed || loc.linkId) return;
+        const target = doorTarget(loc);
+        if (!target) return;
+        retargetInterior(loc.id, target.id);
+        loc.linkId = target.id;
+        changed = true;
+      });
+      const focus = view().focusId || "";
+      const open = focus && findLoc(focus);
+      const target = open && doorTarget(open);
+      if (target && view().focusId !== target.id) {
+        view().focusId = target.id;
+        changed = true;
+      }
+      return changed;
+    }
+    function roomForPlace(placeId, exceptId) {
+      if (!placeId) return null;
+      const locs = (view().locations || []).filter(function (loc) {
+        return loc && loc.id !== exceptId && !loc.trashed && !loc.linkId && loc.placeId === placeId;
+      });
+      if (!locs.length) return null;
+      return canonLoc(locs[0]) || locs[0];
     }
     function retargetInterior(fromId, toId) {
       if (!fromId || !toId || fromId === toId) return;
@@ -1073,11 +1125,12 @@
     function dropLocation(id) {
       const loc = findLoc(id);
       if (!loc || loc.trashed) return;
-      const mates = placeMates(loc);
-      if (mates.length) {
-        retargetInterior(id, mates[0].id);
+      const door = loc.linkId ? findLoc(loc.linkId) : null;
+      if (loc.linkId || doorTarget(loc)) {
+        const target = door && !door.trashed ? door : doorTarget(loc);
+        if (target) retargetInterior(id, target.id);
         view().locations = view().locations.filter(function (item) { return item.id !== id; });
-        if ((view().focusId || "") === id) view().focusId = mates[0].id;
+        if ((view().focusId || "") === id) view().focusId = target ? target.id : (loc.parentId || "");
         if (selected && selected.kind === "loc" && selected.id === id) selected = null;
         closeMenu();
         closeSetup();
@@ -2420,6 +2473,8 @@
         item.name = entry.name || item.name;
         if (selected.kind === "loc") {
           const oldPlaceId = item.placeId || "";
+          const home = roomForPlace(entry.id, item.id);
+          item.name = entry.name || (home && home.name) || item.name;
           item.placeId = entry.id;
           if (entry.portrait) {
             item.portrait = entry.portrait;
@@ -2427,9 +2482,15 @@
             if (entry.portraitY != null) item.portraitY = entry.portraitY;
             if (entry.portraitZoom != null) item.portraitZoom = entry.portraitZoom;
           }
-          if (entry.backdrop) {
-            if (!item.day) item.day = entry.backdrop;
-            if (!item.night) item.night = entry.backdrop;
+          if (home && home.id !== item.id) {
+            retargetInterior(item.id, home.id);
+            item.linkId = home.id;
+          } else {
+            item.linkId = "";
+            if (entry.backdrop) {
+              if (!item.day) item.day = entry.backdrop;
+              if (!item.night) item.night = entry.backdrop;
+            }
           }
           if (oldPlaceId && oldPlaceId !== entry.id) {
             const places = book().places || [];
