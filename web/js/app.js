@@ -2259,17 +2259,18 @@
       '<div class="top-corner">' +
       '<button type="button" id="top-kebab" class="kebab-btn" title="Меню" aria-label="Меню" aria-expanded="false">' + glyph('<circle cx="12" cy="6" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="18" r="1.5" fill="currentColor"/>') + "</button>" +
       '<div class="kebab-menu" id="kebab-menu" hidden>' +
-      '<button type="button" id="roll" title="Бросок с преимуществом или помехой, закреплённые и история">Броски</button>' +
-      '<button type="button" id="clock-open" title="Часы поверх ширмы">Часы</button>' +
-      '<button type="button" id="timer-open" title="Таймер и эффекты поверх ширмы">Таймер</button>' +
-      '<button type="button" id="roll-look" title="Скорость, цвет и текстура кубика">Кубик</button>' +
-      '<button type="button" id="library" title="Открыть библиотеку файлов">Библиотека</button>' +
+      '<button type="button" id="roll" title="Бросок с преимуществом или помехой, закреплённые и история">' + glyph('<rect x="5" y="5" width="14" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="9" cy="9" r="1" fill="currentColor"/><circle cx="15" cy="15" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/>') + "Броски</button>" +
+      '<button type="button" id="clock-open" title="Часы поверх ширмы">' + glyph('<circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 8v4l2.5 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "Часы</button>" +
+      '<button type="button" id="timer-open" title="Таймер и эффекты поверх ширмы">' + glyph('<circle cx="12" cy="13" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 10v3h2M9 5h6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "Таймер</button>" +
+      '<button type="button" id="roll-look" title="Скорость, цвет и текстура кубика">' + glyph('<path d="M12 4l7 4v8l-7 4-7-4V8z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>') + "Кубик</button>" +
       '<div class="kebab-gap"></div>' +
-      '<button type="button" id="backup" title="Скачать кампанию и файлы">Выгрузка</button>' +
-      '<button type="button" id="pass" title="Сменить пароль мастера этой комнаты">Пароль</button>' +
-      '<button type="button" id="copy-master" title="Скопировать ссылку с паролем мастера">Ссылка мастера</button>' +
-      '<button type="button" id="copy" title="Скопировать ссылку для зрителей">Ссылка игроков</button>' +
-      '<a href="' + esc(viewerUrl) + '" target="_blank" rel="noopener" title="Открыть экран игроков в новой вкладке">Открыть экран</a>' +
+      '<button type="button" id="library" title="Открыть библиотеку файлов">' + glyph('<path d="M4 6h16v12H4zM8 6V4h8v2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>') + "Библиотека</button>" +
+      '<div class="kebab-gap"></div>' +
+      '<button type="button" id="backup" title="Скачать кампанию и файлы">' + glyph('<path d="M12 4v10M8 10l4 4 4-4M5 18h14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>') + "Выгрузка</button>" +
+      '<button type="button" id="pass" title="Сменить пароль мастера этой комнаты">' + glyph('<rect x="6" y="11" width="12" height="8" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9 11V8a3 3 0 016 0v3" fill="none" stroke="currentColor" stroke-width="1.6"/>') + "Пароль</button>" +
+      '<button type="button" id="copy-master" title="Скопировать ссылку с паролем мастера">' + glyph('<path d="M8 8h9v11H8z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 15H5V5h9v1" fill="none" stroke="currentColor" stroke-width="1.6"/>') + "Ссылка мастера</button>" +
+      '<button type="button" id="copy" title="Скопировать ссылку для зрителей">' + glyph('<path d="M10 13a4 4 0 010-6l1.5-1.5a4 4 0 016 6L16 13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M14 11a4 4 0 010 6L12.5 18.5a4 4 0 01-6-6L8 11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "Ссылка игроков</button>" +
+      '<a href="' + esc(viewerUrl) + '" target="_blank" rel="noopener" title="Открыть экран игроков в новой вкладке">' + glyph('<path d="M5 6h14v12H5z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9 10h6M12 10v5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "Открыть экран</a>" +
       "</div></div>" +
       '<div class="top-mid">' +
       '<nav class="top-mods" aria-label="Разделы">' +
@@ -2552,7 +2553,21 @@
           save: save,
           upload: function (file) { return uploadFile(id, key, file); },
           showGoods: function (goods) { return publishGoods(id, headers, goods, state.campaign); },
-          roll: publishRoll
+          roll: publishRoll,
+          openTalk: function (npcId) {
+            if (!npcId || !window.ShirmoMap) return;
+            const page = window.ShirmoMap.ensure(state.campaign);
+            let found = null;
+            (page.views || []).forEach(function (one) {
+              (one.markers || []).forEach(function (row) {
+                if (!found && row && row.kind === "npc" && row.npcId === npcId) found = { view: one, id: row.id };
+              });
+            });
+            if (!found) return;
+            page.activeViewId = found.view.id;
+            (page.views || []).forEach(function (one) { one.talkId = one.id === found.view.id ? found.id : ""; });
+            showModule("map");
+          }
         });
         save();
         return;

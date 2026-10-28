@@ -199,6 +199,9 @@ label { display: flex; flex-direction: column; gap: 6px; }
 
 .kebab-menu button,
 .kebab-menu a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   text-align: left;
   padding: 8px 10px;
   color: var(--ink);
@@ -207,6 +210,7 @@ label { display: flex; flex-direction: column; gap: 6px; }
   text-decoration: none;
   border-radius: 8px;
 }
+.kebab-menu svg { width: 16px; height: 16px; flex: none; }
 
 .kebab-menu button:hover,
 .kebab-menu a:hover { color: var(--brass); background: rgba(230, 195, 106, 0.08); }
@@ -1924,6 +1928,35 @@ label.check input { width: auto; }
 
 .talk-figure.is-live:active { cursor: grabbing; }
 
+.map-figure {
+  position: absolute;
+  z-index: 4;
+  width: max-content;
+  max-width: none;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #f3ead8;
+  cursor: pointer;
+  filter: drop-shadow(0 16px 22px rgba(0, 0, 0, 0.45));
+}
+.map-figure img {
+  height: 100%;
+  width: auto;
+  display: block;
+  pointer-events: none;
+  object-fit: contain;
+  object-position: left bottom;
+}
+.map-figure b {
+  position: absolute;
+  left: 8px;
+  bottom: 6px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px #000;
+}
+.map-figure.is-hidden { opacity: 0.45; }
 .talk-figure img {
   height: 100%;
   width: auto;
@@ -2969,29 +3002,31 @@ label.check input { width: auto; }
 
 .npc-scene {
   position: relative;
-  height: 168px;
+  height: 280px;
   border-radius: 8px;
   border: 1px solid var(--line);
   background: #120f0c center / cover no-repeat;
   overflow: hidden;
 }
 
-.npc-portrait {
+.npc-card .npc-portrait {
   position: absolute;
-  left: 10px;
-  bottom: 52px;
-  width: 72px;
-  height: 72px;
-  border-radius: 50%;
-  overflow: hidden;
-  border: 1px solid var(--brass);
-  background: #1a1612;
+  left: 4%;
+  bottom: 0;
+  width: auto;
+  height: 92%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
 }
 
-.npc-portrait img {
-  width: 100%;
+.npc-card .npc-portrait img {
+  width: auto;
   height: 100%;
-  object-fit: cover;
+  max-width: 100%;
+  object-fit: contain;
+  object-position: left bottom;
   display: block;
 }
 .npc-card.is-full .npc-portrait {
@@ -3312,22 +3347,38 @@ button.ware-face-btn img { width: 100%; height: 100%; object-fit: cover; display
 
 .npc-pics {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  top: 6px;
+  right: 6px;
+  left: auto;
+  bottom: auto;
   display: flex;
-  gap: 6px;
-  padding: 6px;
-  background: rgba(18, 15, 12, 0.82);
+  flex-direction: column;
+  gap: 4px;
+  padding: 0;
+  background: transparent;
 }
+.npc-pics .place-pair { display: flex; gap: 4px; }
+.npc-lib { width: 100%; margin-bottom: 6px; }
+.look-pick { display: flex; gap: 6px; padding: 0 8px 8px; }
+.look-pick button.is-on { border-color: var(--brass); color: var(--brass); }
+.person-fold { margin: 0; border-top: 1px solid rgba(138, 106, 58, 0.35); }
+.person-fold .hero-stats { padding: 0 8px 8px; }
+.person-fold .hero-stat { min-width: 0; }
+.person-fold .hero-stat input.num { width: 100%; }
+.npc-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
+  gap: 8px;
+  padding: 0 8px 8px;
+  align-items: end;
+}
+.npc-stats label { flex: none; min-width: 0; }
+.npc-stats input,
+.npc-stats input.num { width: 100%; max-width: none; }
 
 .npc-pics > button { width: 40px; height: 40px; padding: 0; }
 
 .npc-fields { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-
-.npc-stats { display: flex; flex-wrap: wrap; gap: 8px; }
-
-.npc-stats label { flex: 1 1 140px; }
 
 .cat-hit { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 4px 0; }
 
@@ -3413,8 +3464,7 @@ button.ware-face-btn img { width: 100%; height: 100%; object-fit: cover; display
   padding: 0;
 }
 
-.place-tools,
-.npc-pics {
+.place-tools {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;

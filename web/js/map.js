@@ -532,6 +532,14 @@
     const locations = (source.locations || []).map(function (item) { return pinHtml(item, "loc", master); }).join("");
     const markers = (source.markers || []).map(function (item) {
       const kind = item.kind === "npc" ? "npc" : (item.kind === "foe" ? "foe" : (item.kind === "hero" ? "hero" : (item.kind === "image" ? "image" : "mark")));
+      if (kind === "npc" && item.portrait && item.look !== "token") {
+        const fig = fitFigure(item.stand);
+        const marks = master
+          ? '<span class="pin-flags">' + flagMark("screen", shownScreen(item)) + flagMark("map", shownMap(item)) + "</span>"
+          : "";
+        return '<button type="button" class="map-figure' + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="npc" data-figure="1" style="' + figureCss(fig) + '" title="Открыть диалог">' +
+          marks + '<img alt="" draggable="false" src="' + esc(item.portrait) + '"><b>' + esc(item.name || "НПС") + "</b></button>";
+      }
       return pinHtml(item, kind, master);
     }).join("");
     const labels = (source.labels || []).map(labelHtml).join("");
@@ -784,7 +792,8 @@
             portraitY: face.y,
             portraitZoom: face.zoom,
             emoji: face.emoji || "",
-            look: face.look || ""
+            look: face.look || "",
+            stand: face.stand || null
           }) : item;
           const vitals = heroSheet(item);
           return vitals ? Object.assign({}, faced, vitals) : faced;
@@ -2189,7 +2198,12 @@
       if (!npc) return null;
       const mood = window.ShirmoNpc.apply(npc);
       if (!mood.portrait) return null;
-      return Object.assign({ url: mood.portrait, emoji: mood.emoji || "", look: npc.look === "full" ? "full" : "" }, focusNums(npc));
+      return Object.assign({
+        url: mood.portrait,
+        emoji: mood.emoji || "",
+        look: npc.look === "token" ? "token" : "full",
+        stand: figureOf(npc, false)
+      }, focusNums(npc));
     }
     function linkedList() {
       return selected && selected.kind === "npc" ? book().npcs : book().places;
@@ -3486,7 +3500,7 @@
         event.preventDefault();
         closeMenu();
         selected = { kind: hit.getAttribute("data-kind"), id: hit.getAttribute("data-pin") };
-        press = { sx: event.clientX, sy: event.clientY, moved: false };
+        press = { sx: event.clientX, sy: event.clientY, moved: false, figure: hit.hasAttribute("data-figure") };
         shownForm = "";
         paintSelected();
         paintTree();
@@ -3502,7 +3516,7 @@
           return;
         }
         selected = { kind: hit.getAttribute("data-kind"), id: hit.getAttribute("data-pin") };
-        drag = true;
+        drag = hit.hasAttribute("data-figure") ? "figure" : true;
         shownForm = "";
         paintSelected();
         paintTree();
@@ -3548,7 +3562,7 @@
         const dy = event.clientY - press.sy;
         if (dx * dx + dy * dy > 25) {
           press.moved = true;
-          drag = true;
+          drag = press.figure ? "figure" : true;
           closeMenu();
           hintBack();
         }
@@ -3563,8 +3577,14 @@
       if (drag) {
         const item = findItem();
         if (!item) return;
-        item.x = at.x;
-        item.y = at.y;
+        if (drag === "figure") {
+          const who = linkedNpc(item) || item;
+          const fig = figureOf(who, false);
+          putFigure(who, false, { x: at.x, y: Math.max(0, Math.min(80, 100 - at.y)), h: fig.h });
+        } else {
+          item.x = at.x;
+          item.y = at.y;
+        }
         paintBoard();
         return;
       }

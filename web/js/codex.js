@@ -1963,15 +1963,22 @@ window.ShirmoCodex = (function () {
       return rows.map(function (row, index) {
         if (window.ShirmoNpc) window.ShirmoNpc.apply(row);
         const scene = row.backdrop ? ' style="background-image:url(&quot;' + esc(row.backdrop) + '&quot;)"' : "";
-        const full = row.look === "full";
+        const tokenOn = row.look === "token";
         const face = row.portrait
-          ? '<button type="button" class="npc-portrait" data-act="face" data-i="' + index + '" title="' + (full ? "Изображение целиком" : "Настроить, какая часть портрета видна") + '"><img alt="" src="' + esc(row.portrait) + '"' + (full ? "" : ' style="' + faceStyle(row) + '"') + "></button>"
+          ? '<button type="button" class="npc-portrait" data-act="npc-talk" data-i="' + index + '" title="Открыть диалог"><img alt="" src="' + esc(row.portrait) + '"></button>'
           : '<span class="npc-portrait npc-portrait-empty" data-i="' + index + '" aria-hidden="true"></span>';
         const badge = row.emoji ? '<span class="npc-emoji">' + esc(row.emoji) + "</span>" : "";
-        const rest = FIELDS[tab].filter(function (field) { return field[0] !== "name"; }).map(function (field) {
+        function fieldInput(field) {
           const kind = field[2] === "number" ? ' type="number" min="0" class="num"' : ' type="text"';
           return '<label title="' + esc(hint(field[0]) || field[1]) + '">' + esc(field[1]) + '<input data-field="' + field[0] + '" data-i="' + index + '"' + kind + ' value="' + esc(row[field[0]] == null ? "" : row[field[0]]) + '" aria-label="' + esc(field[1]) + '"></label>';
-        }).join("");
+        }
+        function fieldsOf(keys) {
+          return '<div class="npc-stats">' + FIELDS[tab].filter(function (field) { return keys.indexOf(field[0]) >= 0; }).map(fieldInput).join("") + "</div>";
+        }
+        const shut = tab === "npc" || tab === "merchant";
+        function section(title, body) {
+          return '<details class="drop person-fold"' + (shut ? "" : " open") + '><summary>' + esc(title) + "</summary>" + body + "</details>";
+        }
         const home = seatOf(row.id);
         const homeLine = '<p class="note">' + (home ? "Место: " + esc(home.name || "Место") : "Без места") + "</p>";
         const pack = squadOfNpc(row.id);
@@ -1982,26 +1989,28 @@ window.ShirmoCodex = (function () {
           (pack ? '<button type="button" data-act="squad-copy" data-npc="' + esc(row.id) + '" title="Скопировать в этот же отряд">Копия</button>' : "") +
           "</div>"
           : "";
-        return '<article class="npc-card' + (full ? " is-full" : "") + '" data-npc="' + esc(row.id) + '" title="ПКМ — перенести на место"><div class="npc-scene"' + scene + ">" + face + badge +
+        return '<article class="npc-card" data-npc="' + esc(row.id) + '" title="ПКМ — перенести на место"><div class="npc-scene"' + scene + ">" + face + badge +
           '<div class="npc-pics">' +
           '<span class="place-pair"><label class="file-btn" title="Загрузить свой портрет">' + FACE + '<input type="file" accept="image/*" data-pic="portrait" data-i="' + index + '" aria-label="Портрет"></label>' +
+          '<button type="button" class="icon-btn" data-act="face" data-i="' + index + '" title="Кадр портрета" aria-label="Кадр портрета">▣</button>' +
           '<button type="button" class="icon-btn" data-act="clear-pic" data-pic="portrait" data-i="' + index + '"' + (row.portrait ? "" : " disabled") + ' title="Убрать портрет" aria-label="Убрать портрет">' + CROSS + "</button>" +
           (tab === "enemy" ? '<button type="button" class="icon-btn" data-act="foe-face" data-i="' + index + '" title="Портрет из справочника" aria-label="Портрет из справочника">' + BOOK + "</button>" : "") +
-          '<select data-npc-lib="' + index + '" data-shelf="image" title="Портрет из библиотеки. Коллекция токенов — папка «Токены»" aria-label="Из библиотеки"><option value="">Библиотека</option></select>' +
           "</span>" +
           '<span class="place-pair"><label class="file-btn" title="Загрузить свой фон карточки">' + SCENE + '<input type="file" accept="image/*" data-pic="backdrop" data-i="' + index + '" aria-label="Фон"></label>' +
           '<button type="button" class="icon-btn" data-act="clear-pic" data-pic="backdrop" data-i="' + index + '"' + (row.backdrop ? "" : " disabled") + ' title="Убрать фон" aria-label="Убрать фон">' + CROSS + "</button></span>" +
           "</div></div>" +
-          '<div class="npc-fields"><div class="codex-row"><input data-field="name" data-i="' + index + '" type="text" value="' + esc(row.name || "") + '" title="Имя в справочнике и на карте" aria-label="Имя"><button type="button" data-act="rehome" data-kind="npc" data-id="' + esc(row.id) + '" title="Перенести на другое место">Перенести</button><button type="button" data-act="del" data-i="' + index + '" title="Удалить запись" aria-label="Удалить">×</button></div>' +
-          homeLine + squadLine +
-          '<div class="codex-row"><button type="button" data-act="npc-side" data-side="player" data-i="' + index + '" title="Поставить на сторону героев">К героям</button>' +
-          '<button type="button" data-act="npc-side" data-side="foe" data-i="' + index + '" title="Поставить на сторону врагов">К врагам</button></div>' +
-          '<div class="codex-row"><button type="button" data-act="npc-look" data-look="token" data-i="' + index + '"' + (full ? "" : ' class="is-on"') + ' title="Круглый токен на карте и в карточке">Токен</button>' +
-          '<button type="button" data-act="npc-look" data-look="full" data-i="' + index + '"' + (full ? ' class="is-on"' : "") + ' title="Показать изображение целиком, без круга">Картинка</button></div>' +
-          abilityHtml(row, index) +
-          '<div class="npc-stats">' + rest + "</div>" +
+          '<div class="npc-fields"><select class="npc-lib" data-npc-lib="' + index + '" data-shelf="image" title="Портрет из библиотеки. Коллекция токенов — папка «Токены»" aria-label="Из библиотеки"><option value="">Библиотека</option></select><div class="codex-row"><input data-field="name" data-i="' + index + '" type="text" value="' + esc(row.name || "") + '" title="Имя в справочнике и на карте" aria-label="Имя"><button type="button" data-act="rehome" data-kind="npc" data-id="' + esc(row.id) + '" title="Перенести на другое место">Перенести</button><button type="button" data-act="del" data-i="' + index + '" title="Удалить запись" aria-label="Удалить">×</button></div>' +
+          homeLine +
+          section("Отряд", squadLine +
+            '<div class="codex-row"><button type="button" data-act="npc-side" data-side="player" data-i="' + index + '" title="Поставить на сторону героев">К героям</button>' +
+            '<button type="button" data-act="npc-side" data-side="foe" data-i="' + index + '" title="Поставить на сторону врагов">К врагам</button></div>' +
+            '<div class="look-pick"><button type="button" data-act="npc-look" data-look="full" data-i="' + index + '"' + (tokenOn ? "" : ' class="is-on"') + ' title="Фигура стоит там же, где в диалоге. Клик открывает разговор">Фигура</button>' +
+            '<button type="button" data-act="npc-look" data-look="token" data-i="' + index + '"' + (tokenOn ? ' class="is-on"' : "") + ' title="Круглая метка на карте">Метка</button></div>') +
+          section("Характеристики", abilityHtml(row, index)) +
+          section("Бой", fieldsOf(["weapon", "damage", "ac", "hp", "hpMax"])) +
+          section("Заметка", fieldsOf(["note"])) +
           (window.ShirmoNpc ? window.ShirmoNpc.html(row, images, index) : "") +
-          tradeHtml(row, index) +
+          section("Товары", tradeHtml(row, index)) +
           "</div></article>";
       }).join("");
     }
@@ -3656,6 +3665,11 @@ window.ShirmoCodex = (function () {
         sheet.items.splice(Number(button.getAttribute("data-item")) + 1, 0, cloneWareItem(item));
         paint();
         saveSoon();
+        return;
+      }
+      if (act === "npc-talk") {
+        const person = list()[Number(button.getAttribute("data-i"))];
+        if (person && ctx.openTalk) ctx.openTalk(person.id);
         return;
       }
       if (act === "face") {
