@@ -12,6 +12,7 @@
   let opt = null;
   let enabled = false;
   let auto = true;
+  let forcedHex = "#e6c36a";
   let effect = "";
   let actor = null;
   let placeLoc = null;
@@ -175,9 +176,14 @@
     } catch (err) { /* смена цвета не должна ронять ширму */ }
   }
 
+  function onPlugKey(event) {
+    if (event.key === "Escape") closeCard();
+  }
+
   function closeCard() {
     const old = document.getElementById("plugin-card");
     if (old) old.remove();
+    document.removeEventListener("keydown", onPlugKey);
   }
 
   function field(label, type) {
@@ -191,8 +197,15 @@
     return { wrap: wrap, input: input };
   }
 
+  function heading(text) {
+    const node = document.createElement("h3");
+    node.textContent = text;
+    return node;
+  }
+
   function draw(host, state) {
     host.innerHTML = "";
+    host.append(heading("В комнате"));
     const installed = state.installed || [];
     if (!installed.length) {
       const empty = document.createElement("p");
@@ -200,40 +213,119 @@
       empty.textContent = "Плагинов нет.";
       host.append(empty);
     }
-    installed.forEach(function (row) {
-      const line = document.createElement("div");
-      line.className = "plugin-line";
-      const name = document.createElement("b");
-      name.textContent = row.name || row.id;
-      line.append(name);
-      const toggle = document.createElement("button");
-      toggle.type = "button";
-      toggle.textContent = row.on ? "Выключить" : "Включить";
-      toggle.addEventListener("click", function () {
-        if (row.on) {
-          post("/disable", { id: row.id }).then(function () { return refresh(); }).then(function (next) {
-            enabled = false;
-            if (next) draw(host, next);
-          }).catch(function (error) { note(host, error.message); });
-          return;
-        }
-        askEnable(host, state, row);
+    installed.forEach(function (row) { host.append(pluginRow(host, state, row)); });
+    host.append(heading("Добавить"));
+    const have = {};
+    installed.forEach(function (row) { have[row.id] = true; });
+    const list = (state.catalog || []).filter(function (row) { return row && row.name && !have[row.id]; });
+    if (!list.length) {
+      const empty = document.createElement("p");
+      empty.className = "note";
+      empty.textContent = (state.catalog || []).length ? "Новых плагинов нет." : "Список не загрузился.";
+      host.append(empty);
+      return;
+    }
+    list.forEach(function (row) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "plugin-add";
+      button.textContent = row.name;
+      button.addEventListener("click", function () {
+        post("/install", { id: row.id }).then(refresh).then(function (next) { if (next) draw(host, next); }).catch(function (error) { note(host, error.message); });
       });
-      const drop = document.createElement("button");
-      drop.type = "button";
-      drop.textContent = "Убрать";
-      drop.addEventListener("click", function () {
-        post("/remove", { id: row.id }).then(refresh).then(function (next) { if (next) draw(host, next); }).catch(function (error) { note(host, error.message); });
-      });
-      line.append(toggle, drop);
-      host.append(line);
-      if (row.on) devices(host, state);
+      host.append(button);
     });
-    const add = document.createElement("button");
-    add.type = "button";
-    add.textContent = "Добавить";
-    add.addEventListener("click", function () { catalog(host, state); });
-    host.append(add);
+  }
+
+  function pluginRow(host, state, row) {
+    const block = document.createElement("article");
+    block.className = "plugin-row";
+    const head = document.createElement("header");
+    const name = document.createElement("b");
+    name.textContent = row.name || row.id;
+    const status = document.createElement("span");
+    status.className = "plugin-state" + (row.on ? " is-on" : "");
+    status.textContent = row.on ? "включена" : "выключена";
+    head.append(name, status);
+    const acts = document.createElement("div");
+    acts.className = "plugin-acts";
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.textContent = row.on ? "Выключить" : "Включить";
+    const slot = document.createElement("div");
+    slot.className = "plugin-slot";
+    toggle.addEventListener("click", function () {
+      if (row.on) {
+        post("/disable", { id: row.id }).then(function () { return refresh(); }).then(function (next) {
+          enabled = false;
+          if (next) draw(host, next);
+        }).catch(function (error) { note(host, error.message); });
+        return;
+      }
+      secretForm(slot, state, row, "enable");
+    });
+    const drop = document.createElement("button");
+    drop.type = "button";
+    drop.textContent = "Убрать";
+    drop.addEventListener("click", function () {
+      post("/remove", { id: row.id }).then(refresh).then(function (next) { if (next) draw(host, next); }).catch(function (error) { note(host, error.message); });
+    });
+    acts.append(toggle, drop);
+    block.append(head, acts, slot);
+    if (row.on && row.id === "adaptive-light") block.append(lightBox(host, state, row));
+    return block;
+  }
+
+  function lightBox(host, state, row) {
+    const box = document.createElement("div");
+    box.className = "plugin-box";
+    const lamps = document.createElement("p");
+    lamps.className = "plugin-label";
+    lamps.textContent = "Лампы";
+    box.append(lamps, deviceList(host, state));
+    const mode = document.createElement("div");
+    mode.className = "plugin-acts";
+    const autoBtn = document.createElement("button");
+    autoBtn.type = "button";
+    autoBtn.textContent = "Авто";
+    if (auto) autoBtn.className = "is-on";
+    const colorWrap = document.createElement("label");
+    colorWrap.className = "plugin-color";
+    colorWrap.append(document.createTextNode("Свой цвет"));
+    const color = document.createElement("input");
+    color.type = "color";
+    color.value = forcedHex || "#e6c36a";
+    color.setAttribute("aria-label", "Свой цвет");
+    colorWrap.append(color);
+    autoBtn.addEventListener("click", function () {
+      auto = true;
+      autoBtn.className = "is-on";
+      lastKey = "";
+      post("/auto", { on: true }).then(function () { apply(); }).catch(function (error) { note(host, error.message); });
+    });
+    color.addEventListener("input", function () {
+      auto = false;
+      autoBtn.className = "";
+      forcedHex = color.value;
+      const hsv = hexHsv(color.value);
+      post("/auto", { on: false }).catch(function () {});
+      if (hsv) queue(hsv, true);
+    });
+    mode.append(autoBtn, colorWrap);
+    const keyLine = document.createElement("div");
+    keyLine.className = "plugin-acts";
+    const keyState = document.createElement("span");
+    keyState.className = "plugin-state" + (state.hasKey ? " is-on" : "");
+    keyState.textContent = state.hasKey ? "Ключ сохранён" : "Ключ не задан";
+    const keyBtn = document.createElement("button");
+    keyBtn.type = "button";
+    keyBtn.textContent = state.hasKey ? "Сменить ключ" : "Задать ключ";
+    const keySlot = document.createElement("div");
+    keySlot.className = "plugin-slot";
+    keyBtn.addEventListener("click", function () { secretForm(keySlot, state, row, "key"); });
+    keyLine.append(keyState, keyBtn);
+    box.append(mode, keyLine, keySlot);
+    return box;
   }
 
   function note(host, text) {
@@ -246,44 +338,28 @@
     row.textContent = text || "";
   }
 
-  function catalog(host, state) {
-    const have = {};
-    (state.installed || []).forEach(function (row) { have[row.id] = true; });
-    const list = (state.catalog || []).filter(function (row) { return row && row.name && !have[row.id]; });
-    const box = document.createElement("div");
-    box.className = "plugin-catalog";
-    if (!list.length) {
-      const empty = document.createElement("p");
-      empty.className = "note";
-      empty.textContent = "Список пуст.";
-      box.append(empty);
-    }
-    list.forEach(function (row) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.textContent = row.name;
-      button.addEventListener("click", function () {
-        post("/install", { id: row.id }).then(refresh).then(function (next) { if (next) draw(host, next); }).catch(function (error) { note(host, error.message); });
-      });
-      box.append(button);
-    });
-    host.append(box);
-  }
-
-  function askEnable(host, state, row) {
+  function secretForm(slot, state, row, mode) {
+    slot.innerHTML = "";
     const box = document.createElement("form");
     box.className = "plugin-form";
     const pass = field("Пароль комнаты", "password");
     box.append(pass.wrap);
     let token = null;
-    if (!state.hasKey) {
+    if (mode === "key" || !state.hasKey) {
       token = field("Ключ Яндекса", "password");
       box.append(token.wrap);
     }
+    const acts = document.createElement("div");
+    acts.className = "plugin-acts";
     const go = document.createElement("button");
     go.type = "submit";
-    go.textContent = "Включить";
-    box.append(go);
+    go.textContent = mode === "key" ? "Сохранить ключ" : "Включить";
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.textContent = "Отмена";
+    cancel.addEventListener("click", function () { slot.innerHTML = ""; });
+    acts.append(go, cancel);
+    box.append(acts);
     box.addEventListener("submit", function (event) {
       event.preventDefault();
       const password = pass.input.value;
@@ -291,25 +367,22 @@
       pass.input.value = "";
       if (token) token.input.value = "";
       const steps = key ? post("/key", { id: row.id, password: password, token: key }) : Promise.resolve();
-      steps.then(function () { return post("/enable", { id: row.id, password: password }); })
-        .then(refresh)
-        .then(function (next) {
-          if (next) draw(host, next);
-          apply();
-        })
-        .catch(function (error) { note(host, error.message); });
+      const done = mode === "key" ? steps : steps.then(function () { return post("/enable", { id: row.id, password: password }); });
+      done.then(refresh).then(function (next) {
+        if (next) draw(slot.closest(".pop-body"), next);
+        if (mode !== "key") apply();
+      }).catch(function (error) { note(slot.closest(".pop-body"), error.message); });
     });
-    host.append(box);
+    slot.append(box);
   }
 
-  function devices(host, state) {
+  function deviceList(host, state) {
     const lights = state.lights || [];
     if (!lights.length) {
       const empty = document.createElement("p");
       empty.className = "note";
       empty.textContent = state.hasKey ? (state.lightError || "Цветных ламп нет.") : "Ключ ещё не сохранён.";
-      host.append(empty);
-      return;
+      return empty;
     }
     const picked = {};
     (state.devices || []).forEach(function (id) { picked[id] = true; });
@@ -326,10 +399,10 @@
         box.querySelectorAll("input").forEach(function (node, index) { if (node.checked) ids.push(lights[index].id); });
         post("/devices", { ids: ids }).catch(function (error) { note(host, error.message); });
       });
-      label.append(input, document.createTextNode(" " + (lamp.name || "Лампа")));
+      label.append(input, document.createTextNode(lamp.name || "Лампа"));
       box.append(label);
     });
-    host.append(box);
+    return box;
   }
 
   function open() {
@@ -338,20 +411,29 @@
       if (!opt) return;
       const card = document.createElement("div");
       card.id = "plugin-card";
-      card.className = "plugin-card";
+      card.className = "pop";
+      const sheet = document.createElement("div");
+      sheet.className = "pop-card plugin-pop";
       const head = document.createElement("div");
-      head.className = "plugin-head";
-      const title = document.createElement("b");
+      head.className = "pop-head";
+      const title = document.createElement("h2");
       title.textContent = "Плагины";
       const shut = document.createElement("button");
       shut.type = "button";
       shut.textContent = "×";
       shut.title = "Закрыть";
+      shut.setAttribute("aria-label", "Закрыть");
       shut.addEventListener("click", closeCard);
       head.append(title, shut);
       const body = document.createElement("div");
-      card.append(head, body);
+      body.className = "pop-body";
+      sheet.append(head, body);
+      card.append(sheet);
+      card.addEventListener("click", function (event) {
+        if (event.target === card) closeCard();
+      });
       document.body.append(card);
+      document.addEventListener("keydown", onPlugKey);
       refresh().then(function (state) {
         if (!state) {
           note(body, "Список плагинов не открылся.");
@@ -562,7 +644,7 @@
       try {
         if (!enabled) return "";
         return '<details class="dock-fold" data-fold="light" open><summary>Подсветка</summary>' +
-          '<div class="dock-form light-form"><label>Цвет<input data-light="force" type="color" value="#e6c36a" aria-label="Свой цвет"></label>' +
+          '<div class="dock-form light-form"><label>Цвет<input data-light="force" type="color" value="' + (forcedHex || "#e6c36a") + '" aria-label="Свой цвет"></label>' +
           '<button type="button" data-light="auto"' + (auto ? ' class="is-on"' : "") + ">Авто</button></div></details>";
       } catch (err) { return ""; }
     },
@@ -572,6 +654,7 @@
         const button = root.querySelector("[data-light=auto]");
         if (force) force.addEventListener("input", function () {
           auto = false;
+          forcedHex = force.value;
           if (button) button.classList.remove("is-on");
           const hsv = hexHsv(force.value);
           post("/auto", { on: false }).catch(function () {});
