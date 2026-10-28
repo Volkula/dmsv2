@@ -1384,8 +1384,7 @@
         '<header class="pcard-head"><input class="pcard-name" data-q="name" data-id="' + esc(actor.id) + '" type="text" value="' + esc(actor.name || "") + '" aria-label="Имя">' +
         '<button type="button" class="pcard-turn" data-go="' + esc(actor.id) + '" title="Сделать ход этого бойца">Ход</button>' +
         '<button type="button" data-act="life" data-id="' + esc(actor.id) + '">' + (actor.dead ? "Оживить" : "Убить") + "</button></header>" +
-        '<div class="pcard-groups">' +
-        '<section class="pcard-group"><h4>Бой</h4>' +
+        '<section class="pcard-sheet"><h4>Бой</h4>' +
         '<div class="sheet-stats">' +
         sheetStat("КД", '<input data-q="ac" data-id="' + esc(actor.id) + '" class="num" type="number" min="0" value="' + esc(String(Number(actor.ac) || 10)) + '" aria-label="КД" title="Класс доспеха">') +
         sheetStat("Иниц", '<input data-q="init" data-id="' + esc(actor.id) + '" class="num" type="number" value="' + esc(String(actor.init || 0)) + '" aria-label="Инициатива" title="Итог инициативы">') +
@@ -1396,8 +1395,9 @@
         '<input data-q="hp" data-id="' + esc(actor.id) + '" type="range" min="0" max="' + max + '" value="' + hp + '" aria-label="Хиты"></span>' +
         sheetStat("Хиты", '<input data-q="hp" data-id="' + esc(actor.id) + '" class="num hp-read" type="number" min="0" max="' + max + '" value="' + hp + '" aria-label="Хиты числом">') +
         sheetStat("Макс", '<input data-q="hpMax" data-id="' + esc(actor.id) + '" class="num" type="number" min="1" value="' + max + '" aria-label="Максимум хитов">') +
-        '<button type="button" class="sheet-heal" data-act="heal" data-id="' + esc(actor.id) + '" title="Зелье или своё число">Лечить</button></div>' +
-        '<label class="check" title="Полоса хитов на экране игроков"><input data-q="boss" data-id="' + esc(actor.id) + '" type="checkbox"' + (isBoss(actor) ? " checked" : "") + "> Полоса</label></section>" +
+        '<button type="button" class="sheet-heal" data-act="heal" data-id="' + esc(actor.id) + '" title="Зелье или своё число">Лечить</button>' +
+        '<label class="check" title="Полоса хитов на экране игроков"><input data-q="boss" data-id="' + esc(actor.id) + '" type="checkbox"' + (isBoss(actor) ? " checked" : "") + "> Полоса</label></div></section>" +
+        '<div class="pcard-groups">' +
         '<section class="pcard-group"><h4>Атака</h4>' + weaponButtons(actor) + "</section>" +
         '<section class="pcard-group"><h4>Таймер</h4><div class="turn-cell">' +
         cardField("Сек", '<input data-q="turnSec" data-id="' + esc(actor.id) + '" class="num" type="number" min="0" value="' + esc(String(Math.max(0, Math.round(Number(actor.turnSec) || 0)))) + '" aria-label="Секунды на ход" title="0 — без таймера">') +
@@ -1667,6 +1667,7 @@
 
     function openFace(actor) {
       openPop("Портрет",
+        '<button type="button" data-act="face-token">Токен</button>' +
         '<button type="button" data-act="face-lib">Из библиотеки</button>' +
         '<button type="button" data-act="face-file">Загрузить</button>');
       popActorId = actor.id;
@@ -2572,6 +2573,21 @@
         giveLife(actor, target, n, (actor.name || "Боец") + " лечит " + (target.name || "цель"));
       }
       if (act === "heal-back" && actor) openHealPick(actor);
+      if (act === "face-token" && actor) {
+        const who = actor;
+        closePop();
+        if (!window.ShirmoTokens) return;
+        window.ShirmoTokens.pick({
+          kind: "portrait",
+          onPick: function (url) {
+            if (!url) return;
+            who.portrait = url;
+            syncPerson(who, ["portrait"]);
+            save();
+            paint();
+          }
+        });
+      }
       if (act === "face-lib" && actor) {
         const who = actor;
         const lib = ctx.library ? ctx.library() : (ctx.campaign && ctx.campaign.library);
@@ -3025,6 +3041,51 @@
     return true;
   }
 
+  function placePerson(campaign, person, side) {
+    if (!campaign || !person) return null;
+    const battle = ensure(campaign);
+    const want = side === "foe" ? "foe" : "player";
+    let actor = (battle.actors || []).find(function (row) { return row && row.codexId === person.id; });
+    if (!actor) {
+      actor = blank(want);
+      actor.codexId = person.id;
+      battle.actors.push(actor);
+    }
+    actor.side = want;
+    actor.name = person.name || (want === "player" ? "НПС" : "Враг");
+    actor.hpMax = Math.max(1, Math.round(Number(person.hpMax) || Number(person.hp) || 10));
+    actor.hp = Math.max(0, Math.min(actor.hpMax, Math.round(person.hp == null ? actor.hpMax : Number(person.hp))));
+    actor.dead = actor.hp <= 0;
+    actor.ac = Math.max(0, Math.round(Number(person.ac) || 10));
+    actor.weapon = person.weapon || "Атака";
+    actor.damage = person.damage || "1d6";
+    actor.bonus = Math.round(Number(person.bonus) || 0);
+    actor.portrait = person.portrait || "";
+    actor.note = person.note || "";
+    actor.weapons = [];
+    actor.armId = "";
+    armsOf(actor);
+    const squadName = want === "player" ? "Герои" : "Враги";
+    let group = (battle.board || []).find(function (row) {
+      return row && row.kind !== "sep" && row.name === squadName;
+    });
+    if (!group) {
+      group = { id: crypto.randomUUID(), kind: "squad", name: squadName, memberIds: [] };
+      if (want === "player") battle.board.unshift(group);
+      else battle.board.push(group);
+    }
+    battle.board.forEach(function (row) {
+      if (!row || row === group || !row.memberIds) return;
+      row.memberIds = row.memberIds.filter(function (id) { return id !== actor.id; });
+    });
+    if (group.memberIds.indexOf(actor.id) < 0) group.memberIds.push(actor.id);
+    battle.board = battle.board.filter(function (row) {
+      return row && (row.kind === "sep" || row === group || (row.memberIds && row.memberIds.length));
+    });
+    assignInks(battle);
+    return actor;
+  }
+
   window.ShirmoBattle = {
     mount: mount,
     ensure: ensure,
@@ -3034,6 +3095,7 @@
     bindPan: bindPan,
     restorePan: restorePan,
     placeHero: placeHero,
+    placePerson: placePerson,
     removeHero: removeHero
   };
 })();

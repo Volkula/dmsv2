@@ -3,7 +3,7 @@ data/
 certs/
 *.sqlite
 .env
-backups/
+web/tokens/
 
 # Локальные копии с хостом/путями — в репозитории только *.example
 README.md

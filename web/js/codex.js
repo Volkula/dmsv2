@@ -20,6 +20,7 @@ window.ShirmoCodex = (function () {
     ["squads", "Отряды", icon('<circle cx="8" cy="8" r="2" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="16" cy="8" r="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4 18c.8-2.2 2.2-3.2 4-3.2S11.2 15.8 12 18M12 18c.8-2.2 2.2-3.2 4-3.2S19.2 15.8 20 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>')],
     ["names", "Имена", icon('<path d="M5 18L9.5 6h2L16 18M6.6 14h7.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>')],
     ["goods", "Предметы", icon('<path d="M4 8h16v11H4zM4 8l2-3h12l2 3M12 5v3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>')],
+    ["inventory", "Инвентарь", icon('<path d="M7 8V6a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v2M5 8h14v11H5zM9 12h6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>')],
     ["wares", "Товары", icon('<path d="M5 8h14v11H5zM5 8l2.5-3h9L19 8M9 12h6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>')],
     ["coins", "Валюта", icon('<circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 8.5v7M9.5 10.2c.6-.8 1.4-1.2 2.5-1.2 1.4 0 2.3.7 2.3 1.7S13.4 12.4 12 12.4 9.7 13.1 9.7 14.2s1 1.8 2.4 1.8c1 0 1.8-.4 2.4-1.1" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>')],
     ["monsters", "Монстры", icon('<path d="M6 14c0-4 2.2-8 6-8s6 4 6 8v5H6zM9 11h.01M15 11h.01M9 19v2M15 19v2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>')],
@@ -31,6 +32,7 @@ window.ShirmoCodex = (function () {
     merchant: PERSON,
     enemy: PERSON,
     goods: [["name", "Название", "text"], ["price", "Цена", "text"], ["note", "Заметка", "text"]],
+    inventory: [["name", "Название", "text"], ["note", "Заметка", "text"]],
     monsters: [["name", "Имя", "text"], ["note", "Заметка", "text"], ["damage", "Урон", "text"], ["hp", "ХП", "number"]],
     spells: [["name", "Название", "text"], ["level", "Круг", "text"], ["note", "Заметка", "text"]]
   };
@@ -150,6 +152,73 @@ window.ShirmoCodex = (function () {
     person.portrait = url || "";
   }
 
+  let tokenRows = null;
+  function loadTokens() {
+    if (tokenRows) return Promise.resolve(tokenRows);
+    return fetch("/catalog/tokens.json").then(function (res) { return res.json(); }).then(function (rows) {
+      tokenRows = Array.isArray(rows) ? rows : [];
+      return tokenRows;
+    }).catch(function () {
+      tokenRows = [];
+      return tokenRows;
+    });
+  }
+  function openTokenPick(opts) {
+    opts = opts || {};
+    const old = document.getElementById("token-pop");
+    if (old) old.remove();
+    const pop = document.createElement("div");
+    pop.id = "token-pop";
+    pop.className = "pop";
+    pop.innerHTML = '<div class="pop-card item-pop" role="dialog" aria-label="Токены">' +
+      '<div class="pop-head"><h2>Токены</h2><button type="button" data-pop-close title="Закрыть" aria-label="Закрыть">×</button></div>' +
+      '<label>Папка<select data-token-group aria-label="Папка токенов"></select></label>' +
+      '<label>Поиск<input data-token-q type="search" placeholder="Имя или раса" aria-label="Поиск токена"></label>' +
+      '<div class="item-hits" data-token-hits><p class="note">Загрузка…</p></div></div>';
+    document.body.appendChild(pop);
+    function close() { if (pop.parentNode) pop.remove(); }
+    pop.addEventListener("click", function (event) {
+      if (event.target === pop) close();
+      if (event.target.closest("[data-pop-close]")) close();
+      const hit = event.target.closest("[data-token]");
+      if (!hit || !pop.contains(hit)) return;
+      const url = hit.getAttribute("data-token");
+      close();
+      if (url && opts.onPick) opts.onPick(url);
+    });
+    loadTokens().then(function (rows) {
+      if (!pop.parentNode) return;
+      let list = rows || [];
+      if (opts.kind === "portrait") list = list.filter(function (row) { return row.k === "race" || row.k === "hero"; });
+      else if (opts.kind) list = list.filter(function (row) { return row.k === opts.kind; });
+      const groups = {};
+      list.forEach(function (row) { if (row.g) groups[row.g] = true; });
+      const names = Object.keys(groups).sort(function (a, b) { return a.localeCompare(b, "ru"); });
+      const prefer = opts.group && groups[opts.group] ? opts.group : "";
+      const select = pop.querySelector("[data-token-group]");
+      select.innerHTML = '<option value="">Все</option>' + names.map(function (name) {
+        return '<option value="' + esc(name) + '"' + (name === prefer ? " selected" : "") + ">" + esc(name) + "</option>";
+      }).join("");
+      function draw() {
+        const group = select.value;
+        const q = pop.querySelector("[data-token-q]").value.trim().toLowerCase();
+        const found = list.filter(function (row) {
+          if (group && row.g !== group) return false;
+          if (!q) return true;
+          return (row.n + " " + row.g).toLowerCase().indexOf(q) >= 0;
+        }).slice(0, 80);
+        const box = pop.querySelector("[data-token-hits]");
+        box.innerHTML = found.length ? found.map(function (row) {
+          return '<button type="button" data-token="' + esc(row.u) + '"><img alt="" src="' + esc(row.u) + '">' + esc(row.n || row.g) + "</button>";
+        }).join("") : '<p class="note">Ничего не найдено.</p>';
+      }
+      select.addEventListener("change", draw);
+      pop.querySelector("[data-token-q]").addEventListener("input", draw);
+      draw();
+    });
+  }
+  window.ShirmoTokens = { pick: openTokenPick, load: loadTokens };
+
   function pickMonsterFace(onPick, people) {
     const old = document.getElementById("face-pop");
     if (old) old.remove();
@@ -171,7 +240,7 @@ window.ShirmoCodex = (function () {
     pop.innerHTML = '<div class="pop-card item-pop" role="dialog" aria-label="Портрет из справочника">' +
       '<div class="pop-head"><h2>Портрет из справочника</h2><button type="button" data-pop-close title="Закрыть" aria-label="Закрыть">×</button></div>' +
       ownHtml +
-      '<label title="Найти монстра и взять его портрет">Монстр<input data-face-q type="text" placeholder="Две буквы и больше" autocomplete="off"></label>' +
+      '<label title="Найти токен или монстра. Токены коллекции показываются первыми">Портрет<input data-face-q type="text" placeholder="Раса, имя или монстр" autocomplete="off"></label>' +
       '<div class="item-hits" data-face-hits></div></div>';
     document.body.appendChild(pop);
     function close() { if (pop.parentNode) pop.remove(); }
@@ -188,10 +257,15 @@ window.ShirmoCodex = (function () {
         if (row) use(row.portrait);
         return;
       }
-      const hit = event.target.closest("[data-face-hit]");
-      if (!hit || !pop.contains(hit)) return;
+      const hit = event.target.closest("[data-token-hit]");
+      if (hit && pop.contains(hit)) {
+        use(hit.getAttribute("data-token-hit"));
+        return;
+      }
+      const monsterHit = event.target.closest("[data-face-hit]");
+      if (!monsterHit || !pop.contains(monsterHit)) return;
       const box = pop.querySelector("[data-face-hits]");
-      const monster = box && box._hits && box._hits[Number(hit.getAttribute("data-face-hit"))];
+      const monster = box && box._hits && box._hits[Number(monsterHit.getAttribute("data-face-hit"))];
       if (monster) use(monsterImg(monster));
     });
     pop.querySelector("[data-pop-close]").addEventListener("click", close);
@@ -204,18 +278,27 @@ window.ShirmoCodex = (function () {
         box._hits = [];
         return;
       }
-      loadCatalog().then(function () {
-        if (!pop.parentNode || !window.allMonsters) return;
-        const hits = window.allMonsters.filter(function (row) {
-          return String(row.name || "").toLowerCase().indexOf(q) >= 0 && monsterImg(row);
-        }).slice(0, 12);
-        box._hits = hits;
-        box.innerHTML = hits.length ? hits.map(function (row, index) {
-          const img = monsterImg(row);
-          return '<button type="button" data-face-hit="' + index + '">' +
-            (img ? '<img alt="" src="' + esc(img) + '" onerror="this.remove()">' : "") +
-            esc(ruTitle(row.name) || row.name || "") + "</button>";
-        }).join("") : '<p class="note">Ничего не найдено.</p>';
+      loadTokens().then(function (tokens) {
+        loadCatalog().then(function () {
+          if (!pop.parentNode) return;
+          const tokenHits = (tokens || []).filter(function (row) {
+            return ((row.n || "") + " " + (row.g || "")).toLowerCase().indexOf(q) >= 0;
+          }).slice(0, 12);
+          const hits = (window.allMonsters || []).filter(function (row) {
+            return String(row.name || "").toLowerCase().indexOf(q) >= 0 && monsterImg(row);
+          }).slice(0, 8);
+          box._hits = hits;
+          const tokenHtml = tokenHits.map(function (row) {
+            return '<button type="button" data-token-hit="' + esc(row.u) + '"><img alt="" src="' + esc(row.u) + '">' + esc((row.g ? row.g + " · " : "") + (row.n || "Токен")) + "</button>";
+          }).join("");
+          const monsterHtml = hits.map(function (row, index) {
+            const img = monsterImg(row);
+            return '<button type="button" data-face-hit="' + index + '">' +
+              (img ? '<img alt="" src="' + esc(img) + '" onerror="this.remove()">' : "") +
+              esc(ruTitle(row.name) || row.name || "") + "</button>";
+          }).join("");
+          box.innerHTML = (tokenHtml || monsterHtml) ? tokenHtml + monsterHtml : '<p class="note">Ничего не найдено.</p>';
+        });
       });
     });
     input.focus();
@@ -534,6 +617,7 @@ window.ShirmoCodex = (function () {
     book.heroes = book.heroes || [];
     book.npcs = book.npcs || [];
     book.goods = book.goods || [];
+    book.inventory = book.inventory || [];
     book.wares = book.wares || [];
     book.monsters = book.monsters || [];
     book.spells = book.spells || [];
@@ -1058,12 +1142,16 @@ window.ShirmoCodex = (function () {
     }
     function blank() {
       const row = { id: crypto.randomUUID() };
-      const names = { places: "Место", npc: "НПС", merchant: "Торговец", enemy: "Враг", goods: "Предмет", monsters: "Монстр", spells: "Заклинание" };
+      const names = { places: "Место", npc: "НПС", merchant: "Торговец", enemy: "Враг", goods: "Предмет", inventory: "Предмет", monsters: "Монстр", spells: "Заклинание" };
       (FIELDS[tab] || []).forEach(function (field) {
         row[field[0]] = field[2] === "number" ? 0 : "";
       });
       row.name = names[tab] || "Запись";
       if (isPerson(tab)) row.role = tab;
+      if (tab === "inventory") {
+        row.qty = 1;
+        row.icon = "";
+      }
       return row;
     }
     function catalogKind() {
@@ -1898,6 +1986,27 @@ window.ShirmoCodex = (function () {
           '<div class="ware-sheet-body"' + (open ? "" : " hidden") + ">" + goods + "</div></article>";
       }).join("");
     }
+    const ABIL = [["str", "СИЛ"], ["dex", "ЛОВ"], ["con", "ТЕЛ"], ["int", "ИНТ"], ["wis", "МДР"], ["cha", "ХАР"]];
+    function abilityMod(score) {
+      return Math.floor((Math.round(Number(score) || 10) - 10) / 2);
+    }
+    function signMod(mod) {
+      return mod > 0 ? "+" + mod : String(mod);
+    }
+    function abilityHtml(row, index) {
+      const scores = row.scores || {};
+      const saves = row.saves || {};
+      return '<div class="hero-stats npc-abil">' + ABIL.map(function (pair) {
+        const score = scores[pair[0]] == null ? 10 : scores[pair[0]];
+        const mod = abilityMod(score);
+        const prof = saves[pair[0]] ? " is-prof" : "";
+        return '<div class="hero-stat' + prof + '"><em>' + pair[1] + "</em>" +
+          '<input data-score="' + pair[0] + '" data-i="' + index + '" class="num" type="number" value="' + esc(score) + '" aria-label="' + pair[1] + '">' +
+          '<button type="button" data-act="abil-check" data-i="' + index + '" data-s="' + pair[0] + '" title="Проверка ' + pair[1] + '">' + signMod(mod) + "</button>" +
+          '<button type="button" data-act="abil-save" data-i="' + index + '" data-s="' + pair[0] + '" title="Спасбросок ' + pair[1] + '">спас</button>' +
+          '<button type="button" data-act="abil-prof" data-i="' + index + '" data-s="' + pair[0] + '" title="Владение спасброском">' + (saves[pair[0]] ? "●" : "○") + "</button></div>";
+      }).join("") + "</div>";
+    }
     function peopleHtml() {
       const rows = list();
       if (!rows.length) return '<p class="note">Пока пусто.</p>';
@@ -1928,12 +2037,16 @@ window.ShirmoCodex = (function () {
           '<span class="place-pair"><label class="file-btn" title="Загрузить свой портрет">' + FACE + '<input type="file" accept="image/*" data-pic="portrait" data-i="' + index + '" aria-label="Портрет"></label>' +
           '<button type="button" class="icon-btn" data-act="clear-pic" data-pic="portrait" data-i="' + index + '"' + (row.portrait ? "" : " disabled") + ' title="Убрать портрет" aria-label="Убрать портрет">' + CROSS + "</button>" +
           (tab === "enemy" ? '<button type="button" class="icon-btn" data-act="foe-face" data-i="' + index + '" title="Портрет из справочника" aria-label="Портрет из справочника">' + BOOK + "</button>" : "") +
+          '<button type="button" data-act="token-face" data-i="' + index + '" title="Токен из коллекции. Они важнее старых портретов">Токен</button>' +
           "</span>" +
           '<span class="place-pair"><label class="file-btn" title="Загрузить свой фон карточки">' + SCENE + '<input type="file" accept="image/*" data-pic="backdrop" data-i="' + index + '" aria-label="Фон"></label>' +
           '<button type="button" class="icon-btn" data-act="clear-pic" data-pic="backdrop" data-i="' + index + '"' + (row.backdrop ? "" : " disabled") + ' title="Убрать фон" aria-label="Убрать фон">' + CROSS + "</button></span>" +
           "</div></div>" +
           '<div class="npc-fields"><div class="codex-row"><input data-field="name" data-i="' + index + '" type="text" value="' + esc(row.name || "") + '" title="Имя в справочнике и на карте" aria-label="Имя"><button type="button" data-act="rehome" data-kind="npc" data-id="' + esc(row.id) + '" title="Перенести на другое место">Перенести</button><button type="button" data-act="del" data-i="' + index + '" title="Удалить запись" aria-label="Удалить">×</button></div>' +
           homeLine + squadLine +
+          '<div class="codex-row"><button type="button" data-act="npc-side" data-side="player" data-i="' + index + '" title="Поставить на сторону героев">К героям</button>' +
+          '<button type="button" data-act="npc-side" data-side="foe" data-i="' + index + '" title="Поставить на сторону врагов">К врагам</button></div>' +
+          abilityHtml(row, index) +
           '<div class="npc-stats">' + rest + "</div>" +
           (window.ShirmoNpc ? window.ShirmoNpc.html(row, images, index) : "") +
           tradeHtml(row, index) +
@@ -2180,6 +2293,7 @@ window.ShirmoCodex = (function () {
           '<div class="place-tools hero-pics">' +
           '<span class="place-pair"><label class="file-btn" title="Загрузить портрет">' + FACE + '<input type="file" accept="image/*" data-pic="portrait" data-i="' + index + '" aria-label="Портрет"></label>' +
           '<button type="button" class="icon-btn" data-act="clear-pic" data-pic="portrait" data-i="' + index + '"' + (hero.portrait ? "" : " disabled") + ' title="Убрать портрет" aria-label="Убрать портрет">' + CROSS + "</button></span>" +
+          '<button type="button" data-act="hero-token" data-i="' + index + '" title="Токен из коллекции. Они важнее старых портретов">Токен</button>' +
           '<select data-hero-lib="' + index + '" data-shelf="image" title="Портрет из библиотеки" aria-label="Из библиотеки"><option value="">Библиотека</option>' + lib + "</select>" +
           "</div></div>" +
           '<div class="hero-body">' +
@@ -2200,6 +2314,77 @@ window.ShirmoCodex = (function () {
           "</div></div></article>";
       }).join("");
     }
+    function inventoryHtml() {
+      const rows = book().inventory || [];
+      if (!rows.length) return '<p class="note">Склад пуст. Добавьте предмет, потом выдайте его герою, врагу, НПС или в товары.</p>';
+      return rows.map(function (item, index) {
+        const icon = item.icon ? '<img class="cat-thumb" alt="" src="' + esc(item.icon) + '">' : "";
+        return '<article class="place-card inv-card"><div class="codex-row">' + icon +
+          '<input data-inv="name" data-i="' + index + '" type="text" value="' + esc(item.name || "") + '" aria-label="Название" placeholder="Название">' +
+          '<input data-inv="qty" data-i="' + index + '" class="num" type="number" min="1" value="' + esc(item.qty || 1) + '" aria-label="Количество" title="Сколько на складе">' +
+          '<button type="button" data-act="inv-icon" data-i="' + index + '" title="Иконка из коллекции предметов">Токен</button>' +
+          '<button type="button" data-act="del" data-i="' + index + '" title="Убрать со склада" aria-label="Удалить">×</button></div>' +
+          '<input data-inv="note" data-i="' + index + '" type="text" value="' + esc(item.note || "") + '" aria-label="Заметка" placeholder="Заметка">' +
+          '<div class="codex-row"><button type="button" data-act="inv-give" data-to="hero" data-i="' + index + '">Герою</button>' +
+          '<button type="button" data-act="inv-give" data-to="npc" data-i="' + index + '">НПС</button>' +
+          '<button type="button" data-act="inv-give" data-to="enemy" data-i="' + index + '">Врагу</button>' +
+          '<button type="button" data-act="inv-give" data-to="ware" data-i="' + index + '">В товары</button></div></article>';
+      }).join("");
+    }
+    function giveStock(item, who) {
+      if (!item || !who) return;
+      who.pack = who.pack || [];
+      who.pack.push({
+        id: crypto.randomUUID(),
+        name: item.name || "Предмет",
+        note: item.note || "",
+        icon: item.icon || ""
+      });
+    }
+    function stockToWares(item) {
+      book().wares = book().wares || [];
+      let sheet = book().wares.find(function (row) { return row && row.name === "Инвентарь"; });
+      if (!sheet) {
+        sheet = { id: crypto.randomUUID(), name: "Инвентарь", npcId: "", items: [] };
+        book().wares.push(sheet);
+      }
+      sheet.items = sheet.items || [];
+      sheet.items.push({
+        id: crypto.randomUUID(),
+        name: item.name || "Предмет",
+        note: item.note || "",
+        icon: item.icon || "",
+        price: ""
+      });
+    }
+    function openGive(item, kind) {
+      const people = kind === "hero"
+        ? (book().heroes || [])
+        : (book().npcs || []).filter(function (row) { return row && row.role === kind; });
+      const old = document.getElementById("give-pop");
+      if (old) old.remove();
+      const pop = document.createElement("div");
+      pop.id = "give-pop";
+      pop.className = "pop";
+      const html = people.length ? people.map(function (row) {
+        return '<button type="button" data-give="' + esc(row.id) + '"><b>' + esc(row.name || "—") + "</b></button>";
+      }).join("") : '<p class="note">Некого выбрать.</p>';
+      pop.innerHTML = '<div class="pop-card item-pop" role="dialog"><div class="pop-head"><h2>Кому отдать</h2><button type="button" data-pop-close aria-label="Закрыть">×</button></div><div class="battle-hits">' + html + "</div></div>";
+      document.body.appendChild(pop);
+      function close() { if (pop.parentNode) pop.remove(); }
+      pop.addEventListener("click", function (event) {
+        if (event.target === pop || event.target.closest("[data-pop-close]")) close();
+        const button = event.target.closest("[data-give]");
+        if (!button || !pop.contains(button)) return;
+        const id = button.getAttribute("data-give");
+        const who = kind === "hero"
+          ? (book().heroes || []).find(function (row) { return row.id === id; })
+          : (book().npcs || []).find(function (row) { return row.id === id; });
+        giveStock(item, who);
+        close();
+        saveSoon();
+      });
+    }
     function paint() {
       const nav = TABS.map(function (item) {
         return '<button type="button" data-tab="' + item[0] + '" class="' + (tab === item[0] ? "is-on" : "") + '" title="' + esc(item[1]) + '">' + item[2] + "<span>" + esc(item[1]) + "</span></button>";
@@ -2214,7 +2399,7 @@ window.ShirmoCodex = (function () {
         '<label title="Урон каждого, например 1к6">Урон<input id="codex-damage" type="text" value="' + esc(squadDamage) + '" placeholder="1к6"></label>' +
         '<label title="Локация, к которой привяжется отряд">Место<select id="codex-place" aria-label="Место отряда">' + placeOptions + "</select></label>" +
         '<button type="button" data-act="squad" title="Создать врагов и связать их в отряд">Собрать отряд</button>';
-      const body = tab === "places" ? placesHtml() : (tab === "heroes" ? heroesHtml() : (tab === "squads" ? squadsHtml() : (tab === "names" ? namesHtml() : (tab === "wares" ? waresHtml() : (tab === "coins" ? coinsHtml() : (catalogKind() ? catalogHtml() : (isPerson(tab) ? peopleHtml() : tableHtml())))))));
+      const body = tab === "places" ? placesHtml() : (tab === "heroes" ? heroesHtml() : (tab === "squads" ? squadsHtml() : (tab === "names" ? namesHtml() : (tab === "wares" ? waresHtml() : (tab === "coins" ? coinsHtml() : (tab === "inventory" ? inventoryHtml() : (catalogKind() ? catalogHtml() : (isPerson(tab) ? peopleHtml() : tableHtml()))))))));
       host.innerHTML = '<aside class="side codex-nav"><div class="codex-tabs-col">' + nav + "</div>" +
         (tab === "places" ? placeIndexHtml() : "") + "</aside>" +
         '<div class="codex-main"><div class="codex-head"><b class="codex-tab-name">' + esc(current[1]) + "</b>" +
@@ -2375,6 +2560,29 @@ window.ShirmoCodex = (function () {
         const key = field.getAttribute("data-field");
         row[key] = field.type === "number" ? (Number(field.value) || 0) : field.value;
         if (key === "name" && (tab === "places" || isPerson(tab))) renamePins(isPerson(tab) ? "npcs" : "places", row.id, row.name);
+        saveSoon();
+        return;
+      }
+      const score = event.target.closest("[data-score]");
+      if (score && host.contains(score)) {
+        const row = list()[Number(score.getAttribute("data-i"))];
+        if (!row) return;
+        row.scores = row.scores || {};
+        row.scores[score.getAttribute("data-score")] = Math.round(Number(score.value) || 0);
+        const modNode = score.parentElement && score.parentElement.querySelector("[data-act=abil-check]");
+        if (modNode) {
+          const mod = Math.floor((row.scores[score.getAttribute("data-score")] - 10) / 2);
+          modNode.textContent = mod > 0 ? "+" + mod : String(mod);
+        }
+        saveSoon();
+        return;
+      }
+      const inv = event.target.closest("[data-inv]");
+      if (inv && host.contains(inv) && tab === "inventory") {
+        const item = (book().inventory || [])[Number(inv.getAttribute("data-i"))];
+        if (!item) return;
+        const key = inv.getAttribute("data-inv");
+        item[key] = key === "qty" ? Math.max(1, Math.round(Number(inv.value) || 1)) : inv.value;
         saveSoon();
         return;
       }
@@ -3547,6 +3755,19 @@ window.ShirmoCodex = (function () {
         });
         return;
       }
+      if (act === "hero-token") {
+        const hero = book().heroes[Number(button.getAttribute("data-i"))];
+        if (!hero) return;
+        openTokenPick({
+          kind: "portrait",
+          onPick: function (url) {
+            hero.portrait = url;
+            paint();
+            saveSoon();
+          }
+        });
+        return;
+      }
       if (act === "hero-fight") {
         const hero = book().heroes[Number(button.getAttribute("data-i"))];
         if (!hero || !window.ShirmoBattle) return;
@@ -3554,6 +3775,81 @@ window.ShirmoCodex = (function () {
         else if (window.ShirmoBattle.placeHero) window.ShirmoBattle.placeHero(ctx.campaign, hero);
         paint();
         saveSoon();
+        return;
+      }
+      if (act === "npc-side") {
+        const person = list()[Number(button.getAttribute("data-i"))];
+        if (!person || !window.ShirmoBattle || !window.ShirmoBattle.placePerson) return;
+        window.ShirmoBattle.placePerson(ctx.campaign, person, button.getAttribute("data-side") === "foe" ? "foe" : "player");
+        saveSoon();
+        return;
+      }
+      if (act === "token-face") {
+        const person = list()[Number(button.getAttribute("data-i"))];
+        if (!person) return;
+        openTokenPick({
+          kind: "portrait",
+          group: person.race || "",
+          onPick: function (url) {
+            person.portrait = url;
+            if (window.ShirmoNpc) window.ShirmoNpc.write(person);
+            paint();
+            saveSoon();
+          }
+        });
+        return;
+      }
+      if (act === "abil-prof") {
+        const person = list()[Number(button.getAttribute("data-i"))];
+        const key = button.getAttribute("data-s");
+        if (!person || !key) return;
+        person.saves = person.saves || {};
+        person.saves[key] = !person.saves[key];
+        paint();
+        saveSoon();
+        return;
+      }
+      if (act === "abil-check" || act === "abil-save") {
+        const person = list()[Number(button.getAttribute("data-i"))];
+        const key = button.getAttribute("data-s");
+        if (!person || !key || !ctx.roll) return;
+        const names = { str: "СИЛ", dex: "ЛОВ", con: "ТЕЛ", int: "ИНТ", wis: "МДР", cha: "ХАР" };
+        person.scores = person.scores || {};
+        const score = person.scores[key] == null ? 10 : person.scores[key];
+        let mod = Math.floor((Math.round(Number(score) || 10) - 10) / 2);
+        if (act === "abil-save" && person.saves && person.saves[key]) mod += Math.round(Number(person.prof) || 2);
+        ctx.roll({
+          name: person.name || "НПС",
+          label: (act === "abil-save" ? "Спас " : "Проверка ") + (names[key] || ""),
+          sides: 20,
+          count: 1,
+          mod: mod
+        });
+        return;
+      }
+      if (act === "inv-icon") {
+        const item = (book().inventory || [])[Number(button.getAttribute("data-i"))];
+        if (!item) return;
+        openTokenPick({
+          kind: "item",
+          onPick: function (url) {
+            item.icon = url;
+            paint();
+            saveSoon();
+          }
+        });
+        return;
+      }
+      if (act === "inv-give") {
+        const item = (book().inventory || [])[Number(button.getAttribute("data-i"))];
+        const to = button.getAttribute("data-to");
+        if (!item) return;
+        if (to === "ware") {
+          stockToWares(item);
+          saveSoon();
+          return;
+        }
+        openGive(item, to);
         return;
       }
       if (act === "add") {
