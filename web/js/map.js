@@ -2361,8 +2361,43 @@
         });
         return used;
       }
+      function bareNpc(row) {
+        if (!row) return false;
+        if ((row.lines || []).some(function (line) { return line && String(line.text || line.name || "").trim(); })) return false;
+        if ((row.goods || []).some(function (item) { return item && String(item.name || "").trim(); })) return false;
+        const moods = row.moods || [];
+        if (moods.length > 1) return false;
+        if (moods.some(function (mood) { return mood && String(mood.emoji || "").trim(); })) return false;
+        if (String(row.note || "").trim()) return false;
+        if (String(row.weapon || "").trim()) return false;
+        if (String(row.damage || "").trim()) return false;
+        if (String(row.backdrop || "").trim()) return false;
+        if (Number(row.hp) || Number(row.hpMax) || Number(row.ac)) return false;
+        const scores = row.scores || {};
+        if (Object.keys(scores).some(function (key) { return scores[key] != null && Number(scores[key]) !== 10; })) return false;
+        return true;
+      }
+      function retargetNpc(oldId, keepId) {
+        (ctx.campaign.pages || []).forEach(function (one) {
+          (one.views || []).forEach(function (oneView) {
+            (oneView.markers || []).forEach(function (marker) {
+              if (!marker || marker.id === item.id) return;
+              if (marker.npcId === oldId) marker.npcId = keepId;
+              if (marker.codexId === oldId) marker.codexId = keepId;
+            });
+          });
+        });
+        const actors = ctx.campaign.battle && ctx.campaign.battle.actors || [];
+        actors.forEach(function (actor) {
+          if (actor && actor.codexId === oldId) actor.codexId = keepId;
+        });
+        (book().wares || []).forEach(function (sheet) {
+          if (sheet && sheet.npcId === oldId) sheet.npcId = keepId;
+        });
+      }
       function dropUnusedNpc(oldId, keepId) {
         if (!oldId || oldId === keepId) return;
+        const old = (book().npcs || []).find(function (row) { return row && row.id === oldId; });
         (book().places || []).forEach(function (place) {
           if (!place || !Array.isArray(place.people)) return;
           const at = place.people.indexOf(oldId);
@@ -2377,8 +2412,9 @@
           squad.memberIds.splice(at, 1);
           if (keepId && squad.memberIds.indexOf(keepId) < 0) squad.memberIds.push(keepId);
         });
-        if (npcStillUsed(oldId, item.id)) return;
-        book().npcs = (book().npcs || []).filter(function (row) { return !row || row.id !== oldId; });
+        if (bareNpc(old)) retargetNpc(oldId, keepId);
+        else if (npcStillUsed(oldId, item.id)) return;
+        book().npcs = (book().npcs || []).filter(function (row) { return row && row.id !== oldId; });
       }
       function take(entry) {
         item.name = entry.name || item.name;
