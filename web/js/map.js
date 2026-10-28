@@ -280,7 +280,7 @@
     try {
       if (!item || !window.ShirmoPlugins || !window.ShirmoPlugins.on()) return "";
     } catch (err) { return ""; }
-    const color = (item.lampColor && /^#[0-9a-f]{6}$/i.test(item.lampColor)) ? item.lampColor : "#16130f";
+    const color = (item.lampSrc && item.lampColor && /^#[0-9a-f]{6}$/i.test(item.lampColor)) ? item.lampColor : "#16130f";
     const on = item.lamp === true;
     return '<span role="button" data-flag="lamp" data-lamp="' + esc(item.id) + '" class="flag flag-lamp' + (on ? " is-on" : "") + '" style="--swatch:' + esc(color) + ";background-color:" + esc(color) + '" title="' + (on ? "Подсветка этой локации включена" : "Подсветка выключена. Нажмите, чтобы задать цвет") + '" aria-label="Цвет подсветки"></span>';
   }
@@ -846,6 +846,7 @@
       if (window.ShirmoFit) window.ShirmoFit(board);
       const stage = board.querySelector(".stage");
       if (stage) stage.classList.toggle("is-erase", tool === "erase");
+      tellLight();
     }
     function passiveSkill(hero, id, names, statId) {
       const skill = (hero.skills || []).find(function (row) {
