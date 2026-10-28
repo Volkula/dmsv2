@@ -1453,6 +1453,7 @@ label.check input { width: auto; }
 }
 
 .map-stage.has-flags .map-tabs { padding-left: 140px; }
+.map-stage.has-lamp .map-tabs { padding-left: 56px; }
 
 .map-flags {
   position: absolute;
@@ -1496,12 +1497,12 @@ label.check input { width: auto; }
 
 .pin-flags .flag svg { width: 13px; height: 13px; display: block; }
 
-.flag-lamp {
+.map-flags .flag.flag-lamp,
+.pin-flags .flag.flag-lamp {
   background: var(--swatch, #16130f);
-  opacity: 0.45;
-  box-shadow: inset 0 0 0 1px rgba(243, 234, 216, 0.45);
+  opacity: 1;
 }
-.flag-lamp.is-on { opacity: 1; box-shadow: inset 0 0 0 2px var(--brass); }
+.flag-lamp.is-on { box-shadow: inset 0 0 0 3px var(--brass); }
 
 .pin-vitals {
   display: flex;

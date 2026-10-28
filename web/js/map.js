@@ -282,12 +282,15 @@
     } catch (err) { return ""; }
     const color = (item.lampColor && /^#[0-9a-f]{6}$/i.test(item.lampColor)) ? item.lampColor : "#16130f";
     const on = item.lamp === true;
-    return '<span role="button" data-flag="lamp" data-lamp="' + esc(item.id) + '" class="flag flag-lamp' + (on ? " is-on" : "") + '" style="--swatch:' + esc(color) + '" title="' + (on ? "Подсветка этой локации включена" : "Подсветка выключена") + '" aria-label="Подсветка"></span>';
+    return '<span role="button" data-flag="lamp" data-lamp="' + esc(item.id) + '" class="flag flag-lamp' + (on ? " is-on" : "") + '" style="--swatch:' + esc(color) + ";background-color:" + esc(color) + '" title="' + (on ? "Подсветка этой локации включена" : "Подсветка выключена. Нажмите, чтобы задать цвет") + '" aria-label="Цвет подсветки"></span>';
   }
 
   function flagBar(flags) {
-    const lamp = flags && flags.loc ? lampFlag(flags.loc) : "";
-    return '<div class="map-flags">' + flagMark("screen", !!flags.screen) + flagMark("map", !!flags.map) + lamp + "</div>";
+    if (!flags || !flags.loc) return "";
+    const lamp = lampFlag(flags.loc);
+    const marks = flags.bare ? "" : flagMark("screen", !!flags.screen) + flagMark("map", !!flags.map);
+    if (!marks && !lamp) return "";
+    return '<div class="map-flags">' + marks + lamp + "</div>";
   }
 
   const MARK_GLYPHS = ["⚔", "🛡", "☠", "🔥", "🔑", "💰", "🚪", "⛺", "⭐", "❗", "❓", "🧪", "📜", "💎", "⚓", "🏠", "🌳", "👁", "🐴", "📦", "🚩", "💤"];
@@ -572,7 +575,7 @@
       ? '<button type="button" class="map-back" data-up="' + esc(source.up || "") + '" title="На уровень выше">Назад</button>'
       : "";
     return (face ? "<style>" + face + "</style>" : "") +
-      '<div class="stage map-stage' + (bar ? " has-flags" : "") + '">' +
+      '<div class="stage map-stage' + (bar ? (source.flags.bare ? " has-lamp" : " has-flags") : "") + '">' +
       back +
       (master ? tabHtml(source.tabs) : "") +
       bar +
@@ -784,7 +787,8 @@
         const inside = current.focusId
           ? (current.locations || []).find(function (item) { return item.id === current.focusId && !item.trashed; })
           : null;
-        window.ShirmoPlugins.place(inside, shot.image || "");
+        const sheet = inside || current;
+        window.ShirmoPlugins.place(sheet, shot.image || "");
       } catch (err) {}
     }
     function paintBoard() {
@@ -807,7 +811,9 @@
         day: shot.image,
         night: "",
         mode: shot.dim ? "night" : "day",
-        flags: inside ? { screen: shownScreen(inside), map: shownMap(inside), loc: inside } : null,
+        flags: inside
+          ? { screen: shownScreen(inside), map: shownMap(inside), loc: inside }
+          : { loc: current, bare: true },
         tabs: tabList(current),
         locations: onLevel(current.locations, here, "parentId").filter(function (item) { return !item.trashed; }).map(function (item) {
           const place = item.placeId && (book().places || []).find(function (row) { return row.id === item.placeId; });
@@ -3481,7 +3487,7 @@
         const pin = node.closest("[data-pin]");
         const loc = pin
           ? (view().locations || []).find(function (row) { return row.id === pin.getAttribute("data-pin"); })
-          : findLoc(view().focusId || "");
+          : levelSheet();
         try { if (loc && window.ShirmoPlugins) window.ShirmoPlugins.lamp(loc, node); } catch (err) {}
         return;
       }
