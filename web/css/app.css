@@ -544,6 +544,11 @@ label.text-file:hover { border-color: var(--brass); color: var(--brass); }
   color: #f3e2b0;
 }
 
+.die-total,
+.die-verdict { transition: opacity 0.25s ease; }
+.die-frame.is-pending .die-total,
+.die-frame.is-pending .die-verdict { opacity: 0; }
+
 .die-verdict {
   position: relative;
   z-index: 3;

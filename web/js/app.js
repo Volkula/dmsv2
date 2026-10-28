@@ -624,6 +624,15 @@
       (name ? '<p class="die-name">' + esc(name) + "</p>" : "") +
       '</div><canvas class="die-flight"></canvas>';
     document.body.appendChild(show);
+    const frame = show.querySelector(".die-frame");
+    if (verdict && roll.animate !== false) {
+      frame.classList.add("is-pending");
+      const speed = Number(roll.speed) || 1;
+      const wait = Math.min(5000, Math.max(500, Math.round(2200 / speed)));
+      window.setTimeout(function () {
+        if (frame.isConnected) frame.classList.remove("is-pending");
+      }, wait);
+    }
     const canvas = show.querySelector("canvas");
     const box = show.getBoundingClientRect();
     const hole = show.querySelector(".die-hole").getBoundingClientRect();
@@ -2372,6 +2381,15 @@
     function publishRoll(spec) {
       const look = diceLook(state);
       const roll = rollFormula(spec || {});
+      if (spec && Number.isFinite(Number(spec.face))) {
+        const face = Math.min(20, Math.max(1, Math.round(Number(spec.face))));
+        roll.dice = [{ sides: 20, value: face }];
+        roll.sides = 20;
+        roll.count = 1;
+        roll.mode = "normal";
+        roll.total = face;
+        roll.log = String(face);
+      }
       const bonus = Math.round(Number(spec && spec.bonus) || 0);
       if (bonus) {
         roll.total += bonus;

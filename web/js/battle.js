@@ -668,7 +668,9 @@
         }
         note("Пробил" + (crit ? " (крит)" : "") + " · " + (actor.name || "Боец") + " → " + (foe.name || "цель") +
           " · " + total + " против КД " + ac);
-        return damage(actor, true, crit);
+        const speed = Number(rolled.speed) || 1;
+        const spin = rolled.animate === false ? 0 : Math.min(5000, Math.max(500, Math.round(2200 / speed)));
+        window.setTimeout(function () { damage(actor, true, crit); }, spin + 1400);
       });
     }
 
@@ -1526,7 +1528,7 @@
       openPop((actor.weapon || "Атака") + " → " + (foe.name || "цель"),
         '<p class="note">КД ' + ac + " · бонус " + sign + "</p>" +
         '<label>Кубик<input id="strike-die" type="number" min="1" max="30" inputmode="numeric" aria-label="Грань кубика"></label>' +
-        '<button type="button" data-act="strike-read">Итог</button>' +
+        '<button type="button" data-act="strike-read">Проверить</button>' +
         '<p class="strike-verdict" id="strike-verdict">Введите грань кубика</p>' +
         '<label>Урон<input id="strike-dmg" type="number" min="0" value="0" aria-label="Урон"></label>' +
         '<button type="button" data-act="strike-apply">Снять хиты</button>' +
@@ -2355,7 +2357,16 @@
         const node = field("strike-verdict");
         const die = field("strike-die");
         if (!foe || !node) return;
-        const result = handVerdict(die && die.value, Math.round(Number(actor.bonus) || 0), Math.max(0, Math.round(Number(foe.ac) || 10)));
+        const bonus = Math.round(Number(actor.bonus) || 0);
+        const ac = Math.max(0, Math.round(Number(foe.ac) || 10));
+        const typed = Math.round(Number(die && die.value));
+        if (!Number.isFinite(typed) || typed < 1) {
+          node.textContent = "Введите грань кубика";
+          node.className = "strike-verdict";
+          return;
+        }
+        const face = Math.min(20, typed);
+        const result = handVerdict(face, bonus, ac);
         if (!result) {
           node.textContent = "Введите грань кубика";
           node.className = "strike-verdict";
@@ -2365,6 +2376,15 @@
         node.className = "strike-verdict " + (result.hit ? "is-hit" : "is-miss");
         note(result.text + " · " + (actor.name || "Боец") + " → " + (foe.name || "цель"));
         save();
+        roll({
+          name: actor.name || "Боец",
+          label: (actor.weapon || "Атака") + " по " + (foe.name || "цели"),
+          count: 1,
+          sides: 20,
+          bonus: bonus,
+          ac: ac,
+          face: face
+        });
       }
       if (act === "strike-apply" && actor && pop) {
         const foe = battle.actors.find(function (row) { return row.id === pop._foeId; });
