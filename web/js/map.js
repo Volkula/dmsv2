@@ -436,39 +436,17 @@
     record[shop ? "stall" : "stand"] = fitFigure(fig);
   }
 
-  function seatFigure(fig) {
-    const h = clampNum(fig && fig.h, 8, 98, 86);
-    let y = clampNum(fig && fig.y, -80, 140, 2);
-    let x = clampNum(fig && fig.x, -80, 140, 3);
-    if (y < 0) y = 0;
-    if (y + h > 98) y = Math.max(0, 98 - h);
-    const w = h * 0.34;
-    if (x < 0) x = 0;
-    if (x + w > 98) x = Math.max(0, 98 - w);
-    return {
-      x: Math.round(x * 10) / 10,
-      y: Math.round(y * 10) / 10,
-      h: Math.round(h * 10) / 10
-    };
-  }
-
   function mapFigureOf(record) {
-    if (record && record.mapStand && typeof record.mapStand === "object") return seatFigure(record.mapStand);
-    return seatFigure(figureOf(record, false));
-  }
-
-  function putMapFigure(record, fig) {
-    if (!record) return;
-    record.mapStand = seatFigure(fig);
+    const base = figureOf(record, false);
+    if (!record || record.mapH == null) return base;
+    const next = fitFigure({ x: base.x, y: base.y, h: record.mapH });
+    if (next.y < 0) next.y = 0;
+    if (next.y + next.h > 100) next.y = Math.max(0, Math.round((100 - next.h) * 10) / 10);
+    return next;
   }
 
   function figureCss(fig) {
     return "left:" + fig.x + "%;bottom:" + fig.y + "%;height:" + fig.h + "%";
-  }
-
-  function mapFigureCss(fig) {
-    const left = Math.max(0, Number(fig.x) || 0);
-    return figureCss(fig) + ";max-width:" + Math.max(18, Math.round((100 - left) * 10) / 10) + "%";
   }
 
   function talkHtml(talk, master) {
@@ -567,12 +545,12 @@
     const markers = (source.markers || []).map(function (item) {
       const kind = item.kind === "npc" ? "npc" : (item.kind === "foe" ? "foe" : (item.kind === "hero" ? "hero" : (item.kind === "image" ? "image" : "mark")));
       if (kind === "npc" && item.portrait && item.look !== "token") {
-        const fig = seatFigure(item.stand);
+        const fig = fitFigure(item.stand);
         const marks = master
           ? '<span class="pin-flags">' + flagMark("screen", shownScreen(item)) + flagMark("map", shownMap(item)) + "</span>"
           : "";
         const caption = item.showName === true ? "<b>" + esc(item.name || "НПС") + "</b>" : "";
-        return '<button type="button" class="map-figure' + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="npc" data-figure="1" style="' + mapFigureCss(fig) + '" aria-label="' + esc(item.name || "НПС") + '"' + (master ? ' title="Открыть диалог"' : "") + ">" +
+        return '<button type="button" class="map-figure' + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="npc" data-figure="1" style="' + figureCss(fig) + '" aria-label="' + esc(item.name || "НПС") + '"' + (master ? ' title="Открыть диалог"' : "") + ">" +
           marks + '<img alt="" draggable="false" src="' + esc(item.portrait) + '">' + caption + "</button>";
       }
       return pinHtml(item, kind, master);
@@ -2556,7 +2534,7 @@
       const pinDefault = figureMode
         ? mapFigureOf(npcRec).h
         : (Number(item.pinSize) || (kind === "image" ? 120 : (faceOf(item) ? 56 : 14)));
-      const pinMax = figureMode ? 98 : (kind === "image" ? 400 : 140);
+      const pinMax = figureMode ? 220 : (kind === "image" ? 400 : 140);
       const pinMin = figureMode ? 8 : (kind === "image" ? 32 : 12);
       const pin = kind === "label" ? "" : '<label title="' + (figureMode ? "Размер фигуры на карте, без диалога" : (kind === "image" ? "Размер картинки на карте" : "Размер точки на карте")) + '">Размер<input id="pin-size" type="range" min="' + pinMin + '" max="' + pinMax + '" value="' + pinDefault + '"></label>';
       const note = kind === "mark" || kind === "npc" || kind === "loc" || kind === "image" || kind === "hero"
@@ -2649,6 +2627,7 @@
         : "";
       return '<div class="pin-style">' +
         nameOn +
+        (figureMode ? pin : "") +
         toBattle +
         group("Портрет", "Кадр, крупность и сдвиг портрета", foeFace || frame || locShot, kind === "foe") +
         group("Картинка", "Файл и библиотека", imageShot, true) +
@@ -2656,7 +2635,7 @@
         group("Бой", "Хиты, броня и броски от имени врага", foeBox, true) +
         group("Значок", "Набор, свой эмодзи, загрузка или библиотека", markBox, true) +
         group("Цифры", "Какие характеристики видны над портретом", vitalBox, true) +
-        group("Точка", kind === "image" ? "Размер и видимость для игроков" : "Размер точки, заметка и видимость для игроков", pin + note, kind === "loc" || kind === "image") +
+        group("Точка", kind === "image" ? "Размер и видимость для игроков" : "Размер точки, заметка и видимость для игроков", (figureMode ? "" : pin) + note, kind === "loc" || kind === "image") +
         (kind === "image" ? "" : group("Подпись", "Шрифт, размер и оформление подписи", text)) +
         "</div>";
     }
@@ -2751,8 +2730,8 @@
           const who = selected.kind === "npc" ? (linkedNpc(row) || row) : null;
           const figure = who && who.look !== "token" && row.look !== "token" && (who.portrait || row.portrait);
           if (figure) {
-            const fig = mapFigureOf(who);
-            putMapFigure(who, { x: fig.x, y: fig.y, h: Number(pinSize.value) || fig.h });
+            const base = figureOf(who, false);
+            who.mapH = fitFigure({ x: base.x, y: base.y, h: Number(pinSize.value) || base.h }).h;
           } else row.pinSize = Number(pinSize.value) || (selected.kind === "image" ? 120 : 14);
         }
         if (textSize) row.size = Number(textSize.value) || 14;
@@ -3633,8 +3612,8 @@
         if (!item) return;
         if (drag === "figure") {
           const who = linkedNpc(item) || item;
-          const fig = mapFigureOf(who);
-          putMapFigure(who, { x: at.x * 100, y: (1 - at.y) * 100, h: fig.h });
+          const base = figureOf(who, false);
+          putFigure(who, false, { x: at.x * 100, y: (1 - at.y) * 100, h: base.h });
         } else {
           item.x = at.x;
           item.y = at.y;

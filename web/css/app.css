@@ -1938,13 +1938,11 @@ label.check input { width: auto; }
   background: transparent;
   color: #f3ead8;
   cursor: pointer;
-  overflow: hidden;
   filter: drop-shadow(0 16px 22px rgba(0, 0, 0, 0.45));
 }
 .map-figure img {
   height: 100%;
   width: auto;
-  max-width: 100%;
   display: block;
   pointer-events: none;
   object-fit: contain;
