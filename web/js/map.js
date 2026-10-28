@@ -438,11 +438,11 @@
 
   function mapFigureOf(record) {
     const base = figureOf(record, false);
-    if (!record || record.mapH == null) return base;
-    const next = fitFigure({ x: base.x, y: base.y, h: record.mapH });
-    if (next.y < 0) next.y = 0;
-    if (next.y + next.h > 100) next.y = Math.max(0, Math.round((100 - next.h) * 10) / 10);
-    return next;
+    return fitFigure({
+      x: record && record.mapX != null ? record.mapX : base.x,
+      y: record && record.mapY != null ? record.mapY : base.y,
+      h: record && record.mapH != null ? record.mapH : base.h
+    });
   }
 
   function figureCss(fig) {
@@ -672,6 +672,7 @@
     let shownForm = "";
     let pendingParent = "";
     let drag = null;
+    let figureDrag = null;
     let press = null;
     let armedMove = false;
     let reopen = false;
@@ -3612,8 +3613,17 @@
         if (!item) return;
         if (drag === "figure") {
           const who = linkedNpc(item) || item;
-          const base = figureOf(who, false);
-          putFigure(who, false, { x: at.x * 100, y: (1 - at.y) * 100, h: base.h });
+          if (!figureDrag || figureDrag.id !== who.id) {
+            const fig = mapFigureOf(who);
+            figureDrag = { id: who.id, x: fig.x, y: fig.y, h: fig.h, px: at.x, py: at.y };
+          }
+          const next = fitFigure({
+            x: figureDrag.x + (at.x - figureDrag.px) * 100,
+            y: figureDrag.y - (at.y - figureDrag.py) * 100,
+            h: figureDrag.h
+          });
+          who.mapX = next.x;
+          who.mapY = next.y;
         } else {
           item.x = at.x;
           item.y = at.y;
@@ -3723,6 +3733,7 @@
       }
       if (drag) {
         drag = null;
+        figureDrag = null;
         ctx.save();
       }
       if (!draw) return;

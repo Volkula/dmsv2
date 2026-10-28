@@ -150,11 +150,14 @@ function standOf(record, shop) {
 
 function mapStandOf(record) {
   const base = standOf(record);
-  if (!(record && record.mapH != null)) return base;
-  const next = standOf({ stand: { x: base.x, y: base.y, h: record.mapH } });
-  if (next.y < 0) next.y = 0;
-  if (next.y + next.h > 100) next.y = Math.max(0, Math.round((100 - next.h) * 10) / 10);
-  return next;
+  if (!record) return base;
+  return standOf({
+    stand: {
+      x: record.mapX != null ? record.mapX : base.x,
+      y: record.mapY != null ? record.mapY : base.y,
+      h: record.mapH != null ? record.mapH : base.h
+    }
+  });
 }
 
 function replicas(record) {
