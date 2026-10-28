@@ -17,10 +17,21 @@ const FX_SCENE = {
   flood: ["ocean"]
 };
 
+function catalogEntry(body, src) {
+  if (!body || !/^[a-z0-9-]{2,40}$/.test(body.id || "") || !body.name) return null;
+  const main = String(body.main || "plugin.js");
+  if (!/^[a-z0-9._-]+$/i.test(main)) return null;
+  return {
+    id: body.id,
+    name: String(body.name).slice(0, 80),
+    version: String(body.version || "1").slice(0, 20),
+    src: src ? String(src).replace(/[^/]+$/, main) : ""
+  };
+}
+
 function readBundled() {
   try {
-    const body = JSON.parse(fs.readFileSync(bundledPath, "utf8"));
-    if (body && body.id && body.name) return { id: String(body.id), name: String(body.name), version: String(body.version || "1") };
+    return catalogEntry(JSON.parse(fs.readFileSync(bundledPath, "utf8")), "");
   } catch (err) { /* пакет на диске не обязателен, если релиз ответил */ }
   return null;
 }
@@ -30,9 +41,8 @@ export async function pluginCatalog() {
     const response = await fetch(releaseUrl, { signal: AbortSignal.timeout(4000) });
     if (response.ok) {
       const body = await response.json();
-      if (body && /^[a-z0-9-]{2,40}$/.test(body.id) && body.name) {
-        return [{ id: body.id, name: String(body.name).slice(0, 80), version: String(body.version || "1").slice(0, 20) }];
-      }
+      const entry = catalogEntry(body, releaseUrl);
+      if (entry) return [entry];
     }
   } catch (err) { /* релиза нет — берём имя из файла плагина */ }
   const local = readBundled();

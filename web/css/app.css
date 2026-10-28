@@ -4751,7 +4751,30 @@ body > .clock-layer.is-pinned { display: none !important; }
 .light-form { display: flex; align-items: center; gap: 8px; }
 .light-form input[type="color"] { width: 42px; height: 32px; padding: 2px; }
 
-.plugin-pop { width: min(520px, 100%); padding: 0; }
+.plugin-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: block;
+  overflow: auto;
+  padding: 48px 16px 32px;
+  background: rgba(6, 8, 14, 0.72);
+}
+.plugin-layer .plugin-pop {
+  width: min(560px, 100%);
+  margin: 0 auto;
+  height: auto;
+  max-height: none;
+  overflow: visible;
+}
+.plugin-layer .pop-body {
+  display: block;
+  height: auto;
+  min-height: auto;
+  overflow: visible;
+  flex: none;
+}
+.plugin-pop { width: min(560px, 100%); padding: 0; }
 .plugin-pop .pop-head { padding: 14px 16px 8px; border-bottom: 1px solid var(--line); }
 .plugin-pop h3 { margin: 18px 0 8px; font-size: 14px; font-weight: 500; color: var(--muted); }
 .plugin-pop h3:first-child { margin-top: 4px; }
