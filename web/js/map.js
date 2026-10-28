@@ -276,8 +276,18 @@
     return '<span role="button" data-flag="' + kind + '" class="flag' + (open ? "" : " is-off") + '" title="' + esc(title) + '" aria-label="' + esc(label) + '">' + icon + "</span>";
   }
 
+  function lampFlag(item) {
+    try {
+      if (!item || !window.ShirmoPlugins || !window.ShirmoPlugins.on()) return "";
+    } catch (err) { return ""; }
+    const color = (item.lampColor && /^#[0-9a-f]{6}$/i.test(item.lampColor)) ? item.lampColor : "#16130f";
+    const on = item.lamp === true;
+    return '<span role="button" data-flag="lamp" data-lamp="' + esc(item.id) + '" class="flag flag-lamp' + (on ? " is-on" : "") + '" style="--swatch:' + esc(color) + '" title="' + (on ? "Подсветка этой локации включена" : "Подсветка выключена") + '" aria-label="Подсветка"></span>';
+  }
+
   function flagBar(flags) {
-    return '<div class="map-flags">' + flagMark("screen", !!flags.screen) + flagMark("map", !!flags.map) + "</div>";
+    const lamp = flags && flags.loc ? lampFlag(flags.loc) : "";
+    return '<div class="map-flags">' + flagMark("screen", !!flags.screen) + flagMark("map", !!flags.map) + lamp + "</div>";
   }
 
   const MARK_GLYPHS = ["⚔", "🛡", "☠", "🔥", "🔑", "💰", "🚪", "⛺", "⭐", "❗", "❓", "🧪", "📜", "💎", "⚓", "🏠", "🌳", "👁", "🐴", "📦", "🚩", "💤"];
@@ -313,7 +323,7 @@
       dot = '<i><img alt="" src="' + esc(portrait) + '"' + crop + ">" + badge + "</i>";
     }
     const marks = master && (kind === "npc" || kind === "loc" || kind === "foe" || kind === "hero" || kind === "mark")
-      ? '<span class="pin-flags">' + flagMark("screen", shownScreen(item)) + flagMark("map", shownMap(item)) + "</span>"
+      ? '<span class="pin-flags">' + flagMark("screen", shownScreen(item)) + flagMark("map", shownMap(item)) + (kind === "loc" ? lampFlag(item) : "") + "</span>"
       : "";
     const hp = master && kind === "foe" && item.hpMax ? '<em class="pin-hp">' + esc(String(item.hp == null ? item.hpMax : item.hp)) + "/" + esc(String(item.hpMax)) + "</em>" : "";
     const vitals = master && kind === "hero" ? heroVitalsHtml(item) : "";
@@ -764,6 +774,18 @@
       paintTree();
       paintSelected();
       ctx.save();
+      tellLight();
+    }
+    function tellLight() {
+      try {
+        if (!window.ShirmoPlugins || !window.ShirmoPlugins.place) return;
+        const current = view();
+        const shot = levelImage(current, book().places);
+        const inside = current.focusId
+          ? (current.locations || []).find(function (item) { return item.id === current.focusId && !item.trashed; })
+          : null;
+        window.ShirmoPlugins.place(inside, shot.image || "");
+      } catch (err) {}
     }
     function paintBoard() {
       const current = view();
@@ -785,7 +807,7 @@
         day: shot.image,
         night: "",
         mode: shot.dim ? "night" : "day",
-        flags: inside ? { screen: shownScreen(inside), map: shownMap(inside) } : null,
+        flags: inside ? { screen: shownScreen(inside), map: shownMap(inside), loc: inside } : null,
         tabs: tabList(current),
         locations: onLevel(current.locations, here, "parentId").filter(function (item) { return !item.trashed; }).map(function (item) {
           const place = item.placeId && (book().places || []).find(function (row) { return row.id === item.placeId; });
@@ -3455,6 +3477,14 @@
     }
     function onFlag(node) {
       const which = node.getAttribute("data-flag");
+      if (which === "lamp") {
+        const pin = node.closest("[data-pin]");
+        const loc = pin
+          ? (view().locations || []).find(function (row) { return row.id === pin.getAttribute("data-pin"); })
+          : findLoc(view().focusId || "");
+        try { if (loc && window.ShirmoPlugins) window.ShirmoPlugins.lamp(loc, node); } catch (err) {}
+        return;
+      }
       const pin = node.closest("[data-pin]");
       if (pin) {
         const kind = pin.getAttribute("data-kind");
@@ -3784,8 +3814,12 @@
       paintTree();
       paintSelected();
     };
+    window.ShirmoMap.light = tellLight;
     host._mapOff = function () {
-      if (window.ShirmoMap) window.ShirmoMap.sync = null;
+      if (window.ShirmoMap) {
+        window.ShirmoMap.sync = null;
+        window.ShirmoMap.light = null;
+      }
       window.removeEventListener("pointerdown", onDocDown);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);

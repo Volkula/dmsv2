@@ -7,6 +7,7 @@ import { bearer, hashSecret, isAdmin, newSecret, secretMatches } from "./auth.js
 import { publish, subscribe } from "./hub.js";
 import { blankCampaign, campaignOk, playAction, projectFrame } from "./frame.js";
 import { openSettings } from "./settings.js";
+import { handlePlugin } from "./plugins.js";
 import { ROOM_FILES_MAX, roomFilesSize, unpackFiles, wipeRoomFiles, writePackedFiles, pipePackedFiles } from "./files.js";
 
 const dataDir = process.env.DATA_DIR || path.join(process.cwd(), "data");
@@ -560,6 +561,15 @@ const server = http.createServer(async function (req, res) {
 
     const tail = parts.slice(3).join("/");
 
+    if (tail === "plugins" || tail.indexOf("plugins/") === 0) {
+      if (!isMaster(req, room)) {
+        send(res, 401, { error: "unauthorized" });
+        return;
+      }
+      await handlePlugin({ req, res, room, tail, send, readJson, db, writeRoom });
+      return;
+    }
+
     if (req.method === "DELETE" && !tail) {
       if (!isMaster(req, room) && !isAdmin(req)) {
         send(res, 401, { error: "unauthorized" });
@@ -715,8 +725,18 @@ const server = http.createServer(async function (req, res) {
           send(res, 400, { error: "bad campaign" });
           return;
         }
+        const prevPlugins = room.campaign && room.campaign.plugins;
         room.campaign = body.campaign;
+        if (!room.campaign.plugins && prevPlugins) room.campaign.plugins = prevPlugins;
         if (room.campaign.dungeon) delete room.campaign.dungeon;
+        if (room.campaign.plugins && typeof room.campaign.plugins === "object") {
+          delete room.campaign.plugins.token;
+          delete room.campaign.plugins.key;
+          if (room.campaign.plugins.light) {
+            delete room.campaign.plugins.light.token;
+            delete room.campaign.plugins.light.key;
+          }
+        }
       }
       const shown = room.campaign.activePageId === room.campaign.shownPageId;
       const nextFrame = projectFrame(room.campaign);

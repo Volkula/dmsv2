@@ -528,6 +528,7 @@
       else if (squadSame && rightSquad && rightSquad.turnRun && timerOwner === rightSquad.id && playersSeeFight()) { /* таймер отряда остаётся */ }
       else clearFightFx();
       shownActor = now && now.id || "";
+      try { if (window.ShirmoPlugins) window.ShirmoPlugins.turn(playersSeeFight() ? now : null); } catch (err) {}
     }
 
     function paintClock(node, button, row) {
@@ -1976,6 +1977,7 @@
         save();
         if (shown.checked) resumeShown();
         else clearFightFx();
+        try { if (window.ShirmoPlugins) window.ShirmoPlugins.turn(shown.checked ? active() : null); } catch (err) {}
       });
       const logOn = host.querySelector("#battle-log-on");
       if (logOn) logOn.addEventListener("change", function () {
@@ -2790,6 +2792,7 @@
     loadMonsters().then(function () { if (alive) paint(); });
     paint();
     resumeShown();
+    try { if (window.ShirmoPlugins) window.ShirmoPlugins.turn(playersSeeFight() ? active() : null); } catch (err) {}
     shownActor = (active() && active().id) || "";
     shownScreen = playersSeeFight();
   }

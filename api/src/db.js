@@ -23,6 +23,15 @@ export function openDb(dir) {
   if (names.indexOf("roll_pins") < 0) db.exec("ALTER TABLE rooms ADD COLUMN roll_pins TEXT NOT NULL DEFAULT '[]'");
   if (names.indexOf("master_key") < 0) db.exec("ALTER TABLE rooms ADD COLUMN master_key TEXT NOT NULL DEFAULT ''");
   if (names.indexOf("deleted_at") < 0) db.exec("ALTER TABLE rooms ADD COLUMN deleted_at INTEGER NOT NULL DEFAULT 0");
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS room_secrets (
+      room_id TEXT NOT NULL,
+      plugin_id TEXT NOT NULL,
+      nonce TEXT NOT NULL,
+      secret TEXT NOT NULL,
+      PRIMARY KEY (room_id, plugin_id)
+    )
+  `);
   return db;
 }
 

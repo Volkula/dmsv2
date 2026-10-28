@@ -1977,6 +1977,7 @@
         clearTimeout(pushTimer);
         if (mode === "run") mode = "pause";
         paint();
+        try { if (window.ShirmoPlugins) window.ShirmoPlugins.effect(""); } catch (err) {}
         if (!playersOn) return;
         playersOn = false;
         markPlayers();
@@ -2014,6 +2015,7 @@
             markPlayers();
             sendPlayers({ type: "timer", on: false });
           }
+          try { if (window.ShirmoPlugins) window.ShirmoPlugins.effect(""); } catch (err) {}
           return;
         }
         if (opts.showPlayers) {
@@ -2027,6 +2029,7 @@
         wake();
         if (opts.resetFx && playersOn) sendPlayers(snapshot(true));
         else pushPlayers();
+        try { if (opts.showPlayers && window.ShirmoPlugins) window.ShirmoPlugins.effect(kindSel.value || ""); } catch (err) {}
       }
     };
     if (opts.pin) setPinned(true);
@@ -2304,6 +2307,8 @@
       '<button type="button" id="clock-open" title="Часы поверх ширмы">' + glyph('<circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 8v4l2.5 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "Часы</button>" +
       '<button type="button" id="timer-open" title="Таймер и эффекты поверх ширмы">' + glyph('<circle cx="12" cy="13" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 10v3h2M9 5h6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "Таймер</button>" +
       '<button type="button" id="roll-look" title="Скорость, цвет и текстура кубика">' + glyph('<path d="M12 4l7 4v8l-7 4-7-4V8z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>') + "Кубик</button>" +
+      '<div class="kebab-gap"></div>' +
+      '<button type="button" id="plugins-open" title="Плагины комнаты">' + glyph('<circle cx="7" cy="12" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="17" cy="12" r="1.4" fill="currentColor"/>') + "Плагины</button>" +
       '<div class="kebab-gap"></div>' +
       '<button type="button" id="library" title="Открыть библиотеку файлов">' + glyph('<path d="M4 6h16v12H4zM8 6V4h8v2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>') + "Библиотека</button>" +
       '<div class="kebab-gap"></div>' +
@@ -2939,6 +2944,7 @@
           '<button type="button" data-dock="hero-add">' + (heroOpen ? "Скрыть список" : "Закрепить героя") + "</button>" + heroForm + "</details>" +
           '<details class="dock-fold" data-fold="notes"' + (folds.notes ? " open" : "") + "><summary>Заметки</summary>" + noteRows +
           '<button type="button" data-dock="note-add">' + (noteOpen ? "Скрыть" : "Из библиотеки или новая") + "</button>" + noteForm + "</details>" +
+          (function () { try { return window.ShirmoPlugins && window.ShirmoPlugins.dockHtml ? window.ShirmoPlugins.dockHtml() : ""; } catch (err) { return ""; } })() +
           "</div></div>";
         if (window.ShirmoShelf) window.ShirmoShelf.arm(root);
         const notePick = root.querySelector("[data-dock-note-pick]");
@@ -3125,6 +3131,7 @@
           adv.addEventListener("change", function () { if (adv.checked) dis.checked = false; });
           dis.addEventListener("change", function () { if (dis.checked) adv.checked = false; });
         }
+        try { if (window.ShirmoPlugins && window.ShirmoPlugins.bindDock) window.ShirmoPlugins.bindDock(root); } catch (err) {}
       }
       window.ShirmoDock = { paint: paint };
       document.addEventListener("pointerdown", function (event) {
@@ -3146,6 +3153,29 @@
       setKebab(kebabMenu.hidden);
     });
     kebabMenu.addEventListener("click", function () { setKebab(false); });
+    const pluginsBtn = app.querySelector("#plugins-open");
+    if (pluginsBtn) pluginsBtn.addEventListener("click", function () {
+      try { if (window.ShirmoPlugins) window.ShirmoPlugins.open(); }
+      catch (error) { err.textContent = "Плагин не открылся"; }
+    });
+    try {
+      if (window.ShirmoPlugins) window.ShirmoPlugins.arm({
+        roomId: id,
+        headers: headers,
+        campaign: function () { return state.campaign; },
+        save: save,
+        fightOn: function () {
+          const host = document.getElementById("work-battle");
+          const battle = state.campaign && state.campaign.battle;
+          return !!(host && !host.hidden && battle && battle.screen !== false);
+        },
+        ready: function () {
+          if (window.ShirmoMap && window.ShirmoMap.sync) window.ShirmoMap.sync();
+          if (window.ShirmoMap && window.ShirmoMap.light) window.ShirmoMap.light();
+          if (window.ShirmoDock && window.ShirmoDock.paint) window.ShirmoDock.paint();
+        }
+      });
+    } catch (error) { /* плагин не обязателен для ширмы */ }
     document.addEventListener("click", function () { setKebab(false); });
     app.querySelector("#roll").addEventListener("click", function () {
       const look = document.getElementById("roll-look-menu");
