@@ -1406,6 +1406,14 @@ label.check input { width: auto; }
 
 .pop-card.map-setup { display: flex; flex-direction: column; gap: 10px; width: min(380px, 100%); }
 
+.pop-card.map-setup label.file-btn {
+  width: auto;
+  height: auto;
+  min-height: 36px;
+  flex: none;
+  padding: 6px 12px;
+}
+
 .pop-card.map-setup textarea { min-height: 72px; }
 
 .map-tools { display: flex; flex-wrap: wrap; gap: 6px; }

@@ -1208,6 +1208,10 @@
       const current = view();
       const loc = id ? findLoc(id) : null;
       if (id && !loc) return;
+      if (loc) {
+        const target = doorTarget(loc);
+        if (target) loc = target;
+      }
       const sheet = loc || current;
       const images = ctx.library().images || [];
       function options(selectedUrl) {
@@ -1227,11 +1231,14 @@
         '<details class="drop"><summary title="День, ночь и картинки фона">Вид</summary>' +
         '<div class="row"><button type="button" id="setup-day" class="' + (sheet.mode !== "night" ? "is-on" : "") + '" title="Показать дневной фон">День</button><button type="button" id="setup-night" class="' + (sheet.mode === "night" ? "is-on" : "") + '" title="Показать ночной фон">Ночь</button></div>' +
         '<label title="Картинка, когда у места день">Фон дня<select id="setup-day-img" data-shelf="image">' + options(sheet.day || "") + "</select></label>" +
-        '<label class="file-btn" title="Загрузить фон дня, как портрет у персонажа">Загрузить день<input type="file" id="setup-day-file" accept="image/*" aria-label="Загрузить фон дня"></label>' +
+        '<div class="row"><label class="file-btn" title="Загрузить фон дня, как портрет у персонажа">Загрузить день<input type="file" id="setup-day-file" accept="image/*" aria-label="Загрузить фон дня"></label>' +
+        '<button type="button" id="setup-day-clear" title="Убрать фон дня">Убрать</button></div>' +
         '<label title="Картинка, когда у места ночь">Фон ночи<select id="setup-night-img" data-shelf="image">' + options(sheet.night || "") + "</select></label>" +
-        '<label class="file-btn" title="Загрузить фон ночи">Загрузить ночь<input type="file" id="setup-night-file" accept="image/*" aria-label="Загрузить фон ночи"></label>' +
+        '<div class="row"><label class="file-btn" title="Загрузить фон ночи">Загрузить ночь<input type="file" id="setup-night-file" accept="image/*" aria-label="Загрузить фон ночи"></label>' +
+        '<button type="button" id="setup-night-clear" title="Убрать фон ночи">Убрать</button></div>' +
         (loc ? '<label title="Картинка точки на карте, как портрет НПС">Портрет точки<select id="setup-face" data-shelf="image">' + options(loc.portrait || "") + "</select></label>" +
-          '<label class="file-btn" title="Загрузить портрет точки">Загрузить портрет<input type="file" id="setup-face-file" accept="image/*" aria-label="Загрузить портрет точки"></label>' : "") +
+          '<div class="row"><label class="file-btn" title="Загрузить портрет точки">Загрузить портрет<input type="file" id="setup-face-file" accept="image/*" aria-label="Загрузить портрет точки"></label>' +
+          '<button type="button" id="setup-face-clear" title="Убрать портрет точки">Убрать</button></div>' : "") +
         "</details></div>";
       document.body.appendChild(pop);
       setupEl = pop;
@@ -1279,29 +1286,43 @@
         if (!loc || !loc.placeId) return null;
         return (book().places || []).find(function (row) { return row.id === loc.placeId; }) || null;
       }
-      function syncPlaceShot(field, url) {
+      function syncPlaceShot(field, url, prev) {
         const place = linkedPlace();
         if (!place) return;
         if (field === "portrait") {
           place.portrait = url || "";
           return;
         }
-        if (url) place.backdrop = place.backdrop || url;
-        else if (field === "day" && place.backdrop === sheet.day) place.backdrop = sheet.night || "";
-        else if (field === "night" && place.backdrop === sheet.night) place.backdrop = sheet.day || "";
+        if (url) {
+          if (!place.backdrop) place.backdrop = url;
+          return;
+        }
+        if (field === "day" || place.backdrop === prev) place.backdrop = field === "day" ? "" : (sheet.day || "");
+      }
+      function showShot(select, url) {
+        if (!select) return;
+        select.value = url || "";
+      }
+      function setShot(field, url) {
+        const prev = field === "portrait" ? ((loc && loc.portrait) || "") : (sheet[field] || "");
+        const next = url || "";
+        if (field === "portrait") {
+          if (!loc) return;
+          loc.portrait = next;
+        } else sheet[field] = next;
+        syncPlaceShot(field, next, prev);
+        showShot(pop.querySelector(field === "day" ? "#setup-day-img" : field === "night" ? "#setup-night-img" : "#setup-face"), next);
+        paintBoard();
+        dirty();
       }
       pop.querySelector("#setup-day-img").addEventListener("change", function (event) {
-        sheet.day = event.target.value;
-        syncPlaceShot("day", sheet.day);
-        paintBoard();
-        dirty();
+        setShot("day", event.target.value);
       });
       pop.querySelector("#setup-night-img").addEventListener("change", function (event) {
-        sheet.night = event.target.value;
-        syncPlaceShot("night", sheet.night);
-        paintBoard();
-        dirty();
+        setShot("night", event.target.value);
       });
+      pop.querySelector("#setup-day-clear").addEventListener("click", function () { setShot("day", ""); });
+      pop.querySelector("#setup-night-clear").addEventListener("click", function () { setShot("night", ""); });
       function keepShot(file, apply) {
         if (!file || !ctx.upload) return;
         ctx.upload(file).then(function (url) {
@@ -1319,32 +1340,22 @@
       }
       pop.querySelector("#setup-day-file").addEventListener("change", function (event) {
         const file = event.target.files && event.target.files[0];
-        keepShot(file, function (url) {
-          sheet.day = url;
-          syncPlaceShot("day", url);
-        });
+        keepShot(file, function (url) { setShot("day", url); });
       });
       pop.querySelector("#setup-night-file").addEventListener("change", function (event) {
         const file = event.target.files && event.target.files[0];
-        keepShot(file, function (url) {
-          sheet.night = url;
-          syncPlaceShot("night", url);
-        });
+        keepShot(file, function (url) { setShot("night", url); });
       });
       const facePick = pop.querySelector("#setup-face");
       if (facePick) facePick.addEventListener("change", function (event) {
-        loc.portrait = event.target.value;
-        syncPlaceShot("portrait", loc.portrait);
-        paintBoard();
-        dirty();
+        setShot("portrait", event.target.value);
       });
+      const faceClear = pop.querySelector("#setup-face-clear");
+      if (faceClear) faceClear.addEventListener("click", function () { setShot("portrait", ""); });
       const faceFile = pop.querySelector("#setup-face-file");
       if (faceFile) faceFile.addEventListener("change", function (event) {
         const file = event.target.files && event.target.files[0];
-        keepShot(file, function (url) {
-          loc.portrait = url;
-          syncPlaceShot("portrait", url);
-        });
+        keepShot(file, function (url) { setShot("portrait", url); });
       });
     }
     function paintLists() {
