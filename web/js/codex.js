@@ -1965,7 +1965,7 @@ window.ShirmoCodex = (function () {
         const scene = row.backdrop ? ' style="background-image:url(&quot;' + esc(row.backdrop) + '&quot;)"' : "";
         const tokenOn = row.look === "token";
         const face = row.portrait
-          ? '<button type="button" class="npc-portrait" data-act="npc-talk" data-i="' + index + '" title="Открыть диалог"><img alt="" src="' + esc(row.portrait) + '"' + (tokenOn ? ' style="' + faceStyle(row) + '"' : "") + "></button>"
+          ? '<button type="button" class="npc-portrait" data-i="' + index + '" title="Потяните, чтобы сдвинуть портрет в круге"><img alt="" draggable="false" src="' + esc(row.portrait) + '" style="' + faceStyle(row) + '"></button>'
           : '<span class="npc-portrait npc-portrait-empty" data-i="' + index + '" aria-hidden="true"></span>';
         const badge = row.emoji ? '<span class="npc-emoji">' + esc(row.emoji) + "</span>" : "";
         function fieldInput(field) {
@@ -2392,6 +2392,7 @@ window.ShirmoCodex = (function () {
         });
       }
       armPlacePictures();
+      bindPortraitDrag();
       if (isPerson(tab) && window.ShirmoNpc) {
         host.querySelectorAll("[data-npc-sheet]").forEach(function (node) {
           const row = list()[Number(node.getAttribute("data-i"))];
@@ -3089,6 +3090,42 @@ window.ShirmoCodex = (function () {
         close();
         paint();
         saveSoon();
+      });
+    }
+    function bindPortraitDrag() {
+      host.querySelectorAll(".npc-card .npc-portrait[data-i]").forEach(function (pick) {
+        let pan = null;
+        pick.addEventListener("pointerdown", function (event) {
+          if (event.button !== 0) return;
+          const row = list()[Number(pick.getAttribute("data-i"))];
+          if (!row || !row.portrait) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const face = focusNums(row);
+          pan = { x: event.clientX, y: event.clientY, ox: face.x, oy: face.y, zoom: face.zoom, moved: false };
+          try { pick.setPointerCapture(event.pointerId); } catch (err) { /* synthetic */ }
+        });
+        pick.addEventListener("pointermove", function (event) {
+          if (!pan) return;
+          const row = list()[Number(pick.getAttribute("data-i"))];
+          if (!row) return;
+          if (Math.abs(event.clientX - pan.x) + Math.abs(event.clientY - pan.y) > 2) pan.moved = true;
+          const rect = pick.getBoundingClientRect();
+          const scale = pan.zoom || 1;
+          const width = rect.width || 1;
+          const height = rect.height || 1;
+          row.portraitX = Math.min(100, Math.max(0, pan.ox - (event.clientX - pan.x) / width * 100 / scale));
+          row.portraitY = Math.min(100, Math.max(0, pan.oy - (event.clientY - pan.y) / height * 100 / scale));
+          const img = pick.querySelector("img");
+          if (img) img.setAttribute("style", faceStyle(row));
+          if (window.ShirmoNpc) window.ShirmoNpc.write(row);
+        });
+        function endPan() {
+          if (pan && pan.moved) saveSoon();
+          pan = null;
+        }
+        pick.addEventListener("pointerup", endPan);
+        pick.addEventListener("pointercancel", endPan);
       });
     }
     function openFace(index) {

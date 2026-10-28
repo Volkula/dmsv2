@@ -3030,6 +3030,8 @@ label.check input { width: auto; }
   border-radius: 0;
   background: transparent;
   overflow: visible;
+  cursor: grab;
+  touch-action: none;
 }
 
 .npc-card .npc-portrait img {
