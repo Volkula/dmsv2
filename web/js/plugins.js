@@ -68,10 +68,24 @@
     return job;
   }
 
+  function remember(state) {
+    latest = state;
+    try {
+      const campaign = opt && opt.campaign && opt.campaign();
+      if (!campaign || !state || !Array.isArray(state.installed)) return;
+      if (!campaign.plugins || typeof campaign.plugins !== "object" || Array.isArray(campaign.plugins)) campaign.plugins = {};
+      const prev = Array.isArray(campaign.plugins.installed) ? campaign.plugins.installed : [];
+      campaign.plugins.installed = state.installed.map(function (row) {
+        const old = prev.find(function (item) { return item && item.id === row.id; }) || {};
+        return { id: row.id, name: row.name || old.name || row.id, on: row.on === true };
+      });
+    } catch (err) {}
+  }
+
   function refresh() {
     if (!opt) return Promise.resolve(null);
     return post("", null).then(function (state) {
-      latest = state;
+      remember(state);
       const jobs = (state.catalog || []).concat(state.installed || []).map(ensure);
       return Promise.all(jobs).then(function () {
         markEnabled();

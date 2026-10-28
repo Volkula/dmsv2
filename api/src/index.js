@@ -192,6 +192,18 @@ function isMaster(req, room) {
   return ok;
 }
 
+function keepPluginSwitch(room) {
+  const fresh = rowToRoom(selectRoom.get(room.id));
+  const prev = fresh && fresh.campaign && fresh.campaign.plugins && fresh.campaign.plugins.installed;
+  const next = room.campaign && room.campaign.plugins && room.campaign.plugins.installed;
+  if (!Array.isArray(next) || !Array.isArray(prev)) return;
+  next.forEach(function (row) {
+    if (!row || !row.id) return;
+    const was = prev.find(function (item) { return item && item.id === row.id; });
+    row.on = was ? was.on === true : false;
+  });
+}
+
 function writeRoom(room) {
   const now = Date.now();
   room.updatedAt = now;
@@ -740,6 +752,7 @@ const server = http.createServer(async function (req, res) {
           }
         }
         try { portraitMap = await absorbPortraits(filesDir, id, room.campaign) || {}; } catch (err) { /* внешний портрет остаётся ссылкой */ }
+        keepPluginSwitch(room);
       }
       const shown = room.campaign.activePageId === room.campaign.shownPageId;
       const nextFrame = projectFrame(room.campaign);
