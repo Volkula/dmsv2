@@ -9,6 +9,7 @@ import { blankCampaign, campaignOk, playAction, projectFrame } from "./frame.js"
 import { openSettings } from "./settings.js";
 import { handlePlugin } from "./plugins.js";
 import { ROOM_FILES_MAX, roomFilesSize, unpackFiles, wipeRoomFiles, writePackedFiles, pipePackedFiles } from "./files.js";
+import { absorbPortraits } from "./portraits.js";
 
 const dataDir = process.env.DATA_DIR || path.join(process.cwd(), "data");
 const port = Number(process.env.PORT || 8080);
@@ -720,6 +721,7 @@ const server = http.createServer(async function (req, res) {
       const body = await readJson(req);
       if (body.title != null) room.title = String(body.title).slice(0, 80);
       if (body.publishMode === "live" || body.publishMode === "hold") room.publishMode = body.publishMode;
+      let portraitMap = {};
       if (body.campaign) {
         if (!campaignOk(body.campaign)) {
           send(res, 400, { error: "bad campaign" });
@@ -737,6 +739,7 @@ const server = http.createServer(async function (req, res) {
             delete room.campaign.plugins.light.key;
           }
         }
+        try { portraitMap = await absorbPortraits(filesDir, id, room.campaign) || {}; } catch (err) { /* внешний портрет остаётся ссылкой */ }
       }
       const shown = room.campaign.activePageId === room.campaign.shownPageId;
       const nextFrame = projectFrame(room.campaign);
@@ -749,7 +752,7 @@ const server = http.createServer(async function (req, res) {
       }
       writeRoom(room);
       if (room.publishMode === "live" && (shown || overlay || wasOverlay)) pushFrame(room);
-      send(res, 200, { publishMode: room.publishMode, frame: room.frame });
+      send(res, 200, { publishMode: room.publishMode, frame: room.frame, files: portraitMap });
       return;
     }
 

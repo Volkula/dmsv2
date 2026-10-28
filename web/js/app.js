@@ -2450,7 +2450,7 @@
       if (window.ShirmoCodex) window.ShirmoCodex.adopt(state.campaign);
       try {
         await stashPortraits(state.campaign, function (file) { return uploadFile(id, key, file); });
-        await api("/api/rooms/" + id + "/campaign", {
+        const saved = await api("/api/rooms/" + id + "/campaign", {
           method: "PUT",
           headers: headers,
           body: JSON.stringify({
@@ -2459,6 +2459,7 @@
             campaign: state.campaign
           })
         });
+        if (saved && saved.files) applyLocalFiles(state.campaign, saved.files);
         app.querySelectorAll(".master .error").forEach(function (node) { node.textContent = ""; });
       } catch (error) {
         app.querySelectorAll(".master .error").forEach(function (node) { node.textContent = error.message; });
@@ -3336,12 +3337,6 @@
       cache[text] = (async function () {
         let blob = null;
         if (text.indexOf("data:image/") === 0) blob = dataUrlBlob(text);
-        else if (/^https?:\/\//i.test(text)) {
-          try {
-            const res = await fetch(text);
-            if (res.ok) blob = await res.blob();
-          } catch (err) { blob = null; }
-        }
         if (!blob) return text;
         const type = blob.type && blob.type.indexOf("image/") === 0 ? blob.type : "image/jpeg";
         const ext = (type.split("/")[1] || "jpg").replace("jpeg", "jpg");
@@ -3382,6 +3377,22 @@
       });
     });
     await Promise.all(jobs);
+  }
+
+  function applyLocalFiles(campaign, files) {
+    if (!campaign || !files) return;
+    function walk(node) {
+      if (!node || typeof node !== "object") return;
+      if (Array.isArray(node)) {
+        node.forEach(walk);
+        return;
+      }
+      if (typeof node.portrait === "string" && files[node.portrait]) node.portrait = files[node.portrait];
+      Object.keys(node).forEach(function (key) {
+        if (node[key] && typeof node[key] === "object") walk(node[key]);
+      });
+    }
+    walk(campaign);
   }
 
   function mountLibrary(host, ctx) {
