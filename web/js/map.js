@@ -280,7 +280,7 @@
     try {
       if (!item || !window.ShirmoPlugins || !window.ShirmoPlugins.on()) return "";
     } catch (err) { return ""; }
-    const color = (item.lampSrc && item.lampColor && /^#[0-9a-f]{6}$/i.test(item.lampColor)) ? item.lampColor : "#16130f";
+    const color = /^#[0-9a-f]{6}$/i.test(item.lampColor || "") ? item.lampColor : "#16130f";
     const on = item.lamp === true;
     return '<span role="button" data-flag="lamp" data-lamp="' + esc(item.id) + '" class="flag flag-lamp' + (on ? " is-on" : "") + '" style="--swatch:' + esc(color) + ";background-color:" + esc(color) + '" title="' + (on ? "Подсветка этой локации включена" : "Подсветка выключена. Нажмите, чтобы задать цвет") + '" aria-label="Цвет подсветки"></span>';
   }
@@ -821,11 +821,16 @@
           const place = item.placeId && (book().places || []).find(function (row) { return row.id === item.placeId; });
           const target = item.linkId ? findLoc(item.linkId) : null;
           const named = (target && target.name) || item.name;
+          const room = doorTarget(item) || target || item;
           const portrait = item.portrait || (target && target.portrait) || (place && place.portrait) || "";
           if (!portrait && named === item.name && !item.linkId) return item;
           return Object.assign({}, item, {
             name: named,
             door: !!item.linkId,
+            lamp: room.lamp === true,
+            lampColor: room.lampColor || "",
+            lampSrc: room.lampSrc || "",
+            lampBright: room.lampBright,
             portrait: portrait,
             portraitX: item.portraitX != null ? item.portraitX : (target && target.portraitX != null ? target.portraitX : place && place.portraitX),
             portraitY: item.portraitY != null ? item.portraitY : (target && target.portraitY != null ? target.portraitY : place && place.portraitY),
@@ -3615,9 +3620,10 @@
       const which = node.getAttribute("data-flag");
       if (which === "lamp") {
         const pin = node.closest("[data-pin]");
-        const loc = pin
+        const raw = pin
           ? (view().locations || []).find(function (row) { return row.id === pin.getAttribute("data-pin"); })
           : levelSheet();
+        const loc = (raw && doorTarget(raw)) || raw;
         try { if (loc && window.ShirmoPlugins) window.ShirmoPlugins.lamp(loc, node); } catch (err) {}
         return;
       }
