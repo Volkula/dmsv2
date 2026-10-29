@@ -186,15 +186,28 @@ function hsvOk(body) {
   return { h: Math.min(360, Math.max(0, h)) % 360, s: Math.min(100, Math.max(1, s)), v: Math.min(100, Math.max(1, v)) };
 }
 
-function hsvActions(hsv) {
-  return [
-    { type: "devices.capabilities.on_off", state: { instance: "on", value: true } },
+function hsvActions(hsv, steady) {
+  const actions = [];
+  if (!steady) actions.push({ type: "devices.capabilities.on_off", state: { instance: "on", value: true } });
+  actions.push(
     { type: "devices.capabilities.color_setting", state: { instance: "hsv", value: hsv } },
     { type: "devices.capabilities.range", state: { instance: "brightness", value: hsv.v } }
-  ];
+  );
+  return actions;
 }
 
-async function paint(token, ids, hsv, effect) {
+async function paint(token, ids, hsv, effect, steady) {
+  if (!effect && hsv) {
+    const devices = ids.filter(Boolean).map(function (id) {
+      return { id: id, actions: hsvActions(hsv, steady) };
+    });
+    if (!devices.length) {
+      const error = new Error("Нет выбранных ламп с цветом");
+      error.status = 400;
+      throw error;
+    }
+    return yandex(token, "POST", "/v1.0/devices/actions", { devices: devices });
+  }
   const info = await yandex(token, "GET", "/v1.0/user/info");
   const byId = {};
   (info.devices || []).forEach(function (device) { if (isLamp(device)) byId[device.id] = device; });
@@ -229,6 +242,22 @@ async function paint(token, ids, hsv, effect) {
       devices: devices.map(function (item) { return { id: item.id, actions: hsvActions(hsv) }; })
     });
   }
+}
+
+async function setBright(token, ids, level) {
+  const value = Math.min(100, Math.max(1, Math.round(Number(level) || 1)));
+  const devices = ids.filter(Boolean).map(function (id) {
+    return {
+      id: id,
+      actions: [{ type: "devices.capabilities.range", state: { instance: "brightness", value: value } }]
+    };
+  });
+  if (!devices.length) {
+    const error = new Error("Нет выбранных ламп");
+    error.status = 400;
+    throw error;
+  }
+  return yandex(token, "POST", "/v1.0/devices/actions", { devices: devices });
 }
 
 async function setPower(token, ids, on) {
@@ -380,13 +409,21 @@ export async function handlePlugin(ctx) {
         send(res, 409, { error: "Ключ не задан" });
         return;
       }
+      if (body.brightness != null && body.h == null) {
+        const ids = Array.isArray(body.ids) && body.ids.length
+          ? body.ids.map(function (id) { return String(id || "").slice(0, 80); }).filter(Boolean).slice(0, 40)
+          : bag.light.devices.slice();
+        await setBright(token, ids, body.brightness);
+        send(res, 200, { ok: true });
+        return;
+      }
       const hsv = hsvOk(body);
       const effect = FX_SCENE[body.effect] ? body.effect : "";
       if (!hsv && !effect) {
         send(res, 400, { error: "Нет цвета" });
         return;
       }
-      await paint(token, bag.light.devices, hsv, effect);
+      await paint(token, bag.light.devices, hsv, effect, body.steady === true);
       send(res, 200, { ok: true });
       return;
     }
