@@ -5,7 +5,6 @@ import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:
 import { plainMatches, secretMatches } from "./auth.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const bundledPath = path.join(here, "bundled", "adaptive-light.json");
 const releaseUrl = process.env.PLUGIN_RELEASE || "https://github.com/Volkula/shirmo-light/releases/latest/download/plugin.json";
 
 const FX_SCENE = {
@@ -29,24 +28,28 @@ function catalogEntry(body, src) {
   };
 }
 
-function readBundled() {
+function readBundledFile(name) {
   try {
-    return catalogEntry(JSON.parse(fs.readFileSync(bundledPath, "utf8")), "");
-  } catch (err) { /* пакет на диске не обязателен, если релиз ответил */ }
+    return catalogEntry(JSON.parse(fs.readFileSync(path.join(here, "bundled", name), "utf8")), "");
+  } catch (err) { /* локальной карточки может не быть */ }
   return null;
 }
 
+function pushCatalog(list, entry) {
+  if (!entry || !entry.id) return;
+  if (list.some(function (item) { return item.id === entry.id; })) return;
+  list.push(entry);
+}
+
 export async function pluginCatalog() {
+  const list = [];
   try {
     const response = await fetch(releaseUrl, { signal: AbortSignal.timeout(4000) });
-    if (response.ok) {
-      const body = await response.json();
-      const entry = catalogEntry(body, releaseUrl);
-      if (entry) return [entry];
-    }
+    if (response.ok) pushCatalog(list, catalogEntry(await response.json(), releaseUrl));
   } catch (err) { /* релиза нет — берём имя из файла плагина */ }
-  const local = readBundled();
-  return local ? [local] : [];
+  pushCatalog(list, readBundledFile("adaptive-light.json"));
+  pushCatalog(list, readBundledFile("melk-lamps.json"));
+  return list;
 }
 
 function pluginBag(room) {
