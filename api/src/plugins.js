@@ -54,6 +54,7 @@ export async function pluginCatalog() {
   }));
   entries.forEach(function (entry) { pushCatalog(list, entry); });
   pushCatalog(list, readBundledFile("adaptive-light.json"));
+  pushCatalog(list, readBundledFile("light-show.json"));
   return list;
 }
 

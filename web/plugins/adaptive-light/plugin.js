@@ -19,6 +19,9 @@
   let wait = 0;
   const tones = {};
 
+  let envRef = null;
+  let yandexFrameAt = 0;
+
   function lampHsv(r, g, b) {
     r /= 255;
     g /= 255;
@@ -49,6 +52,7 @@
   }
 
   function post(env, path, body) {
+    if (env) envRef = env;
     return env.post(path, body);
   }
 
@@ -271,6 +275,7 @@
   }
 
   function settings(env) {
+    envRef = env || envRef;
     const state = env.state || {};
     if (state.auto != null && !playing) auto = state.auto !== false;
     const box = document.createElement("div");
@@ -869,6 +874,7 @@
         }, 0);
       },
       dockHtml: function (env) {
+        if (env) envRef = env;
         const pins = (env && lightBag(env).pins) || [];
         const rows = pins.map(function (key) {
           const on = playing === key ? " is-on" : "";
@@ -882,6 +888,7 @@
           '<button type="button" data-light="studio">Настроить</button></div></details>';
       },
       bindDock: function (root, env) {
+        if (env) envRef = env;
         const autoBtn = root.querySelector("[data-light=auto]");
         if (autoBtn) autoBtn.addEventListener("click", function () { resumeAuto(env); });
         const studio = root.querySelector("[data-light=studio]");
@@ -892,6 +899,38 @@
         root.querySelectorAll("[data-light-unpin]").forEach(function (button) {
           button.addEventListener("click", function () { togglePin(env, button.getAttribute("data-light-unpin")); });
         });
+      },
+      rgb: {
+        label: "Яндекс",
+        ready: function () {
+          const state = envRef && envRef.state;
+          return !!(state && state.hasKey && (state.devices || []).length);
+        },
+        hold: function () {
+          if (!envRef) return;
+          stopAnim();
+          playing = "";
+          holdManual(envRef);
+        },
+        auto: function (on) {
+          if (!envRef) return;
+          if (on) resumeAuto(envRef);
+          else {
+            stopAnim();
+            playing = "";
+            holdManual(envRef);
+          }
+        },
+        frame: function (rgb, brightness, force) {
+          if (!envRef || !rgb) return;
+          const now = Date.now();
+          if (!force && now - yandexFrameAt < 400) return;
+          yandexFrameAt = now;
+          const hsv = lampHsv(rgb[0], rgb[1], rgb[2]);
+          hsv.v = Math.max(1, Math.min(100, Math.round(brightness)));
+          lastKey = "";
+          send(envRef, Object.assign({ manual: true }, hsv), true);
+        }
       }
     });
   }

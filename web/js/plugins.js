@@ -75,8 +75,8 @@
     if (!item || !item.id || mods[item.id]) return Promise.resolve();
     if (loading[item.id]) return loading[item.id];
     const local = "/plugins/" + item.id + "/plugin.js";
-    const job = (item.src ? loadScript(item.src) : Promise.reject()).catch(function () {
-      return loadScript(local);
+    const job = loadScript(local).catch(function () {
+      return item.src ? loadScript(item.src) : Promise.reject();
     }).catch(function () {});
     loading[item.id] = job;
     return job;
@@ -115,6 +115,7 @@
       return Promise.all(jobs).then(function () {
         markEnabled();
         if (state.auto != null) { /* плагин читает auto из state */ }
+        try { if (opt && opt.ready) opt.ready(); } catch (err) {}
         return state;
       });
     }).catch(function () { return null; });
@@ -363,6 +364,31 @@
     bindDock: function (root) {
       try { eachOn(function (mod) { if (mod.bindDock) mod.bindDock(root, env()); }); }
       catch (err) {}
+    },
+    rgb: function () {
+      const list = [];
+      try {
+        eachOn(function (mod) {
+          if (mod.rgb && typeof mod.rgb.frame === "function") list.push(mod.rgb);
+        });
+      } catch (err) {}
+      return list;
+    },
+    modules: function () {
+      const list = [];
+      try {
+        eachOn(function (mod) {
+          if (!mod.module || typeof mod.module.mount !== "function") return;
+          list.push({
+            id: mod.id,
+            title: mod.module.title || mod.id,
+            icon: mod.module.icon || "",
+            mount: mod.module.mount,
+            stop: typeof mod.module.stop === "function" ? mod.module.stop : null
+          });
+        });
+      } catch (err) {}
+      return list;
     }
   };
 })();

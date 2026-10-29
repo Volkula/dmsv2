@@ -2308,8 +2308,6 @@
       '<button type="button" id="timer-open" title="Таймер и эффекты поверх ширмы">' + glyph('<circle cx="12" cy="13" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 10v3h2M9 5h6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "Таймер</button>" +
       '<button type="button" id="roll-look" title="Скорость, цвет и текстура кубика">' + glyph('<path d="M12 4l7 4v8l-7 4-7-4V8z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>') + "Кубик</button>" +
       '<div class="kebab-gap"></div>' +
-      '<button type="button" id="plugins-open" title="Плагины комнаты">' + glyph('<circle cx="7" cy="12" r="1.4" fill="currentColor"/><circle cx="12" cy="12" r="1.4" fill="currentColor"/><circle cx="17" cy="12" r="1.4" fill="currentColor"/>') + "Плагины</button>" +
-      '<div class="kebab-gap"></div>' +
       '<button type="button" id="library" title="Открыть библиотеку файлов">' + glyph('<path d="M4 6h16v12H4zM8 6V4h8v2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>') + "Библиотека</button>" +
       '<div class="kebab-gap"></div>' +
       '<button type="button" id="backup" title="Скачать кампанию и файлы">' + glyph('<path d="M12 4v10M8 10l4 4 4-4M5 18h14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>') + "Выгрузка</button>" +
@@ -2327,7 +2325,11 @@
       '<button type="button" id="mod-library" title="Библиотека" aria-label="Библиотека">' + glyph('<path d="M4 6h16v12H4zM8 6V4h8v2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 10h8M8 14h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "</button>" +
       "</nav>" +
       '<input id="title" class="room-title" type="text" value="' + esc(state.title) + '" aria-label="Название комнаты" title="Название комнаты">' +
-      "</div>" +
+      '<div class="plug-bar">' +
+      '<button type="button" id="plugins-open" class="plug-bar-btn" title="Подключить или убрать плагин" aria-label="Подключить или убрать плагин">' + glyph('<path d="M9 3.5v4M15 3.5v4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><rect x="6.5" y="7.5" width="11" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 14.5V20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "</button>" +
+      '<button type="button" id="plug-gear" class="plug-bar-btn" title="Параметры плагинов" aria-label="Параметры плагинов" aria-expanded="false">' + glyph('<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 3.2v2.1M12 18.7v2.1M3.2 12h2.1M18.7 12h2.1M5.7 5.7l1.5 1.5M16.8 16.8l1.5 1.5M18.3 5.7l-1.5 1.5M7.2 16.8l-1.5 1.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "</button>" +
+      '<div class="plug-pop" id="plug-pop" hidden><div id="plug-pop-body"></div></div>' +
+      "</div></div>" +
       '<div class="top-publish">' +
       '<div class="mode-switch">' +
       '<button type="button" id="mode-live" class="' + (state.publishMode === "live" ? "is-on" : "") + '" title="Правки открытой страницы сразу видны игрокам">Сразу</button>' +
@@ -2556,6 +2558,52 @@
         };
         actor.markerId = marker.id;
         view.markers.push(marker);
+      });
+    }
+    function pluginModules() {
+      try { return window.ShirmoPlugins && window.ShirmoPlugins.modules ? window.ShirmoPlugins.modules() : []; }
+      catch (err) { return []; }
+    }
+    let plugLive = {};
+    let plugPainted = null;
+    function syncPluginModules() {
+      const gear = app.querySelector("#plug-gear");
+      const pop = app.querySelector("#plug-pop");
+      const body = app.querySelector("#plug-pop-body");
+      if (!gear || !pop || !body) return;
+      const mods = pluginModules();
+      const next = {};
+      mods.forEach(function (mod) { next[mod.id] = mod; });
+      Object.keys(plugLive).forEach(function (key) {
+        if (!next[key] && plugLive[key].stop) plugLive[key].stop();
+      });
+      plugLive = next;
+      gear.classList.toggle("has-mods", mods.length > 0);
+      if (pop.hidden) {
+        plugPainted = null;
+        return;
+      }
+      const key = mods.map(function (mod) { return mod.id; }).join(",");
+      if (key === plugPainted) return;
+      plugPainted = key;
+      body.replaceChildren();
+      if (!mods.length) {
+        const empty = document.createElement("p");
+        empty.className = "note";
+        empty.textContent = "Параметров нет. Подключите плагин.";
+        body.append(empty);
+        return;
+      }
+      mods.forEach(function (mod) {
+        const host = document.createElement("div");
+        host.className = "plug-pop-mod";
+        body.append(host);
+        try {
+          mod.mount(host, {
+            campaign: function () { return state.campaign; },
+            save: save
+          });
+        } catch (err) {}
       });
     }
     function showModule(kind) {
@@ -3155,10 +3203,42 @@
     });
     kebabMenu.addEventListener("click", function () { setKebab(false); });
     const pluginsBtn = app.querySelector("#plugins-open");
-    if (pluginsBtn) pluginsBtn.addEventListener("click", function () {
+    const plugGear = app.querySelector("#plug-gear");
+    const plugPop = app.querySelector("#plug-pop");
+    function placePlugPop() {
+      if (!plugPop || !plugGear) return;
+      const rect = plugGear.getBoundingClientRect();
+      const width = Math.min(640, window.innerWidth - 24);
+      let left = rect.right - width;
+      if (left < 12) left = 12;
+      if (left + width > window.innerWidth - 12) left = window.innerWidth - 12 - width;
+      plugPop.style.top = Math.round(rect.bottom + 8) + "px";
+      plugPop.style.left = Math.round(left) + "px";
+      plugPop.style.width = Math.round(width) + "px";
+    }
+    function setPlugPop(open) {
+      if (!plugPop || !plugGear) return;
+      plugPop.hidden = !open;
+      plugGear.setAttribute("aria-expanded", open ? "true" : "false");
+      plugGear.classList.toggle("is-on", open);
+      if (open) {
+        placePlugPop();
+        plugPainted = null;
+        syncPluginModules();
+      }
+    }
+    if (pluginsBtn) pluginsBtn.addEventListener("click", function (event) {
+      event.stopPropagation();
+      setPlugPop(false);
       try { if (window.ShirmoPlugins) window.ShirmoPlugins.open(); }
       catch (error) { err.textContent = "Плагин не открылся"; }
     });
+    if (plugGear) plugGear.addEventListener("click", function (event) {
+      event.stopPropagation();
+      setKebab(false);
+      setPlugPop(plugPop.hidden);
+    });
+    if (plugPop) plugPop.addEventListener("click", function (event) { event.stopPropagation(); });
     try {
       if (window.ShirmoPlugins) window.ShirmoPlugins.arm({
         roomId: id,
@@ -3174,10 +3254,17 @@
           if (window.ShirmoMap && window.ShirmoMap.sync) window.ShirmoMap.sync();
           if (window.ShirmoMap && window.ShirmoMap.light) window.ShirmoMap.light();
           if (window.ShirmoDock && window.ShirmoDock.paint) window.ShirmoDock.paint();
+          syncPluginModules();
         }
       });
     } catch (error) { /* плагин не обязателен для ширмы */ }
-    document.addEventListener("click", function () { setKebab(false); });
+    document.addEventListener("click", function () {
+      setKebab(false);
+      setPlugPop(false);
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape") setPlugPop(false);
+    });
     app.querySelector("#roll").addEventListener("click", function () {
       const look = document.getElementById("roll-look-menu");
       if (look && look._close) look._close();
