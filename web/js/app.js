@@ -807,28 +807,44 @@
       layer.innerHTML = '<p class="clock-timer" data-left></p><div class="play-end" data-end hidden><img alt="" data-end-img><p data-end-text></p></div>';
       document.body.appendChild(layer);
     }
+    layer._ev = event;
+    drawPlayerTimer(layer, true);
+    if (!layer._beat) {
+      layer._beat = setInterval(function () {
+        const host = document.getElementById("play-timer");
+        if (host && host._ev) drawPlayerTimer(host, false);
+      }, 250);
+    }
+  }
+
+  function drawPlayerTimer(layer, setup) {
+    const event = layer._ev;
+    if (!event) return;
+    const node = layer.querySelector("[data-left]");
+    if (!node) return;
     const shapes = { square: 1, round: 1, narrow: 1, segment: 1 };
     const shape = shapes[event.shape] ? event.shape : "square";
     const size = Math.min(120, Math.max(28, Math.round(Number(event.size) || 40)));
-    layer.className = "play-timer shape-" + shape + (event.back ? " has-back" : "");
-    layer.style.setProperty("--clock-size", size + "px");
-    if (event.back) {
-      layer.style.backgroundImage = "url('" + String(event.back).replace(/'/g, "") + "')";
-    } else layer.style.backgroundImage = "";
-    const node = layer.querySelector("[data-left]");
+    if (setup) {
+      layer.className = "play-timer shape-" + shape + (event.back ? " has-back" : "");
+      layer.style.setProperty("--clock-size", size + "px");
+      if (event.back) layer.style.backgroundImage = "url('" + String(event.back).replace(/'/g, "") + "')";
+      else layer.style.backgroundImage = "";
+      if (event.fight) layer.dataset.fight = "1";
+      else delete layer.dataset.fight;
+    }
     const endBox = layer.querySelector("[data-end]");
     const endImg = layer.querySelector("[data-end-img]");
     const endText = layer.querySelector("[data-end-text]");
     const until = Number(event.until) || 0;
     const remain = Math.max(0, Number(event.remain) || 0);
     const span = Math.max(1, Number(event.span) || remain || 1);
-    const running = event.running === true && until > Date.now();
+    const armed = event.running === true && until > 0;
+    const running = armed && until > Date.now();
     const linked = event.linked !== false;
     const effect = event.effect || "";
-    const liveLeft = running ? Math.max(0, until - Date.now()) : remain;
-    if (event.fight) layer.dataset.fight = "1";
-    else delete layer.dataset.fight;
-    if (window.ShirmoFx) {
+    const liveLeft = running ? Math.max(0, until - Date.now()) : (armed ? 0 : remain);
+    if (setup && window.ShirmoFx) {
       if (effect && (linked || event.fxRun)) {
         window.ShirmoFx.sync({
           kind: effect,
@@ -845,46 +861,35 @@
         });
       } else window.ShirmoFx.stop();
     }
-    function pad(n) { return String(n).padStart(2, "0"); }
-    function draw(ms) {
-      const left = Math.max(0, ms);
-      const total = Math.ceil(left / 1000);
-      const hours = Math.floor(total / 3600);
-      const minutes = Math.floor((total % 3600) / 60);
-      const seconds = total % 60;
-      const raw = hours ? pad(hours) + ":" + pad(minutes) + ":" + pad(seconds) : pad(minutes) + ":" + pad(seconds);
-      node.innerHTML = raw.split("").map(function (ch) {
-        return '<span class="' + (ch === ":" ? "colon" : "digit") + '">' + ch + "</span>";
-      }).join("");
-      const showDigits = !effect || event.digits === true;
-      node.hidden = !showDigits;
-      const finished = left <= 0 && (event.done === true || running);
-      node.classList.toggle("is-run", running && !finished);
-      node.classList.toggle("is-done", finished);
-      if (endBox) {
-        endBox.hidden = !finished || (!event.endText && !event.endImage);
-        if (endImg) {
-          if (finished && event.endImage) {
-            endImg.hidden = false;
-            endImg.src = event.endImage;
-          } else {
-            endImg.removeAttribute("src");
-            endImg.hidden = true;
-          }
+    const total = Math.ceil(Math.max(0, liveLeft) / 1000);
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    const seconds = total % 60;
+    const raw = hours ? pad2(hours) + ":" + pad2(minutes) + ":" + pad2(seconds) : pad2(minutes) + ":" + pad2(seconds);
+    node.innerHTML = digitHtml(raw);
+    const showDigits = !effect || event.digits === true;
+    node.hidden = !showDigits;
+    const finished = liveLeft <= 0 && (event.done === true || armed);
+    node.classList.toggle("is-run", running && !finished);
+    node.classList.toggle("is-done", finished);
+    if (endBox) {
+      endBox.hidden = !finished || (!event.endText && !event.endImage);
+      if (endImg) {
+        if (finished && event.endImage) {
+          endImg.hidden = false;
+          if (endImg.getAttribute("src") !== event.endImage) endImg.src = event.endImage;
+        } else {
+          endImg.removeAttribute("src");
+          endImg.hidden = true;
         }
-        if (endText) endText.textContent = finished ? (event.endText || "") : "";
       }
-      layer.classList.toggle("is-quiet", !showDigits && (!endBox || endBox.hidden));
-      if (linked && effect && window.ShirmoFx && window.ShirmoFx.setProgress) {
-        const live = running ? Math.max(0, until - Date.now()) : left;
-        if (window.ShirmoFx.setLeft) window.ShirmoFx.setLeft(live);
-        window.ShirmoFx.setProgress(1 - live / span);
-      }
+      if (endText) endText.textContent = finished ? (event.endText || "") : "";
     }
-    clearInterval(layer._beat);
-    function tick() { draw(running ? until - Date.now() : remain); }
-    tick();
-    layer._beat = setInterval(tick, 250);
+    layer.classList.toggle("is-quiet", !showDigits && (!endBox || endBox.hidden));
+    if (linked && effect && window.ShirmoFx && window.ShirmoFx.setProgress) {
+      if (window.ShirmoFx.setLeft) window.ShirmoFx.setLeft(liveLeft);
+      window.ShirmoFx.setProgress(1 - liveLeft / span);
+    }
   }
 
   function showPlayerClock(event) {
@@ -907,14 +912,15 @@
     const size = Math.min(120, Math.max(28, Math.round(Number(event.size) || 48)));
     layer.className = "play-clock shape-" + shape;
     layer.style.setProperty("--clock-size", size + "px");
-    const node = layer.querySelector("[data-now]");
     function paint() {
+      const host = document.getElementById("play-clock");
+      const node = host && host.querySelector("[data-now]");
+      if (!node) return;
       const now = new Date();
       node.innerHTML = digitHtml(pad2(now.getHours()) + ":" + pad2(now.getMinutes()) + ":" + pad2(now.getSeconds()));
     }
-    clearInterval(layer._beat);
     paint();
-    layer._beat = setInterval(paint, 250);
+    if (!layer._beat) layer._beat = setInterval(paint, 250);
   }
 
   function viewer(id) {
@@ -924,7 +930,7 @@
     function paint(frame, event) {
       if (event && event.type === "timer") {
         const battleOn = frame && frame.page && frame.page.kind === "battle";
-        if (event.fight && !battleOn) {
+        if (event.fight && frame && !battleOn) {
           showPlayerTimer({ on: false });
           return;
         }
@@ -1044,7 +1050,7 @@
         if (!battleOn && layer && layer.dataset.fight === "1") showPlayerTimer({ on: false });
         paint(frame, null);
       }
-      if (data.type === "event" && frame) paint(frame, data.event);
+      if (data.type === "event" && data.event && (frame || data.event.type === "clock" || data.event.type === "timer")) paint(frame, data.event);
     };
     window.addEventListener("resize", function () { fit(view); });
   }

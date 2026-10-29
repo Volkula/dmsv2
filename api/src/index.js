@@ -660,8 +660,9 @@ const server = http.createServer(async function (req, res) {
       if (replayTimer) {
         res.write(`data: ${JSON.stringify({ type: "event", event: replayTimer })}\n\n`);
       }
-      if (room.clock && room.clock.on) {
-        res.write(`data: ${JSON.stringify({ type: "event", event: room.clock })}\n\n`);
+      const replayClock = liveBag(id).clock;
+      if (replayClock && replayClock.on) {
+        res.write(`data: ${JSON.stringify({ type: "event", event: replayClock })}\n\n`);
       }
       const drop = subscribe(id, res);
       const beat = setInterval(function () { res.write(": ping\n\n"); }, 15000);
@@ -832,19 +833,24 @@ const server = http.createServer(async function (req, res) {
         const fontSize = Math.round(Number(body.fontSize) || 0);
         if (fontSize >= 12 && fontSize <= 28) event.fontSize = fontSize;
       }
-      if (event.type === "clock") {
+      const beatSeq = Math.round(Number(body.seq) || 0);
+      const beatBag = (event.type === "clock" || event.type === "timer") ? liveBag(room.id) : null;
+      const beatKey = event.type === "clock" ? "clockSeq" : "timerSeq";
+      const staleBeat = !!(beatBag && beatSeq && beatBag[beatKey] && beatSeq < beatBag[beatKey]);
+      if (beatBag && beatSeq && !staleBeat) beatBag[beatKey] = beatSeq;
+      if (!staleBeat && event.type === "clock") {
         const shapes = { square: 1, round: 1, narrow: 1, segment: 1 };
         if (body.on !== true) {
           event.on = false;
-          room.clock = null;
+          liveBag(room.id).clock = null;
         } else {
           event.on = true;
           event.size = Math.min(120, Math.max(28, Math.round(Number(body.size) || 48)));
           event.shape = shapes[body.shape] ? body.shape : "square";
-          room.clock = { type: "clock", on: true, size: event.size, shape: event.shape };
+          liveBag(room.id).clock = { type: "clock", on: true, size: event.size, shape: event.shape };
         }
       }
-      if (event.type === "timer") {
+      if (!staleBeat && event.type === "timer") {
         const shapes = { square: 1, round: 1, narrow: 1, segment: 1 };
         if (body.on !== true) {
           event.on = false;
@@ -922,7 +928,7 @@ const server = http.createServer(async function (req, res) {
         room.rolls = room.rolls.slice(0, 40);
         saveRolls.run(JSON.stringify(room.rolls), id);
       }
-      publish(id, { type: "event", event: event });
+      if (!staleBeat) publish(id, { type: "event", event: event });
       send(res, 202, { event: event, rolls: room.rolls });
       return;
     }
