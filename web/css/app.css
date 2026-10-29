@@ -245,26 +245,6 @@ label { display: flex; flex-direction: column; gap: 6px; }
   min-width: 0;
 }
 
-.plug-menu { position: relative; width: 40px; height: 40px; }
-
-.plug-menu-gear {
-  position: absolute;
-  right: -4px;
-  bottom: -4px;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  display: grid;
-  place-items: center;
-  border-radius: 5px;
-  color: var(--brass);
-  background: #1c1814;
-  border-color: var(--brass);
-  z-index: 2;
-}
-
-.plug-menu-gear svg { width: 12px; height: 12px; display: block; }
-
 .plug-bar-btn {
   width: 40px;
   height: 40px;
@@ -317,18 +297,16 @@ label { display: flex; flex-direction: column; gap: 6px; }
 
 .plug-pop-head b { font-weight: 500; color: var(--brass); }
 
-.plug-pop-tools { display: flex; align-items: center; gap: 6px; }
-
-.plug-pop-tools [data-plug-params] {
-  padding: 4px 8px;
-  font-size: 12px;
-}
+.plug-pop-tools { display: flex; align-items: center; gap: 6px; flex: none; }
 
 .plug-pop-head button {
   width: 32px;
   height: 32px;
   padding: 0;
+  flex: none;
 }
+
+.plug-pop-head [data-plug-params] svg { width: 18px; height: 18px; display: block; }
 
 .plug-pop .light-show { max-width: none; }
 

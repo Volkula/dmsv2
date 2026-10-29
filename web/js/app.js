@@ -2013,12 +2013,7 @@
     }
     function openParams(id) {
       const slot = plugSlots[id];
-      if (!slot || !slot.panel) return;
-      if (!slot.panel.settings || !slot.params) {
-        openPlug(id);
-        return;
-      }
-      closePlugMenus();
+      if (!slot || !slot.panel || !slot.panel.settings || !slot.params) return;
       mountParams(slot);
       plugOpen = id;
       slot.params.hidden = false;
@@ -2066,22 +2061,15 @@
         seen[panel.id] = true;
         let slot = plugSlots[panel.id];
         if (!slot) {
-          const wrap = document.createElement("span");
-          wrap.className = "plug-menu";
           const button = document.createElement("button");
           button.type = "button";
           button.className = "plug-bar-btn plug-menu-btn";
           button.setAttribute("aria-expanded", "false");
-          const gear = document.createElement("button");
-          gear.type = "button";
-          gear.className = "plug-menu-gear";
-          gear.title = "Параметры";
-          gear.setAttribute("aria-label", "Параметры");
-          gear.innerHTML = glyph('<path d="M4 8h16M4 16h16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="9" cy="8" r="2.1" fill="#1c1814" stroke="currentColor" stroke-width="1.6"/><circle cx="15" cy="16" r="2.1" fill="#1c1814" stroke="currentColor" stroke-width="1.6"/>');
           const pop = document.createElement("div");
           pop.className = "plug-pop";
           pop.hidden = true;
-          pop.innerHTML = '<div class="plug-pop-head"><b></b><span class="plug-pop-tools"><button type="button" data-plug-params hidden>Параметры</button><button type="button" data-plug-close aria-label="Закрыть">×</button></span></div><div class="plug-pop-body"></div>';
+          pop.innerHTML = '<div class="plug-pop-head"><b></b><span class="plug-pop-tools"><button type="button" data-plug-params hidden aria-label="Параметры"></button><button type="button" data-plug-close aria-label="Закрыть">×</button></span></div><div class="plug-pop-body"></div>';
+          pop.querySelector("[data-plug-params]").innerHTML = glyph('<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 3.2v2.1M12 18.7V21M3.2 12h2.1M18.7 12H21M5.6 5.6l1.5 1.5M16.9 16.9l1.5 1.5M18.4 5.6l-1.5 1.5M7.1 16.9l-1.5 1.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>');
           pop.addEventListener("click", function (event) { event.stopPropagation(); });
           pop.querySelector("[data-plug-close]").addEventListener("click", function () { closePlugMenus(); });
           const params = document.createElement("div");
@@ -2091,10 +2079,6 @@
           params.addEventListener("click", function (event) { event.stopPropagation(); });
           params.querySelector("[data-plug-close]").addEventListener("click", function () {
             params.hidden = true;
-            if (pop.hidden) {
-              button.classList.remove("is-on");
-              button.setAttribute("aria-expanded", "false");
-            }
           });
           document.body.append(params);
           pop.querySelector("[data-plug-params]").addEventListener("click", function (event) {
@@ -2108,19 +2092,8 @@
             if (plugOpen === panel.id && !pop.hidden) closePlugMenus();
             else openPlug(panel.id);
           });
-          gear.addEventListener("click", function (event) {
-            event.stopPropagation();
-            setKebab(false);
-            if (plugOpen === panel.id && params && !params.hidden) {
-              params.hidden = true;
-              if (pop.hidden) closePlugMenus();
-              return;
-            }
-            openParams(panel.id);
-          });
-          wrap.append(button, gear);
-          bar.append(wrap, pop);
-          slot = { button: button, gear: gear, wrap: wrap, pop: pop, params: params, paramsMounted: false, mounted: false, panel: panel };
+          bar.append(button, pop);
+          slot = { button: button, pop: pop, params: params, paramsMounted: false, mounted: false, panel: panel };
           plugSlots[panel.id] = slot;
         }
         slot.panel = panel;
@@ -2128,7 +2101,6 @@
         slot.button.title = panel.title;
         slot.button.setAttribute("aria-label", panel.title);
         slot.button.innerHTML = glyph(panel.icon || '<circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.6"/>');
-        if (slot.gear) slot.gear.setAttribute("aria-label", "Параметры: " + panel.title);
         const paramsBtn = slot.pop.querySelector("[data-plug-params]");
         if (paramsBtn) paramsBtn.hidden = !panel.settings;
         if (slot.mounted) fillPlugDock(slot);
