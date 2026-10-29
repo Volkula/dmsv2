@@ -892,6 +892,26 @@
     }
   }
 
+  function showPlayerFrame(event) {
+    let layer = document.getElementById("play-frame");
+    if (!event || event.on === false) {
+      if (layer) layer.remove();
+      return;
+    }
+    if (!layer) {
+      layer = document.createElement("div");
+      layer.id = "play-frame";
+      document.body.appendChild(layer);
+    }
+    const color = /^#[0-9a-f]{6}$/i.test(event.color || "") ? event.color : "#e6c36a";
+    const alpha = Math.max(0, Math.min(1, Number(event.alpha) || 0));
+    const hex = color.slice(1);
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    layer.style.setProperty("--frame", "rgba(" + r + "," + g + "," + b + "," + alpha + ")");
+  }
+
   function showPlayerClock(event) {
     let layer = document.getElementById("play-clock");
     if (!event || event.on === false) {
@@ -939,6 +959,10 @@
       }
       if (event && event.type === "clock") {
         showPlayerClock(event);
+        return;
+      }
+      if (event && event.type === "place-frame") {
+        showPlayerFrame(event);
         return;
       }
       if (event && event.type === "ping") {
@@ -1050,7 +1074,7 @@
         if (!battleOn && layer && layer.dataset.fight === "1") showPlayerTimer({ on: false });
         paint(frame, null);
       }
-      if (data.type === "event" && data.event && (frame || data.event.type === "clock" || data.event.type === "timer")) paint(frame, data.event);
+      if (data.type === "event" && data.event && (frame || data.event.type === "clock" || data.event.type === "timer" || data.event.type === "place-frame")) paint(frame, data.event);
     };
     window.addEventListener("resize", function () { fit(view); });
   }
@@ -1893,15 +1917,6 @@
         body.append(host);
         try { panel.mount(host, pluginContext()); } catch (err) {}
       }
-      if (panel.settings) {
-        const host = document.createElement("div");
-        host.className = "plug-pop-mod";
-        body.append(host);
-        try {
-          const node = panel.settings();
-          if (node) host.append(node);
-        } catch (err) {}
-      }
       if (panel.dockHtml) {
         const host = document.createElement("div");
         host.className = "plug-dock";
@@ -1921,11 +1936,48 @@
       slot.pop.style.left = Math.round(left) + "px";
       slot.pop.style.width = Math.round(width) + "px";
     }
+    function placeParams(slot) {
+      if (!slot.params) return;
+      const width = Math.min(420, window.innerWidth - 24);
+      const main = slot.pop.getBoundingClientRect();
+      let top = main.top;
+      let left = main.right + 8;
+      if (slot.pop.hidden) {
+        const rect = slot.button.getBoundingClientRect();
+        top = rect.bottom + 8;
+        left = rect.left;
+      }
+      if (left + width > window.innerWidth - 12) left = Math.max(12, window.innerWidth - 12 - width);
+      if (top < 8) top = 8;
+      slot.params.style.top = Math.round(top) + "px";
+      slot.params.style.left = Math.round(left) + "px";
+      slot.params.style.width = Math.round(width) + "px";
+    }
+    function mountParams(slot) {
+      if (!slot.params || !slot.panel || !slot.panel.settings) return;
+      const body = slot.params.querySelector(".plug-pop-body");
+      body.replaceChildren();
+      try {
+        const node = slot.panel.settings();
+        if (node) body.append(node);
+      } catch (err) {}
+      slot.paramsMounted = true;
+    }
+    function openParams(id) {
+      const slot = plugSlots[id];
+      if (!slot || !slot.panel || !slot.panel.settings || !slot.params) return;
+      if (!slot.paramsMounted) mountParams(slot);
+      slot.params.hidden = false;
+      slot.params.querySelector(".plug-pop-head b").textContent = slot.panel.title;
+      slot.button.classList.add("is-on");
+      placeParams(slot);
+    }
     function closePlugMenus() {
       plugOpen = "";
       Object.keys(plugSlots).forEach(function (id) {
         const slot = plugSlots[id];
         slot.pop.hidden = true;
+        if (slot.params) slot.params.hidden = true;
         slot.button.setAttribute("aria-expanded", "false");
         slot.button.classList.remove("is-on");
       });
@@ -1934,6 +1986,13 @@
       const slot = plugSlots[id];
       if (!slot) return;
       closePlugMenus();
+      const work = !!(slot.panel.mount || slot.panel.dockHtml);
+      if (!work && slot.panel.settings) {
+        plugOpen = id;
+        openParams(id);
+        slot.button.setAttribute("aria-expanded", "true");
+        return;
+      }
       if (!slot.mounted) mountPlug(slot);
       plugOpen = id;
       slot.pop.hidden = false;
@@ -1959,9 +2018,21 @@
           const pop = document.createElement("div");
           pop.className = "plug-pop";
           pop.hidden = true;
-          pop.innerHTML = '<div class="plug-pop-head"><b></b><button type="button" data-plug-close aria-label="Закрыть">×</button></div><div class="plug-pop-body"></div>';
+          pop.innerHTML = '<div class="plug-pop-head"><b></b><span class="plug-pop-tools"><button type="button" data-plug-params hidden>Параметры</button><button type="button" data-plug-close aria-label="Закрыть">×</button></span></div><div class="plug-pop-body"></div>';
           pop.addEventListener("click", function (event) { event.stopPropagation(); });
           pop.querySelector("[data-plug-close]").addEventListener("click", function () { closePlugMenus(); });
+          const params = document.createElement("div");
+          params.className = "plug-pop plug-pop-params";
+          params.hidden = true;
+          params.innerHTML = '<div class="plug-pop-head"><b></b><button type="button" data-plug-close aria-label="Закрыть">×</button></div><div class="plug-pop-body"></div>';
+          params.addEventListener("click", function (event) { event.stopPropagation(); });
+          params.querySelector("[data-plug-close]").addEventListener("click", function () { params.hidden = true; });
+          document.body.append(params);
+          pop.querySelector("[data-plug-params]").addEventListener("click", function (event) {
+            event.stopPropagation();
+            if (params.hidden) openParams(panel.id);
+            else params.hidden = true;
+          });
           button.addEventListener("click", function (event) {
             event.stopPropagation();
             setKebab(false);
@@ -1969,14 +2040,16 @@
             else openPlug(panel.id);
           });
           bar.append(button, pop);
-          slot = { button: button, pop: pop, mounted: false, panel: panel };
+          slot = { button: button, pop: pop, params: params, paramsMounted: false, mounted: false, panel: panel };
           plugSlots[panel.id] = slot;
         }
         slot.panel = panel;
         slot.pop.querySelector(".plug-pop-head b").textContent = panel.title;
         slot.button.title = panel.title;
         slot.button.setAttribute("aria-label", panel.title);
-        slot.button.innerHTML = glyph(panel.icon || '<circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.6"/>') + "<span>" + esc(panel.title) + "</span>";
+        slot.button.innerHTML = glyph(panel.icon || '<circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.6"/>');
+        const paramsBtn = slot.pop.querySelector("[data-plug-params]");
+        if (paramsBtn) paramsBtn.hidden = !panel.settings;
         if (slot.mounted) fillPlugDock(slot);
       });
       Object.keys(plugSlots).forEach(function (id) {
@@ -1985,10 +2058,12 @@
         try { if (slot.panel && slot.panel.stop) slot.panel.stop(); } catch (err) {}
         slot.button.remove();
         slot.pop.remove();
+        if (slot.params) slot.params.remove();
         delete plugSlots[id];
         if (plugOpen === id) plugOpen = "";
       });
       if (plugOpen && plugSlots[plugOpen] && !plugSlots[plugOpen].pop.hidden) placePlugPop(plugSlots[plugOpen]);
+      if (plugOpen && plugSlots[plugOpen] && plugSlots[plugOpen].params && !plugSlots[plugOpen].params.hidden) placeParams(plugSlots[plugOpen]);
     }
     function showModule(kind) {
       if (window.ShirmoDock) window.ShirmoDock.paint();
@@ -2552,7 +2627,10 @@
       catch (error) { err.textContent = "Плагин не открылся"; }
     });
     window.addEventListener("resize", function () {
-      if (plugOpen && plugSlots[plugOpen]) placePlugPop(plugSlots[plugOpen]);
+      if (plugOpen && plugSlots[plugOpen]) {
+        if (!plugSlots[plugOpen].pop.hidden) placePlugPop(plugSlots[plugOpen]);
+        if (plugSlots[plugOpen].params && !plugSlots[plugOpen].params.hidden) placeParams(plugSlots[plugOpen]);
+      }
     });
     try {
       const clockBag = timerBag();

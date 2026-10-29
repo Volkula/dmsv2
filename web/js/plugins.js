@@ -495,7 +495,7 @@
           list.push({
             id: mod.id,
             title: (hasModule && mod.module.title) || (row && row.name) || mod.id,
-            icon: (hasModule && mod.module.icon) || "",
+            icon: (hasModule && mod.module.icon) || mod.icon || "",
             mount: hasModule ? mod.module.mount : null,
             settings: hasSettings ? function () { return mod.settings(env()); } : null,
             dockHtml: hasDock ? function () { return mod.dockHtml(env()) || ""; } : null,

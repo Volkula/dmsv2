@@ -20,4 +20,7 @@ assert.match(clock.src, /shirmo-clock\/releases\/latest\/download\/plugin\.js$/)
 const timer = catalog.find(function (item) { return item.id === "timer"; });
 assert.equal(timer && timer.name, "Таймер");
 assert.match(timer.src, /shirmo-timer\/releases\/latest\/download\/plugin\.js$/);
+const placeColor = catalog.find(function (item) { return item.id === "place-color"; });
+assert.equal(placeColor && placeColor.name, "Цвет локаций");
+assert.match(placeColor.src, /shirmo-place-color\/releases\/latest\/download\/plugin\.js$/);
 console.log("plugins ok");

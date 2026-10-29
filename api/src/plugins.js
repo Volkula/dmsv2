@@ -10,7 +10,8 @@ const releaseUrls = [
   process.env.MELK_RELEASE || "https://github.com/Volkula/shirmo-melk/releases/latest/download/plugin.json",
   process.env.LIGHT_SHOW_RELEASE || "https://github.com/Volkula/shirmo-light-show/releases/latest/download/plugin.json",
   process.env.CLOCK_RELEASE || "https://github.com/Volkula/shirmo-clock/releases/latest/download/plugin.json",
-  process.env.TIMER_RELEASE || "https://github.com/Volkula/shirmo-timer/releases/latest/download/plugin.json"
+  process.env.TIMER_RELEASE || "https://github.com/Volkula/shirmo-timer/releases/latest/download/plugin.json",
+  process.env.PLACE_COLOR_RELEASE || "https://github.com/Volkula/shirmo-place-color/releases/latest/download/plugin.json"
 ];
 
 const FX_SCENE = {

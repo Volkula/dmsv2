@@ -258,20 +258,9 @@ label { display: flex; flex-direction: column; gap: 6px; }
 }
 
 .plug-menu-btn {
-  width: auto;
-  height: 36px;
-  padding: 0 10px;
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  font-size: 14px;
-}
-
-.plug-menu-btn span {
-  max-width: 11em;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  width: 40px;
+  height: 40px;
+  padding: 0;
 }
 
 .plug-bar-btn svg { width: 20px; height: 20px; display: block; }
@@ -307,6 +296,13 @@ label { display: flex; flex-direction: column; gap: 6px; }
 }
 
 .plug-pop-head b { font-weight: 500; color: var(--brass); }
+
+.plug-pop-tools { display: flex; align-items: center; gap: 6px; }
+
+.plug-pop-tools [data-plug-params] {
+  padding: 4px 8px;
+  font-size: 12px;
+}
 
 .plug-pop-head button {
   width: 32px;
@@ -4775,6 +4771,15 @@ body > .clock-layer.is-pinned { display: none !important; }
 }
 
 .play-timer.is-quiet { display: none; }
+
+#play-frame {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+  border: 28px solid var(--frame, transparent);
+  box-shadow: inset 0 0 80px 12px var(--frame, transparent);
+}
 
 .play-clock {
   position: fixed;

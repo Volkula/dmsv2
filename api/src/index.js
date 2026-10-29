@@ -664,6 +664,10 @@ const server = http.createServer(async function (req, res) {
       if (replayClock && replayClock.on) {
         res.write(`data: ${JSON.stringify({ type: "event", event: replayClock })}\n\n`);
       }
+      const replayEdge = liveBag(id).frame;
+      if (replayEdge && replayEdge.on) {
+        res.write(`data: ${JSON.stringify({ type: "event", event: replayEdge })}\n\n`);
+      }
       const drop = subscribe(id, res);
       const beat = setInterval(function () { res.write(": ping\n\n"); }, 15000);
       req.on("close", function () {
@@ -834,8 +838,8 @@ const server = http.createServer(async function (req, res) {
         if (fontSize >= 12 && fontSize <= 28) event.fontSize = fontSize;
       }
       const beatSeq = Math.round(Number(body.seq) || 0);
-      const beatBag = (event.type === "clock" || event.type === "timer") ? liveBag(room.id) : null;
-      const beatKey = event.type === "clock" ? "clockSeq" : "timerSeq";
+      const beatKey = event.type === "clock" ? "clockSeq" : event.type === "timer" ? "timerSeq" : event.type === "place-frame" ? "frameSeq" : "";
+      const beatBag = beatKey ? liveBag(room.id) : null;
       const staleBeat = !!(beatBag && beatSeq && beatBag[beatKey] && beatSeq < beatBag[beatKey]);
       if (beatBag && beatSeq && !staleBeat) beatBag[beatKey] = beatSeq;
       if (!staleBeat && event.type === "clock") {
@@ -848,6 +852,17 @@ const server = http.createServer(async function (req, res) {
           event.size = Math.min(120, Math.max(28, Math.round(Number(body.size) || 48)));
           event.shape = shapes[body.shape] ? body.shape : "square";
           liveBag(room.id).clock = { type: "clock", on: true, size: event.size, shape: event.shape };
+        }
+      }
+      if (!staleBeat && event.type === "place-frame") {
+        if (body.on !== true) {
+          event.on = false;
+          liveBag(room.id).frame = null;
+        } else {
+          event.on = true;
+          event.color = /^#[0-9a-fA-F]{6}$/.test(body.color || "") ? body.color : "#e6c36a";
+          event.alpha = Math.min(1, Math.max(0, Number(body.alpha) || 0));
+          liveBag(room.id).frame = { type: "place-frame", on: true, color: event.color, alpha: event.alpha };
         }
       }
       if (!staleBeat && event.type === "timer") {
