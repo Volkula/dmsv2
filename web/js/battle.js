@@ -381,6 +381,9 @@
   }
 
   function mount(host, ctx) {
+    function timerPlugin() {
+      return !!(window.ShirmoClock && window.ShirmoClock.read);
+    }
     if (host._battleOff) host._battleOff();
     const battle = ensure(ctx.campaign);
     let query = "";
@@ -1337,7 +1340,7 @@
         '<button type="button" data-act="prev" title="Предыдущий живой ход">Назад</button>' +
         '<button type="button" data-act="next" title="Следующий живой ход">Дальше</button>' +
         '<span class="turn-name">' + esc(now ? now.name : "Нет хода") + "</span>" +
-        '<label class="check" title="Когда ход переходит к другому бойцу, таймер этого бойца и ушедшего отряда ставится на паузу"><input id="battle-turn-pause" type="checkbox"' + (battle.turnPause === false ? "" : " checked") + "> Пауза при смене хода</label></div>" +
+        (timerPlugin() ? '<label class="check" title="Когда ход переходит к другому бойцу, таймер этого бойца и ушедшего отряда ставится на паузу"><input id="battle-turn-pause" type="checkbox"' + (battle.turnPause === false ? "" : " checked") + "> Пауза при смене хода</label>" : "") + "</div>" +
         '<div class="round-bar"><button type="button" data-act="round-down" title="Предыдущий раунд">−</button>' +
         '<input id="battle-round" class="round-num" type="number" min="1" value="' + esc(String(battle.round || 1)) + '" aria-label="Раунд">' +
         '<button type="button" data-act="round-up" title="Следующий раунд">+</button>' +
@@ -1434,12 +1437,12 @@
         '<label class="check" title="Полоса хитов на экране игроков"><input data-q="boss" data-id="' + esc(actor.id) + '" type="checkbox"' + (isBoss(actor) ? " checked" : "") + "> Полоса</label></div></section>" +
         '<div class="pcard-groups">' +
         '<section class="pcard-group"><h4>Атака</h4>' + weaponButtons(actor) + "</section>" +
-        '<section class="pcard-group"><h4>Таймер</h4><div class="turn-cell">' +
+        (timerPlugin() ? '<section class="pcard-group"><h4>Таймер</h4><div class="turn-cell">' +
         cardField("Сек", '<input data-q="turnSec" data-id="' + esc(actor.id) + '" class="num" type="number" min="0" value="' + esc(String(Math.max(0, Math.round(Number(actor.turnSec) || 0)))) + '" aria-label="Секунды на ход" title="0 — без таймера">') +
         cardField("Эффект", '<select class="turn-fx" data-turn-fx data-id="' + esc(actor.id) + '" aria-label="Эффект таймера">' + fxOptions(actor.turnFx) + "</select>") +
         '<button type="button" class="turn-go" data-act="turn-toggle" data-id="' + esc(actor.id) + '" title="Пуск или пауза. Эффект виден игрокам">Старт</button>' +
         '<button type="button" class="turn-go" data-act="turn-reset" data-id="' + esc(actor.id) + '" title="Вернуть полное время">Сброс</button>' +
-        '<b class="turn-left" data-turn="' + esc(actor.id) + '"></b></div></section>' +
+        '<b class="turn-left" data-turn="' + esc(actor.id) + '"></b></div></section>' : "") +
         '<section class="pcard-group"><h4>Отряд</h4>' +
         cardField("Отряд", '<select data-move-squad="' + esc(actor.id) + '" aria-label="Отряд бойца">' + squadOptions(home && home.id) + "</select>") +
         '<div class="pcard-row"><button type="button" data-act="copy-fighter" data-id="' + esc(actor.id) + '" title="Скопировать бойца в этот же отряд">Копия</button>' +
@@ -1457,12 +1460,12 @@
           return battle.actors.find(function (actor) { return actor.id === id; });
         }).filter(Boolean);
         const head = '<header class="squad-banner" data-board="' + esc(group.id) + '"><input data-squad="' + esc(group.id) + '" value="' + esc(group.name || "Отряд") + '" aria-label="Отряд">' +
-          '<div class="turn-cell">' +
+          (timerPlugin() ? '<div class="turn-cell">' +
           cardField("Сек", '<input data-squad-sec data-id="' + esc(group.id) + '" class="num" type="number" min="0" value="' + esc(String(Math.max(0, Math.round(Number(group.turnSec) || 0)))) + '" aria-label="Секунды отряда" title="0 — без таймера">') +
           cardField("Эффект", '<select class="turn-fx" data-squad-fx data-id="' + esc(group.id) + '" aria-label="Эффект отряда">' + fxOptions(group.turnFx) + "</select>") +
           '<button type="button" class="turn-go" data-act="squad-toggle" data-id="' + esc(group.id) + '" title="Пуск или пауза таймера отряда. Эффект виден игрокам">Старт</button>' +
           '<button type="button" class="turn-go" data-act="squad-reset" data-id="' + esc(group.id) + '" title="Вернуть полное время отряда">Сброс</button>' +
-          '<b class="turn-left" data-squad-clock="' + esc(group.id) + '"></b></div>' +
+          '<b class="turn-left" data-squad-clock="' + esc(group.id) + '"></b></div>' : "") +
           '<button type="button" data-act="squad-del" data-id="' + esc(group.id) + '" title="Убрать отряд из боя целиком">×</button></header>';
         return '<section class="squad-block">' + head + members.map(function (actor) { return fighterRow(actor, now, group.id); }).join("") + "</section>";
       }).join("");
@@ -1474,7 +1477,7 @@
       const style = "--b-player:" + esc(battle.player || "#3ecf78") + ";--b-foe:" + esc(battle.foe || "#e4533e") + ";--b-brass:" + esc(battle.brass || "#e6c36a");
       return '<div class="battle-screen master-rail" style="' + style + '">' +
         '<p class="fight-round"><span>Раунд</span><b>' + esc(String(battle.round || 1)) + "</b></p>" +
-        '<div class="battle-track">' + trackHtml(actors, true, now && now.id, true) + "</div>" +
+        '<div class="battle-track">' + trackHtml(actors, true, now && now.id, timerPlugin()) + "</div>" +
         bossHtml(actors, true) +
         "</div>";
     }

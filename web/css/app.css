@@ -273,6 +273,17 @@ label { display: flex; flex-direction: column; gap: 6px; }
 
 .plug-pop .light-show { max-width: none; }
 
+.plug-pop .clock-layer.is-embedded {
+  position: static;
+  z-index: auto;
+  top: auto;
+  right: auto;
+  width: 100%;
+  max-width: none;
+  margin: 0 0 12px;
+  box-shadow: none;
+}
+
 .top-publish {
   display: flex;
   align-items: center;

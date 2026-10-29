@@ -43,7 +43,13 @@
       note: function (text) {
         const host = document.querySelector("#plugin-card .pop-body");
         if (host) note(host, text);
-      }
+      },
+      roomId: opt && opt.roomId || "",
+      headers: opt && opt.headers || null,
+      upload: opt && opt.upload || null,
+      keep: opt && opt.keep || null,
+      library: opt && opt.library || function () { return { images: [], notes: [] }; },
+      saveNote: opt && opt.saveNote || null
     };
   }
 

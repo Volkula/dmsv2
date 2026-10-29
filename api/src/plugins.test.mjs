@@ -14,4 +14,10 @@ assert.match(lightShow.src, /shirmo-light-show\/releases\/latest\/download\/plug
 const melk = catalog.find(function (item) { return item.id === "melk-lamps"; });
 assert.equal(melk && melk.name, "Лампы MELK");
 assert.match(melk.src, /shirmo-melk\/releases\/latest\/download\/plugin\.js$/);
+const clock = catalog.find(function (item) { return item.id === "clock"; });
+assert.equal(clock && clock.name, "Часы");
+assert.match(clock.src, /shirmo-clock\/releases\/latest\/download\/plugin\.js$/);
+const timer = catalog.find(function (item) { return item.id === "timer"; });
+assert.equal(timer && timer.name, "Таймер");
+assert.match(timer.src, /shirmo-timer\/releases\/latest\/download\/plugin\.js$/);
 console.log("plugins ok");
