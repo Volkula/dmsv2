@@ -75,8 +75,8 @@
     if (!item || !item.id || mods[item.id]) return Promise.resolve();
     if (loading[item.id]) return loading[item.id];
     const local = "/plugins/" + item.id + "/plugin.js";
-    const job = loadScript(local).catch(function () {
-      return item.src ? loadScript(item.src) : Promise.reject();
+    const job = (item.src ? loadScript(item.src) : Promise.reject()).catch(function () {
+      return loadScript(local);
     }).catch(function () {});
     loading[item.id] = job;
     return job;

@@ -7,7 +7,8 @@ import { plainMatches, secretMatches } from "./auth.js";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const releaseUrls = [
   process.env.PLUGIN_RELEASE || "https://github.com/Volkula/shirmo-light/releases/latest/download/plugin.json",
-  process.env.MELK_RELEASE || "https://github.com/Volkula/shirmo-melk/releases/latest/download/plugin.json"
+  process.env.MELK_RELEASE || "https://github.com/Volkula/shirmo-melk/releases/latest/download/plugin.json",
+  process.env.LIGHT_SHOW_RELEASE || "https://github.com/Volkula/shirmo-light-show/releases/latest/download/plugin.json"
 ];
 
 const FX_SCENE = {
@@ -54,7 +55,6 @@ export async function pluginCatalog() {
   }));
   entries.forEach(function (entry) { pushCatalog(list, entry); });
   pushCatalog(list, readBundledFile("adaptive-light.json"));
-  pushCatalog(list, readBundledFile("light-show.json"));
   return list;
 }
 
