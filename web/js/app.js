@@ -892,10 +892,53 @@
     }
   }
 
+  function placeFrame(layer) {
+    const stage = document.querySelector(".viewer .stage") || document.querySelector(".stage");
+    if (!stage) {
+      layer.style.top = "0px";
+      layer.style.left = "0px";
+      layer.style.width = "100vw";
+      layer.style.height = "100vh";
+      return;
+    }
+    const rect = stage.getBoundingClientRect();
+    if (rect.width < 8 || rect.height < 8) {
+      layer.style.top = "0px";
+      layer.style.left = "0px";
+      layer.style.width = "100vw";
+      layer.style.height = "100vh";
+      return;
+    }
+    layer.style.top = Math.round(rect.top) + "px";
+    layer.style.left = Math.round(rect.left) + "px";
+    layer.style.width = Math.round(rect.width) + "px";
+    layer.style.height = Math.round(rect.height) + "px";
+  }
+
+  function paintFrame(layer, color, alpha) {
+    const hex = /^#[0-9a-f]{6}$/i.test(color || "") ? color : "#e6c36a";
+    const raw = hex.slice(1);
+    const r = parseInt(raw.slice(0, 2), 16);
+    const g = parseInt(raw.slice(2, 4), 16);
+    const b = parseInt(raw.slice(4, 6), 16);
+    const ink = "rgba(" + r + "," + g + "," + b + "," + alpha + ")";
+    layer.style.position = "fixed";
+    layer.style.zIndex = "74";
+    layer.style.pointerEvents = "none";
+    layer.style.boxSizing = "border-box";
+    layer.style.border = "28px solid " + ink;
+    layer.style.boxShadow = "inset 0 0 90px 18px " + ink;
+    layer.style.setProperty("--frame", ink);
+    placeFrame(layer);
+  }
+
   function showPlayerFrame(event) {
     let layer = document.getElementById("play-frame");
     if (!event || event.on === false) {
-      if (layer) layer.remove();
+      if (layer) {
+        if (layer._beat) cancelAnimationFrame(layer._beat);
+        layer.remove();
+      }
       return;
     }
     if (!layer) {
@@ -904,12 +947,17 @@
       document.body.appendChild(layer);
     }
     const color = /^#[0-9a-f]{6}$/i.test(event.color || "") ? event.color : "#e6c36a";
-    const alpha = Math.max(0, Math.min(1, Number(event.alpha) || 0));
-    const hex = color.slice(1);
-    const r = parseInt(hex.slice(0, 2), 16);
-    const g = parseInt(hex.slice(2, 4), 16);
-    const b = parseInt(hex.slice(4, 6), 16);
-    layer.style.setProperty("--frame", "rgba(" + r + "," + g + "," + b + "," + alpha + ")");
+    const alpha = event.alpha == null ? 0.4 : Math.max(0, Math.min(1, Number(event.alpha) || 0));
+    paintFrame(layer, color, alpha);
+    if (!layer._beat) {
+      const tick = function () {
+        const node = document.getElementById("play-frame");
+        if (!node) return;
+        placeFrame(node);
+        node._beat = requestAnimationFrame(tick);
+      };
+      tick();
+    }
   }
 
   function showPlayerClock(event) {
@@ -1965,11 +2013,18 @@
     }
     function openParams(id) {
       const slot = plugSlots[id];
-      if (!slot || !slot.panel || !slot.panel.settings || !slot.params) return;
-      if (!slot.paramsMounted) mountParams(slot);
+      if (!slot || !slot.panel) return;
+      if (!slot.panel.settings || !slot.params) {
+        openPlug(id);
+        return;
+      }
+      closePlugMenus();
+      mountParams(slot);
+      plugOpen = id;
       slot.params.hidden = false;
-      slot.params.querySelector(".plug-pop-head b").textContent = slot.panel.title;
+      slot.params.querySelector(".plug-pop-head b").textContent = "Параметры";
       slot.button.classList.add("is-on");
+      slot.button.setAttribute("aria-expanded", "true");
       placeParams(slot);
     }
     function closePlugMenus() {
@@ -2011,10 +2066,18 @@
         seen[panel.id] = true;
         let slot = plugSlots[panel.id];
         if (!slot) {
+          const wrap = document.createElement("span");
+          wrap.className = "plug-menu";
           const button = document.createElement("button");
           button.type = "button";
           button.className = "plug-bar-btn plug-menu-btn";
           button.setAttribute("aria-expanded", "false");
+          const gear = document.createElement("button");
+          gear.type = "button";
+          gear.className = "plug-menu-gear";
+          gear.title = "Параметры";
+          gear.setAttribute("aria-label", "Параметры");
+          gear.innerHTML = glyph('<path d="M4 8h16M4 16h16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="9" cy="8" r="2.1" fill="#1c1814" stroke="currentColor" stroke-width="1.6"/><circle cx="15" cy="16" r="2.1" fill="#1c1814" stroke="currentColor" stroke-width="1.6"/>');
           const pop = document.createElement("div");
           pop.className = "plug-pop";
           pop.hidden = true;
@@ -2026,7 +2089,13 @@
           params.hidden = true;
           params.innerHTML = '<div class="plug-pop-head"><b></b><button type="button" data-plug-close aria-label="Закрыть">×</button></div><div class="plug-pop-body"></div>';
           params.addEventListener("click", function (event) { event.stopPropagation(); });
-          params.querySelector("[data-plug-close]").addEventListener("click", function () { params.hidden = true; });
+          params.querySelector("[data-plug-close]").addEventListener("click", function () {
+            params.hidden = true;
+            if (pop.hidden) {
+              button.classList.remove("is-on");
+              button.setAttribute("aria-expanded", "false");
+            }
+          });
           document.body.append(params);
           pop.querySelector("[data-plug-params]").addEventListener("click", function (event) {
             event.stopPropagation();
@@ -2036,11 +2105,22 @@
           button.addEventListener("click", function (event) {
             event.stopPropagation();
             setKebab(false);
-            if (plugOpen === panel.id) closePlugMenus();
+            if (plugOpen === panel.id && !pop.hidden) closePlugMenus();
             else openPlug(panel.id);
           });
-          bar.append(button, pop);
-          slot = { button: button, pop: pop, params: params, paramsMounted: false, mounted: false, panel: panel };
+          gear.addEventListener("click", function (event) {
+            event.stopPropagation();
+            setKebab(false);
+            if (plugOpen === panel.id && params && !params.hidden) {
+              params.hidden = true;
+              if (pop.hidden) closePlugMenus();
+              return;
+            }
+            openParams(panel.id);
+          });
+          wrap.append(button, gear);
+          bar.append(wrap, pop);
+          slot = { button: button, gear: gear, wrap: wrap, pop: pop, params: params, paramsMounted: false, mounted: false, panel: panel };
           plugSlots[panel.id] = slot;
         }
         slot.panel = panel;
@@ -2048,6 +2128,7 @@
         slot.button.title = panel.title;
         slot.button.setAttribute("aria-label", panel.title);
         slot.button.innerHTML = glyph(panel.icon || '<circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.6"/>');
+        if (slot.gear) slot.gear.setAttribute("aria-label", "Параметры: " + panel.title);
         const paramsBtn = slot.pop.querySelector("[data-plug-params]");
         if (paramsBtn) paramsBtn.hidden = !panel.settings;
         if (slot.mounted) fillPlugDock(slot);
@@ -2056,7 +2137,8 @@
         if (seen[id]) return;
         const slot = plugSlots[id];
         try { if (slot.panel && slot.panel.stop) slot.panel.stop(); } catch (err) {}
-        slot.button.remove();
+        if (slot.wrap) slot.wrap.remove();
+        else slot.button.remove();
         slot.pop.remove();
         if (slot.params) slot.params.remove();
         delete plugSlots[id];
