@@ -231,8 +231,18 @@ label { display: flex; flex-direction: column; gap: 6px; }
   position: relative;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 4px;
   justify-self: start;
+  min-width: 0;
+}
+
+.plug-menus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
 }
 
 .plug-bar-btn {
@@ -245,6 +255,23 @@ label { display: flex; flex-direction: column; gap: 6px; }
   background: transparent;
   border-color: transparent;
   border-radius: 10px;
+}
+
+.plug-menu-btn {
+  width: auto;
+  height: 36px;
+  padding: 0 10px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 14px;
+}
+
+.plug-menu-btn span {
+  max-width: 11em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .plug-bar-btn svg { width: 20px; height: 20px; display: block; }
@@ -270,6 +297,22 @@ label { display: flex; flex-direction: column; gap: 6px; }
 }
 
 .plug-pop[hidden] { display: none; }
+
+.plug-pop-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+.plug-pop-head b { font-weight: 500; color: var(--brass); }
+
+.plug-pop-head button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+}
 
 .plug-pop .light-show { max-width: none; }
 

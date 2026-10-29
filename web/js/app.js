@@ -1625,8 +1625,7 @@
       '<input id="title" class="room-title" type="text" value="' + esc(state.title) + '" aria-label="Название комнаты" title="Название комнаты">' +
       '<div class="plug-bar">' +
       '<button type="button" id="plugins-open" class="plug-bar-btn" title="Подключить или убрать плагин" aria-label="Подключить или убрать плагин">' + glyph('<path d="M9 3.5v4M15 3.5v4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><rect x="6.5" y="7.5" width="11" height="7" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 14.5V20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "</button>" +
-      '<button type="button" id="plug-gear" class="plug-bar-btn" title="Параметры плагинов" aria-label="Параметры плагинов" aria-expanded="false">' + glyph('<circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 3.2v2.1M12 18.7v2.1M3.2 12h2.1M18.7 12h2.1M5.7 5.7l1.5 1.5M16.8 16.8l1.5 1.5M18.3 5.7l-1.5 1.5M7.2 16.8l-1.5 1.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "</button>" +
-      '<div class="plug-pop" id="plug-pop" hidden><div id="plug-pop-body"></div></div>' +
+      '<div id="plug-menus" class="plug-menus"></div>' +
       "</div></div>" +
       '<div class="top-publish">' +
       '<div class="mode-switch">' +
@@ -1854,90 +1853,136 @@
         view.markers.push(marker);
       });
     }
-    function pluginModules() {
-      try { return window.ShirmoPlugins && window.ShirmoPlugins.modules ? window.ShirmoPlugins.modules() : []; }
-      catch (err) { return []; }
+    const plugSlots = {};
+    let plugOpen = "";
+    function pluginContext() {
+      return {
+        campaign: function () { return state.campaign; },
+        save: save
+      };
     }
-    function pluginForms() {
-      try { return window.ShirmoPlugins && window.ShirmoPlugins.forms ? window.ShirmoPlugins.forms() : []; }
-      catch (err) { return []; }
-    }
-    function pluginDockHtml() {
-      try { return window.ShirmoPlugins && window.ShirmoPlugins.dockHtml ? window.ShirmoPlugins.dockHtml() : ""; }
-      catch (err) { return ""; }
-    }
-    function refreshPlugDock() {
-      const pop = app.querySelector("#plug-pop");
-      const host = app.querySelector("[data-plug-dock]");
-      if (!pop || pop.hidden || !host || !window.ShirmoPlugins) return;
-      const html = pluginDockHtml();
+    function fillPlugDock(slot) {
+      const host = slot.pop.querySelector("[data-plug-dock]");
+      const panel = slot.panel;
+      if (!host || !panel || !panel.dockHtml) return;
+      let html = "";
+      try { html = panel.dockHtml() || ""; } catch (err) { html = ""; }
       if (host.getAttribute("data-stamp") === html) return;
       host.setAttribute("data-stamp", html);
       host.innerHTML = html;
-      try { if (html && window.ShirmoPlugins.bindDock) window.ShirmoPlugins.bindDock(host); } catch (err) {}
+      try { if (html && panel.bindDock) panel.bindDock(host); } catch (err) {}
     }
-    let plugLive = {};
-    let plugPainted = null;
-    function syncPluginModules() {
-      const gear = app.querySelector("#plug-gear");
-      const pop = app.querySelector("#plug-pop");
-      const body = app.querySelector("#plug-pop-body");
-      if (!gear || !pop || !body) return;
-      const mods = pluginModules();
-      const next = {};
-      mods.forEach(function (mod) { next[mod.id] = mod; });
-      Object.keys(plugLive).forEach(function (key) {
-        if (!next[key] && plugLive[key].stop) plugLive[key].stop();
+    function refreshPlugDock() {
+      Object.keys(plugSlots).forEach(function (id) {
+        if (plugSlots[id].mounted) fillPlugDock(plugSlots[id]);
       });
-      plugLive = next;
-      const dock = pluginDockHtml();
-      const forms = pluginForms();
-      gear.classList.toggle("has-mods", mods.length > 0 || forms.length > 0 || !!dock);
-      if (pop.hidden) {
-        plugPainted = null;
-        return;
-      }
-      const key = mods.map(function (mod) { return mod.id; }).join(",") + "|" + forms.map(function (row) { return row.id; }).join(",") + (dock ? "|dock" : "");
-      if (key === plugPainted) {
-        refreshPlugDock();
-        return;
-      }
-      plugPainted = key;
+    }
+    function mountPlug(slot) {
+      const panel = slot.panel;
+      const body = slot.pop.querySelector(".plug-pop-body");
       body.replaceChildren();
-      if (!mods.length && !forms.length && !dock) {
-        const empty = document.createElement("p");
-        empty.className = "note";
-        empty.textContent = "Параметров нет. Подключите плагин.";
-        body.append(empty);
-        return;
+      if (panel.mount) {
+        const host = document.createElement("div");
+        host.className = "plug-pop-mod";
+        body.append(host);
+        try { panel.mount(host, pluginContext()); } catch (err) {}
       }
-      mods.forEach(function (mod) {
+      if (panel.settings) {
         const host = document.createElement("div");
         host.className = "plug-pop-mod";
         body.append(host);
         try {
-          mod.mount(host, {
-            campaign: function () { return state.campaign; },
-            save: save
-          });
-        } catch (err) {}
-      });
-      forms.forEach(function (row) {
-        const host = document.createElement("div");
-        host.className = "plug-pop-mod";
-        body.append(host);
-        try {
-          const node = row.mount(row.env);
+          const node = panel.settings();
           if (node) host.append(node);
         } catch (err) {}
-      });
-      if (dock) {
+      }
+      if (panel.dockHtml) {
         const host = document.createElement("div");
         host.className = "plug-dock";
-        host.setAttribute("data-plug-dock", "");
+        host.setAttribute("data-plug-dock", panel.id);
         body.append(host);
-        refreshPlugDock();
+        fillPlugDock(slot);
       }
+      slot.mounted = true;
+    }
+    function placePlugPop(slot) {
+      const rect = slot.button.getBoundingClientRect();
+      const width = Math.min(560, window.innerWidth - 24);
+      let left = rect.left;
+      if (left + width > window.innerWidth - 12) left = window.innerWidth - 12 - width;
+      if (left < 12) left = 12;
+      slot.pop.style.top = Math.round(rect.bottom + 8) + "px";
+      slot.pop.style.left = Math.round(left) + "px";
+      slot.pop.style.width = Math.round(width) + "px";
+    }
+    function closePlugMenus() {
+      plugOpen = "";
+      Object.keys(plugSlots).forEach(function (id) {
+        const slot = plugSlots[id];
+        slot.pop.hidden = true;
+        slot.button.setAttribute("aria-expanded", "false");
+        slot.button.classList.remove("is-on");
+      });
+    }
+    function openPlug(id) {
+      const slot = plugSlots[id];
+      if (!slot) return;
+      closePlugMenus();
+      if (!slot.mounted) mountPlug(slot);
+      plugOpen = id;
+      slot.pop.hidden = false;
+      slot.button.classList.add("is-on");
+      slot.button.setAttribute("aria-expanded", "true");
+      placePlugPop(slot);
+    }
+    function syncPluginModules() {
+      const bar = app.querySelector("#plug-menus");
+      if (!bar || !window.ShirmoPlugins || !window.ShirmoPlugins.panels) return;
+      let panels = [];
+      try { panels = window.ShirmoPlugins.panels() || []; } catch (err) { panels = []; }
+      const seen = {};
+      panels.forEach(function (panel) {
+        if (!panel || !panel.id) return;
+        seen[panel.id] = true;
+        let slot = plugSlots[panel.id];
+        if (!slot) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "plug-bar-btn plug-menu-btn";
+          button.setAttribute("aria-expanded", "false");
+          const pop = document.createElement("div");
+          pop.className = "plug-pop";
+          pop.hidden = true;
+          pop.innerHTML = '<div class="plug-pop-head"><b></b><button type="button" data-plug-close aria-label="Закрыть">×</button></div><div class="plug-pop-body"></div>';
+          pop.addEventListener("click", function (event) { event.stopPropagation(); });
+          pop.querySelector("[data-plug-close]").addEventListener("click", function () { closePlugMenus(); });
+          button.addEventListener("click", function (event) {
+            event.stopPropagation();
+            setKebab(false);
+            if (plugOpen === panel.id) closePlugMenus();
+            else openPlug(panel.id);
+          });
+          bar.append(button, pop);
+          slot = { button: button, pop: pop, mounted: false, panel: panel };
+          plugSlots[panel.id] = slot;
+        }
+        slot.panel = panel;
+        slot.pop.querySelector(".plug-pop-head b").textContent = panel.title;
+        slot.button.title = panel.title;
+        slot.button.setAttribute("aria-label", panel.title);
+        slot.button.innerHTML = glyph(panel.icon || '<circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.6"/>') + "<span>" + esc(panel.title) + "</span>";
+        if (slot.mounted) fillPlugDock(slot);
+      });
+      Object.keys(plugSlots).forEach(function (id) {
+        if (seen[id]) return;
+        const slot = plugSlots[id];
+        try { if (slot.panel && slot.panel.stop) slot.panel.stop(); } catch (err) {}
+        slot.button.remove();
+        slot.pop.remove();
+        delete plugSlots[id];
+        if (plugOpen === id) plugOpen = "";
+      });
+      if (plugOpen && plugSlots[plugOpen] && !plugSlots[plugOpen].pop.hidden) placePlugPop(plugSlots[plugOpen]);
     }
     function showModule(kind) {
       if (window.ShirmoDock) window.ShirmoDock.paint();
@@ -2494,42 +2539,15 @@
     });
     kebabMenu.addEventListener("click", function () { setKebab(false); });
     const pluginsBtn = app.querySelector("#plugins-open");
-    const plugGear = app.querySelector("#plug-gear");
-    const plugPop = app.querySelector("#plug-pop");
-    function placePlugPop() {
-      if (!plugPop || !plugGear) return;
-      const rect = plugGear.getBoundingClientRect();
-      const width = Math.min(640, window.innerWidth - 24);
-      let left = rect.right - width;
-      if (left < 12) left = 12;
-      if (left + width > window.innerWidth - 12) left = window.innerWidth - 12 - width;
-      plugPop.style.top = Math.round(rect.bottom + 8) + "px";
-      plugPop.style.left = Math.round(left) + "px";
-      plugPop.style.width = Math.round(width) + "px";
-    }
-    function setPlugPop(open) {
-      if (!plugPop || !plugGear) return;
-      plugPop.hidden = !open;
-      plugGear.setAttribute("aria-expanded", open ? "true" : "false");
-      plugGear.classList.toggle("is-on", open);
-      if (open) {
-        placePlugPop();
-        plugPainted = null;
-        syncPluginModules();
-      }
-    }
     if (pluginsBtn) pluginsBtn.addEventListener("click", function (event) {
       event.stopPropagation();
-      setPlugPop(false);
+      closePlugMenus();
       try { if (window.ShirmoPlugins) window.ShirmoPlugins.open(); }
       catch (error) { err.textContent = "Плагин не открылся"; }
     });
-    if (plugGear) plugGear.addEventListener("click", function (event) {
-      event.stopPropagation();
-      setKebab(false);
-      setPlugPop(plugPop.hidden);
+    window.addEventListener("resize", function () {
+      if (plugOpen && plugSlots[plugOpen]) placePlugPop(plugSlots[plugOpen]);
     });
-    if (plugPop) plugPop.addEventListener("click", function (event) { event.stopPropagation(); });
     try {
       const clockBag = timerBag();
       if (window.ShirmoPlugins) window.ShirmoPlugins.arm({
@@ -2557,10 +2575,10 @@
     } catch (error) { /* плагин не обязателен для ширмы */ }
     document.addEventListener("click", function () {
       setKebab(false);
-      setPlugPop(false);
+      closePlugMenus();
     });
     document.addEventListener("keydown", function (event) {
-      if (event.key === "Escape") setPlugPop(false);
+      if (event.key === "Escape") closePlugMenus();
     });
     app.querySelector("#roll").addEventListener("click", function () {
       const look = document.getElementById("roll-look-menu");

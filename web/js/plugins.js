@@ -481,6 +481,30 @@
         });
       } catch (err) {}
       return list;
+    },
+    panels: function () {
+      const list = [];
+      const installed = (latest && latest.installed) || [];
+      try {
+        eachOn(function (mod) {
+          const hasModule = !!(mod.module && typeof mod.module.mount === "function");
+          const hasSettings = mod.id !== "melk-lamps" && typeof mod.settings === "function";
+          const hasDock = typeof mod.dockHtml === "function";
+          if (!hasModule && !hasSettings && !hasDock) return;
+          const row = installed.find(function (item) { return item && item.id === mod.id; });
+          list.push({
+            id: mod.id,
+            title: (hasModule && mod.module.title) || (row && row.name) || mod.id,
+            icon: (hasModule && mod.module.icon) || "",
+            mount: hasModule ? mod.module.mount : null,
+            settings: hasSettings ? function () { return mod.settings(env()); } : null,
+            dockHtml: hasDock ? function () { return mod.dockHtml(env()) || ""; } : null,
+            bindDock: typeof mod.bindDock === "function" ? function (root) { mod.bindDock(root, env()); } : null,
+            stop: hasModule && typeof mod.module.stop === "function" ? mod.module.stop : null
+          });
+        });
+      } catch (err) {}
+      return list;
     }
   };
 })();
