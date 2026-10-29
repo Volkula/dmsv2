@@ -821,7 +821,7 @@
           const place = item.placeId && (book().places || []).find(function (row) { return row.id === item.placeId; });
           const target = item.linkId ? findLoc(item.linkId) : null;
           const named = (target && target.name) || item.name;
-          const room = doorTarget(item) || target || item;
+          const room = item.linkId ? (doorTarget(item) || target || item) : item;
           const portrait = item.portrait || (target && target.portrait) || (place && place.portrait) || "";
           if (!portrait && named === item.name && !item.linkId) return item;
           return Object.assign({}, item, {
