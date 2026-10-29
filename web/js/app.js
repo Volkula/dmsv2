@@ -2564,6 +2564,24 @@
       try { return window.ShirmoPlugins && window.ShirmoPlugins.modules ? window.ShirmoPlugins.modules() : []; }
       catch (err) { return []; }
     }
+    function pluginForms() {
+      try { return window.ShirmoPlugins && window.ShirmoPlugins.forms ? window.ShirmoPlugins.forms() : []; }
+      catch (err) { return []; }
+    }
+    function pluginDockHtml() {
+      try { return window.ShirmoPlugins && window.ShirmoPlugins.dockHtml ? window.ShirmoPlugins.dockHtml() : ""; }
+      catch (err) { return ""; }
+    }
+    function refreshPlugDock() {
+      const pop = app.querySelector("#plug-pop");
+      const host = app.querySelector("[data-plug-dock]");
+      if (!pop || pop.hidden || !host || !window.ShirmoPlugins) return;
+      const html = pluginDockHtml();
+      if (host.getAttribute("data-stamp") === html) return;
+      host.setAttribute("data-stamp", html);
+      host.innerHTML = html;
+      try { if (html && window.ShirmoPlugins.bindDock) window.ShirmoPlugins.bindDock(host); } catch (err) {}
+    }
     let plugLive = {};
     let plugPainted = null;
     function syncPluginModules() {
@@ -2578,16 +2596,21 @@
         if (!next[key] && plugLive[key].stop) plugLive[key].stop();
       });
       plugLive = next;
-      gear.classList.toggle("has-mods", mods.length > 0);
+      const dock = pluginDockHtml();
+      const forms = pluginForms();
+      gear.classList.toggle("has-mods", mods.length > 0 || forms.length > 0 || !!dock);
       if (pop.hidden) {
         plugPainted = null;
         return;
       }
-      const key = mods.map(function (mod) { return mod.id; }).join(",");
-      if (key === plugPainted) return;
+      const key = mods.map(function (mod) { return mod.id; }).join(",") + "|" + forms.map(function (row) { return row.id; }).join(",") + (dock ? "|dock" : "");
+      if (key === plugPainted) {
+        refreshPlugDock();
+        return;
+      }
       plugPainted = key;
       body.replaceChildren();
-      if (!mods.length) {
+      if (!mods.length && !forms.length && !dock) {
         const empty = document.createElement("p");
         empty.className = "note";
         empty.textContent = "Параметров нет. Подключите плагин.";
@@ -2605,6 +2628,22 @@
           });
         } catch (err) {}
       });
+      forms.forEach(function (row) {
+        const host = document.createElement("div");
+        host.className = "plug-pop-mod";
+        body.append(host);
+        try {
+          const node = row.mount(row.env);
+          if (node) host.append(node);
+        } catch (err) {}
+      });
+      if (dock) {
+        const host = document.createElement("div");
+        host.className = "plug-dock";
+        host.setAttribute("data-plug-dock", "");
+        body.append(host);
+        refreshPlugDock();
+      }
     }
     function showModule(kind) {
       if (window.ShirmoDock) window.ShirmoDock.paint();
@@ -2993,7 +3032,6 @@
           '<button type="button" data-dock="hero-add">' + (heroOpen ? "Скрыть список" : "Закрепить героя") + "</button>" + heroForm + "</details>" +
           '<details class="dock-fold" data-fold="notes"' + (folds.notes ? " open" : "") + "><summary>Заметки</summary>" + noteRows +
           '<button type="button" data-dock="note-add">' + (noteOpen ? "Скрыть" : "Из библиотеки или новая") + "</button>" + noteForm + "</details>" +
-          (function () { try { return window.ShirmoPlugins && window.ShirmoPlugins.dockHtml ? window.ShirmoPlugins.dockHtml() : ""; } catch (err) { return ""; } })() +
           "</div></div>";
         if (window.ShirmoShelf) window.ShirmoShelf.arm(root);
         const notePick = root.querySelector("[data-dock-note-pick]");
@@ -3180,7 +3218,7 @@
           adv.addEventListener("change", function () { if (adv.checked) dis.checked = false; });
           dis.addEventListener("change", function () { if (dis.checked) adv.checked = false; });
         }
-        try { if (window.ShirmoPlugins && window.ShirmoPlugins.bindDock) window.ShirmoPlugins.bindDock(root); } catch (err) {}
+        try { refreshPlugDock(); } catch (err) {}
       }
       window.ShirmoDock = { paint: paint };
       document.addEventListener("pointerdown", function (event) {

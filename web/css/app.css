@@ -4959,6 +4959,8 @@ body > .clock-layer.is-pinned { display: none !important; }
 .plugin-state.is-on { color: var(--brass); }
 .plugin-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
 .plugin-acts button { white-space: nowrap; }
+.plugin-acts button:disabled { opacity: 0.4; }
+.plugin-acts .check { margin: 0; }
 .plugin-box { margin-top: 14px; padding-top: 2px; border-top: 1px solid var(--line); }
 .plugin-label { margin: 12px 0 6px; color: var(--muted); }
 .plugin-devices { display: grid; gap: 6px; }

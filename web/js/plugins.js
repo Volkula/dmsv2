@@ -153,12 +153,6 @@
     return { wrap: wrap, input: input };
   }
 
-  function heading(text) {
-    const node = document.createElement("h3");
-    node.textContent = text;
-    return node;
-  }
-
   function note(host, text) {
     if (!host) return;
     let row = host.querySelector(".plugin-note");
@@ -170,7 +164,25 @@
     row.textContent = text || "";
   }
 
-  function secretForm(slot, row) {
+  const skipKey = "shirmo-plugin-skip-pass";
+
+  function skipPass() {
+    try { return localStorage.getItem(skipKey) === "1"; }
+    catch (err) { return false; }
+  }
+
+  function setSkipPass(on) {
+    try { localStorage.setItem(skipKey, on ? "1" : "0"); }
+    catch (err) {}
+  }
+
+  function sessionPassword() {
+    const auth = (opt && opt.headers && opt.headers.authorization) || "";
+    const match = /^Bearer\s+(\S+)/i.exec(auth);
+    return match ? match[1] : "";
+  }
+
+  function secretForm(slot, done) {
     slot.innerHTML = "";
     const box = document.createElement("form");
     box.className = "plugin-form";
@@ -190,15 +202,32 @@
       event.preventDefault();
       const password = pass.input.value;
       pass.input.value = "";
-      post("/enable", { id: row.id, password: password }).then(refresh).then(function (next) {
-        const host = slot.closest(".pop-body");
-        if (next && host) draw(host, next);
-      }).catch(function (error) { note(slot.closest(".pop-body"), error.message); });
+      done(password);
     });
     slot.append(box);
+    pass.input.focus();
   }
 
-  function pluginRow(host, state, row) {
+  function enableRow(host, slot, row) {
+    function go(password) {
+      const chain = row.fresh ? post("/install", { id: row.id }) : Promise.resolve();
+      chain.then(function () {
+        return post("/enable", { id: row.id, password: password });
+      }).then(refresh).then(function (next) {
+        if (next) draw(host, next);
+      }).catch(function (error) { note(host, error.message); });
+    }
+    if (skipPass()) {
+      const password = sessionPassword();
+      if (password) {
+        go(password);
+        return;
+      }
+    }
+    secretForm(slot, go);
+  }
+
+  function pluginRow(host, row) {
     const block = document.createElement("article");
     block.className = "plugin-row";
     const head = document.createElement("header");
@@ -210,79 +239,78 @@
     head.append(name, status);
     const acts = document.createElement("div");
     acts.className = "plugin-acts";
-    const toggle = document.createElement("button");
-    toggle.type = "button";
-    toggle.textContent = row.on ? "Выключить" : "Включить";
+    const on = document.createElement("button");
+    on.type = "button";
+    on.textContent = "Включить";
+    on.disabled = row.on === true;
+    const off = document.createElement("button");
+    off.type = "button";
+    off.textContent = "Отключить";
+    off.disabled = row.on !== true;
     const slot = document.createElement("div");
     slot.className = "plugin-slot";
-    toggle.addEventListener("click", function () {
-      if (row.on) {
-        post("/disable", { id: row.id }).then(refresh).then(function (next) {
-          if (next) draw(host, next);
-        }).catch(function (error) { note(host, error.message); });
-        return;
-      }
-      secretForm(slot, row);
-    });
-    const drop = document.createElement("button");
-    drop.type = "button";
-    drop.textContent = "Убрать";
-    drop.addEventListener("click", function () {
-      post("/remove", { id: row.id }).then(refresh).then(function (next) {
+    on.addEventListener("click", function () { enableRow(host, slot, row); });
+    off.addEventListener("click", function () {
+      post("/disable", { id: row.id }).then(refresh).then(function (next) {
         if (next) draw(host, next);
       }).catch(function (error) { note(host, error.message); });
     });
-    acts.append(toggle, drop);
+    acts.append(on, off);
     block.append(head, acts, slot);
-    const mod = mods[row.id];
-    if (!mod) {
+    if (!row.fresh && !mods[row.id]) {
       const missing = document.createElement("p");
       missing.className = "note";
       missing.textContent = "Код плагина не загрузился.";
       block.append(missing);
-      return block;
-    }
-    if (row.on && mod.settings) {
-      try { block.append(mod.settings(env(state))); }
-      catch (err) {}
     }
     return block;
   }
 
-  function draw(host, state) {
-    host.innerHTML = "";
-    host.append(heading("В комнате"));
-    const installed = state.installed || [];
-    if (!installed.length) {
-      const empty = document.createElement("p");
-      empty.className = "note";
-      empty.textContent = "Плагинов нет.";
-      host.append(empty);
-    }
-    installed.forEach(function (row) { host.append(pluginRow(host, state, row)); });
-    host.append(heading("Добавить"));
+  function catalogRows(state) {
+    const installed = (state.installed || []).map(function (row) {
+      return { id: row.id, name: row.name || row.id, on: row.on === true, fresh: false };
+    });
     const have = {};
     installed.forEach(function (row) { have[row.id] = true; });
-    const list = (state.catalog || []).filter(function (row) { return row && row.name && !have[row.id]; });
-    if (!list.length) {
+    (state.catalog || []).forEach(function (row) {
+      if (!row || !row.id || !row.name || have[row.id]) return;
+      installed.push({ id: row.id, name: row.name, on: false, fresh: true });
+    });
+    return installed;
+  }
+
+  function draw(host, state) {
+    host.innerHTML = "";
+    const bar = document.createElement("div");
+    bar.className = "plugin-acts";
+    const refreshBtn = document.createElement("button");
+    refreshBtn.type = "button";
+    refreshBtn.textContent = "Обновить список";
+    refreshBtn.addEventListener("click", function () {
+      Object.keys(loading).forEach(function (id) { if (!mods[id]) delete loading[id]; });
+      refresh().then(function (next) {
+        if (next) draw(host, next);
+        else note(host, "Список не обновился.");
+      });
+    });
+    const skip = document.createElement("label");
+    skip.className = "check";
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = skipPass();
+    box.addEventListener("change", function () { setSkipPass(box.checked); });
+    skip.append(box, document.createTextNode(" Не спрашивать пароль комнаты"));
+    bar.append(refreshBtn, skip);
+    host.append(bar);
+    const rows = catalogRows(state);
+    if (!rows.length) {
       const empty = document.createElement("p");
       empty.className = "note";
-      empty.textContent = (state.catalog || []).length ? "Новых плагинов нет." : "Список не загрузился.";
+      empty.textContent = "Список не загрузился.";
       host.append(empty);
       return;
     }
-    list.forEach(function (row) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "plugin-add";
-      button.textContent = row.name;
-      button.addEventListener("click", function () {
-        post("/install", { id: row.id }).then(refresh).then(function (next) {
-          if (next) draw(host, next);
-        }).catch(function (error) { note(host, error.message); });
-      });
-      host.append(button);
-    });
+    rows.forEach(function (row) { host.append(pluginRow(host, row)); });
   }
 
   function open() {
@@ -354,6 +382,16 @@
       try { eachOn(function (mod) { if (mod.lamp) mod.lamp(loc, anchor, env()); }); }
       catch (err) {}
     },
+    forms: function () {
+      const list = [];
+      try {
+        eachOn(function (mod) {
+          if (mod.id === "melk-lamps" || typeof mod.settings !== "function") return;
+          list.push({ id: mod.id, mount: mod.settings, env: env() });
+        });
+      } catch (err) {}
+      return list;
+    },
     dockHtml: function () {
       try {
         let html = "";
@@ -364,6 +402,20 @@
     bindDock: function (root) {
       try { eachOn(function (mod) { if (mod.bindDock) mod.bindDock(root, env()); }); }
       catch (err) {}
+    },
+    paintOthers: function (exceptId, hex, bright) {
+      const match = /^#?([0-9a-f]{6})$/i.exec(String(hex || ""));
+      if (!match) return;
+      const num = parseInt(match[1], 16);
+      const rgb = [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+      const level = Math.max(0, Math.min(100, Math.round(Number(bright) || 0)));
+      try {
+        eachOn(function (mod) {
+          if (!mod.rgb || typeof mod.rgb.frame !== "function" || mod.id === exceptId) return;
+          if (mod.rgb.ready && !mod.rgb.ready()) return;
+          mod.rgb.frame(rgb, level, true);
+        });
+      } catch (err) {}
     },
     rgb: function () {
       const list = [];
