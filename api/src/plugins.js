@@ -5,7 +5,10 @@ import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "node:
 import { plainMatches, secretMatches } from "./auth.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const releaseUrl = process.env.PLUGIN_RELEASE || "https://github.com/Volkula/shirmo-light/releases/latest/download/plugin.json";
+const releaseUrls = [
+  process.env.PLUGIN_RELEASE || "https://github.com/Volkula/shirmo-light/releases/latest/download/plugin.json",
+  process.env.MELK_RELEASE || "https://github.com/Volkula/shirmo-melk/releases/latest/download/plugin.json"
+];
 
 const FX_SCENE = {
   sand: ["candle"],
@@ -43,12 +46,14 @@ function pushCatalog(list, entry) {
 
 export async function pluginCatalog() {
   const list = [];
-  try {
-    const response = await fetch(releaseUrl, { signal: AbortSignal.timeout(4000) });
-    if (response.ok) pushCatalog(list, catalogEntry(await response.json(), releaseUrl));
-  } catch (err) { /* релиза нет — берём имя из файла плагина */ }
+  const entries = await Promise.all(releaseUrls.map(function (url) {
+    return fetch(url, { signal: AbortSignal.timeout(4000) }).then(function (response) {
+      if (!response.ok) return null;
+      return response.json().then(function (body) { return catalogEntry(body, url); });
+    }).catch(function () { return null; });
+  }));
+  entries.forEach(function (entry) { pushCatalog(list, entry); });
   pushCatalog(list, readBundledFile("adaptive-light.json"));
-  pushCatalog(list, readBundledFile("melk-lamps.json"));
   return list;
 }
 
