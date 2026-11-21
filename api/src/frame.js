@@ -183,6 +183,45 @@ function textLook(item, fallbackSize) {
   };
 }
 
+function castOwns(row, item) {
+  if (!row || !item) return false;
+  if (row.heroId && item.heroId === row.heroId) return true;
+  if (row.npcId && (item.npcId === row.npcId || item.codexId === row.npcId)) return true;
+  return false;
+}
+
+function castMarks(campaign, viewId, focusId, existing) {
+  const book = campaign && campaign.codex ? campaign.codex : {};
+  const heroes = Array.isArray(book.heroes) ? book.heroes : [];
+  const npcs = Array.isArray(book.npcs) ? book.npcs : [];
+  const here = String(focusId || "");
+  const placed = Array.isArray(existing) ? existing : [];
+  return (Array.isArray(campaign && campaign.cast) ? campaign.cast : []).filter(function (row) {
+    if (!row || !row.placed || String(row.viewId || "") !== String(viewId || "") || String(row.focusId || "") !== here) return false;
+    return !placed.some(function (item) { return castOwns(row, item) && (item.locId || "") === here; });
+  }).map(function (row) {
+    const hero = row.heroId ? heroes.find(function (item) { return item && item.id === row.heroId; }) : null;
+    const npc = !hero && row.npcId ? npcs.find(function (item) { return item && item.id === row.npcId; }) : null;
+    const who = hero || npc || {};
+    return {
+      id: "cast-" + clip(row.username, 40),
+      name: clip(who.name || row.username || "Герой", 80),
+      x: unit(row.x),
+      y: unit(row.y),
+      kind: "hero",
+      portrait: picture(who.portrait) || "/tokens/pawn.svg",
+      look: "token",
+      pinSize: Math.min(180, Math.max(28, Number(row.size) || 56)),
+      screen: true,
+      owner: clip(row.username, 40),
+      showName: true,
+      hp: hero ? hero.hp : "",
+      hpMax: hero ? hero.hpMax : "",
+      ac: hero ? hero.ac : ""
+    };
+  });
+}
+
 function projectMap(page, campaign) {
   const views = Array.isArray(page.views) ? page.views : [];
   const view = views.find(function (item) { return item.id === page.activeViewId; }) || views[0] || {};
@@ -231,7 +270,7 @@ function projectMap(page, campaign) {
     : (sheet.day || placeBackdrop || "");
   const npcs = campaign && campaign.codex && Array.isArray(campaign.codex.npcs) ? campaign.codex.npcs : [];
   const locations = locationsAll.filter(function (item) {
-    return item && !item.hidden && !item.trashed && (item.parentId || "") === here;
+    return item && shownOnScreen(item) && !item.trashed && (item.parentId || "") === here;
   }).slice(0, 200).map(function (item) {
     const place = item.placeId
       ? places.find(function (row) { return row && row.id === item.placeId; })
@@ -254,10 +293,10 @@ function projectMap(page, campaign) {
     }, textLook(item, 14));
   });
   const markers = (Array.isArray(view.markers) ? view.markers : []).filter(function (item) {
-    return item && !item.hidden && item.screen !== false && (item.locId || "") === here;
+    return item && shownOnScreen(item) && (item.locId || "") === here;
   }).slice(0, 200).map(function (item) {
     if (item.kind === "image") {
-      if (!shownOnScreen(item) || item.hidden) return null;
+      if (!shownOnScreen(item)) return null;
       const url = clip(item.url || item.icon, 500);
       if (!url) return null;
       return {
@@ -288,6 +327,7 @@ function projectMap(page, campaign) {
     };
     const portrait = picture(face.portrait);
     const kind = item.kind === "npc" ? "npc" : (item.kind === "foe" ? "foe" : (item.kind === "hero" ? "hero" : "mark"));
+    const ownerRow = (Array.isArray(campaign && campaign.cast) ? campaign.cast : []).find(function (row) { return castOwns(row, item); });
     return Object.assign({
       id: clip(item.id, 80),
       name: clip(item.name, 240),
@@ -297,16 +337,19 @@ function projectMap(page, campaign) {
       toBattle: (kind === "mark" || kind === "foe") && item.toBattle === true,
       capTop: item.capTop === true,
       tip: clip(item.tip, 400),
-      pinSize: Math.min(160, Math.max(12, Number(item.pinSize) || (portrait ? 56 : (item.kind === "mark" && (item.icon || item.emoji) ? 36 : 14)))),
+      pinSize: ownerRow && Number(ownerRow.size)
+        ? Math.min(180, Math.max(28, Number(ownerRow.size)))
+        : Math.min(160, Math.max(12, Number(item.pinSize) || (portrait ? 56 : (item.kind === "mark" && (item.icon || item.emoji) ? 36 : 14)))),
       portrait: portrait,
-      look: kind === "npc" && portrait && !(npc && npc.look === "token") && item.look !== "token" ? "full" : "",
+      look: (npc && npc.look === "token") || item.look === "token" ? "token" : (kind === "npc" && portrait ? "full" : ""),
       stand: kind === "npc" && portrait ? mapStandOf(npc || item) : null,
       showName: kind === "npc" && item.showName === true,
       icon: kind === "mark" ? picture(item.icon) : "",
       emoji: kind === "mark" ? clip(item.emoji, 16) : "",
       portraitX: portrait ? face.x : 50,
       portraitY: portrait ? face.y : 50,
-      portraitZoom: portrait ? face.zoom : 1
+      portraitZoom: portrait ? face.zoom : 1,
+      owner: ownerRow ? clip(ownerRow.username, 40) : ""
     }, textLook(item, 14));
   }).filter(Boolean);
   const labels = (Array.isArray(view.labels) ? view.labels : []).filter(function (item) {
@@ -358,20 +401,32 @@ function projectMap(page, campaign) {
     };
   });
   const parentId = here ? ((locById(here) && locById(here).parentId) || "") : null;
+  const rawGlow = focused && focused.glow ? focused.glow : (!focused && view.glow ? view.glow : null);
+  const glow = rawGlow && typeof rawGlow === "object" ? {
+    sky: rawGlow.sky || null,
+    walls: Array.isArray(rawGlow.walls) ? rawGlow.walls.slice(0, 80) : [],
+    lights: Array.isArray(rawGlow.lights) ? rawGlow.lights.slice(0, 40) : [],
+    levels: Array.isArray(rawGlow.levels) ? rawGlow.levels.slice(0, 40) : []
+  } : null;
   return {
     id: page.id,
     name: view.name || page.name || "Карта",
     kind: "map",
+    viewId: view.id || "",
+    focusId: here || "",
     up: parentId,
     day: clip(image, 300),
     night: "",
     mode: image ? "day" : (night ? "night" : "day"),
     tabs: [],
     locations: locations,
-    markers: markers,
+    markers: markers.concat(castMarks(campaign, view.id, here, view.markers)),
     labels: labels,
     strokes: strokes,
-    talk: talk
+    talk: talk,
+    glow: glow && (glow.walls.length || glow.lights.length || glow.levels.length || glow.sky) ? glow : null,
+    cell: Math.max(0, Number((focused && focused.cell) || (!focused && view.cell) || 0) || 0),
+    tokenCell: !!(campaign && campaign.tokenCell)
   };
 }
 
@@ -500,7 +555,7 @@ function projectBattle(campaign, battle) {
         hp: hp,
         hpMax: hpMax,
         portrait: actorFace(campaign, actor),
-        look: actor.look === "full" ? "full" : (actor.look === "token" ? "token" : ""),
+        look: actor.look === "full" ? "full" : "token",
         color: hex(actor.color, ""),
         dead: !!actor.dead || hp <= 0,
         boss: actor.boss === true ? true : actor.boss === false ? false : undefined,
@@ -561,7 +616,7 @@ export function playAction(campaign, op, rawId) {
     if (wanted) {
       const loc = spot.locById(wanted);
       if (!loc) return null;
-      const child = !loc.trashed && !loc.hidden && (loc.parentId || "") === spot.here;
+      const child = !loc.trashed && (loc.screen === true || (loc.screen !== false && !loc.hidden)) && (loc.parentId || "") === spot.here;
       const parentId = spot.here ? ((spot.locById(spot.here) && spot.locById(spot.here).parentId) || "") : "";
       const back = !!spot.here && wanted === parentId;
       if (!child && !back) return null;

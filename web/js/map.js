@@ -296,8 +296,11 @@
   const MARK_GLYPHS = ["⚔", "🛡", "☠", "🔥", "🔑", "💰", "🚪", "⛺", "⭐", "❗", "❓", "🧪", "📜", "💎", "⚓", "🏠", "🌳", "👁", "🐴", "📦", "🚩", "💤"];
 
   function pinHtml(item, kind, master) {
-    if (!master && item.hidden) return "";
+    if (!master && !shownScreen(item)) return "";
     const tip = item.tip ? '<span class="tip">' + esc(item.tip) + "</span>" : "";
+    const marks = master && (kind === "npc" || kind === "loc" || kind === "foe" || kind === "hero" || kind === "mark" || kind === "image")
+      ? '<span class="pin-flags">' + flagMark("screen", shownScreen(item)) + flagMark("map", shownMap(item)) + (kind === "loc" ? lampFlag(item) : "") + "</span>"
+      : "";
     if (kind === "image") {
       const url = item.url || item.icon || "";
       if (!url) return "";
@@ -308,7 +311,7 @@
       return '<button type="button" class="map-pin image' + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="image" aria-label="' + esc(item.name || "Картинка") + '" style="left:' + (item.x * 100) + "%;top:" + (item.y * 100) + "%;--pin:" + size + 'px">' + marks + '<img alt="" src="' + esc(url) + '">' + tip + "</button>";
     }
     const full = item.look === "full";
-    const portrait = kind === "npc" || kind === "loc" || kind === "foe" || kind === "hero" ? (item.portrait || "") : "";
+    const portrait = kind === "npc" || kind === "loc" || kind === "foe" || kind === "hero" ? (item.portrait || (item.owner ? "/tokens/pawn.svg" : "")) : "";
     const markIcon = kind === "mark" ? (item.icon || "") : "";
     const markEmoji = kind === "mark" ? (item.emoji || "") : "";
     const saved = Number(item.pinSize) || 0;
@@ -325,9 +328,6 @@
       const crop = item.look === "full" ? "" : ' style="' + faceStyle(item) + '"';
       dot = '<i><img alt="" src="' + esc(portrait) + '"' + crop + ">" + badge + "</i>";
     }
-    const marks = master && (kind === "npc" || kind === "loc" || kind === "foe" || kind === "hero" || kind === "mark")
-      ? '<span class="pin-flags">' + flagMark("screen", shownScreen(item)) + flagMark("map", shownMap(item)) + (kind === "loc" ? lampFlag(item) : "") + "</span>"
-      : "";
     const hp = master && kind === "foe" && item.hpMax ? '<em class="pin-hp">' + esc(String(item.hp == null ? item.hpMax : item.hp)) + "/" + esc(String(item.hpMax)) + "</em>" : "";
     const vitals = master && kind === "hero" ? heroVitalsHtml(item) : "";
     const showCap = kind !== "npc" || item.showName === true;
@@ -338,7 +338,10 @@
     const cap = item.capTop ? " cap-top" : "";
     const fight = item.toBattle ? ' data-battle="1" title="Открыть экран боя"' : "";
     const door = item.door && !item.toBattle ? ' title="Переход в уже размещённое место"' : "";
-    return '<button type="button" class="map-pin ' + kind + cap + (portrait ? " has-face" : "") + (full ? " is-full" : "") + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="' + kind + '"' + named + fight + door + ' style="left:' + (item.x * 100) + "%;top:" + (item.y * 100) + "%;--pin:" + size + 'px">' + marks + vitals + dot + caption + tip + "</button>";
+    const owner = item.owner ? ' data-owner="' + esc(item.owner) + '"' : "";
+    const heroAttr = item.heroId ? ' data-hero="' + esc(item.heroId) + '"' : "";
+    const npcAttr = item.npcId ? ' data-npc="' + esc(item.npcId) + '"' : "";
+    return '<button type="button" class="map-pin ' + kind + cap + (portrait ? " has-face" : "") + (full ? " is-full" : "") + (item.owner ? " is-token" : "") + (item.hidden ? " is-hidden" : "") + '" data-pin="' + esc(item.id) + '" data-kind="' + kind + '"' + owner + heroAttr + npcAttr + named + fight + door + ' style="left:' + (item.x * 100) + "%;top:" + (item.y * 100) + "%;--pin:" + size + 'px">' + marks + vitals + dot + caption + tip + "</button>";
   }
 
   function heroVitalsHtml(item) {
@@ -418,10 +421,15 @@
     return tabs;
   }
 
+  let tabsOpen = false;
+
   function tabHtml(tabs) {
-    return '<div class="map-tabs">' + (tabs || []).map(function (tab) {
+    const buttons = (tabs || []).map(function (tab) {
       return '<button type="button" class="map-tab' + (tab.on ? " is-on" : "") + (tab.hidden ? " is-hidden" : "") + '" data-go="' + esc(tab.id || "") + '">' + esc(tab.name || "Локация") + "</button>";
-    }).join("") + "</div>";
+    }).join("");
+    return '<div class="map-tabs' + (tabsOpen ? " is-open" : "") + '">' +
+      '<button type="button" class="map-tab-fold" data-tabs-fold aria-expanded="' + (tabsOpen ? "true" : "false") + '" title="' + (tabsOpen ? "Свернуть локации" : "Локации") + '">' + (tabsOpen ? "▾" : "Локации") + "</button>" +
+      '<div class="map-tab-row">' + buttons + "</div></div>";
   }
 
   function clampNum(value, min, max, fallback) {
@@ -558,7 +566,8 @@
     const locations = (source.locations || []).map(function (item) { return pinHtml(item, "loc", master); }).join("");
     const markers = (source.markers || []).map(function (item) {
       const kind = item.kind === "npc" ? "npc" : (item.kind === "foe" ? "foe" : (item.kind === "hero" ? "hero" : (item.kind === "image" ? "image" : "mark")));
-      if (kind === "npc" && item.portrait && item.look !== "token") {
+      if (kind === "npc" && item.portrait && item.look === "full") {
+        if (!master && !shownScreen(item)) return "";
         const fig = fitFigure(item.stand);
         const marks = master
           ? '<span class="pin-flags">' + flagMark("screen", shownScreen(item)) + flagMark("map", shownMap(item)) + "</span>"
@@ -576,13 +585,14 @@
       ? '<button type="button" class="map-back" data-up="' + esc(source.up || "") + '" title="На уровень выше">Назад</button>'
       : "";
     return (face ? "<style>" + face + "</style>" : "") +
-      '<div class="stage map-stage' + (bar ? (source.flags.bare ? " has-lamp" : " has-flags") : "") + '">' +
+      '<div class="stage map-stage' + (bar ? (source.flags.bare ? " has-lamp" : " has-flags") : "") + '" data-view="' + esc(source.viewId || "") + '" data-focus="' + esc(source.focusId || "") + '">' +
       back +
       (master ? tabHtml(source.tabs) : "") +
       bar +
-      '<div class="map-photo' + (dim ? " is-night" : "") + '" style="background-image:' + (image ? "url('" + esc(image) + "')" : "none") + '"></div>' +
+      '<div class="map-world">' +
+      '<div class="map-photo' + (dim ? " is-night" : "") + '" data-src="' + esc(image) + '" style="background-image:' + (image ? "url('" + esc(image) + "')" : "none") + '"></div>' +
       '<svg class="map-ink" viewBox="0 0 100 100" preserveAspectRatio="none">' + strokes + "</svg>" +
-      locations + markers + labels + "</div>";
+      locations + markers + labels + "</div></div>";
   }
 
   function closeZoomImage() {
@@ -676,6 +686,44 @@
     ["ping", "Пинг", icon('<circle cx="12" cy="12" r="2" fill="currentColor"/><circle cx="12" cy="12" r="6" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/>')]
   ];
 
+  function castOwns(row, item) {
+    if (!row || !item) return false;
+    if (row.heroId && item.heroId === row.heroId) return true;
+    if (row.npcId && item.npcId === row.npcId) return true;
+    return false;
+  }
+
+  function castPins(campaign, viewId, focusId, markers) {
+    const book = campaign && campaign.codex || {};
+    const here = String(focusId || "");
+    return ((campaign && campaign.cast) || []).filter(function (row) {
+      if (!row || !row.placed || String(row.viewId || "") !== String(viewId || "") || String(row.focusId || "") !== here) return false;
+      return !(markers || []).some(function (item) { return castOwns(row, item); });
+    }).map(function (row) {
+      const hero = row.heroId && (book.heroes || []).find(function (item) { return item && item.id === row.heroId; });
+      const npc = !hero && row.npcId && (book.npcs || []).find(function (item) { return item && item.id === row.npcId; });
+      const who = hero || npc || {};
+      return {
+        id: "cast-" + row.username,
+        name: who.name || row.username,
+        x: Number(row.x) || 0.5,
+        y: Number(row.y) || 0.5,
+        kind: "hero",
+        heroId: row.heroId || "",
+        npcId: row.npcId || "",
+        portrait: who.portrait || "/tokens/pawn.svg",
+        look: "token",
+        pinSize: Math.min(180, Math.max(28, Number(row.size) || 56)),
+        screen: true,
+        owner: row.username,
+        showName: true,
+        hp: hero ? hero.hp : "",
+        hpMax: hero ? hero.hpMax : "",
+        ac: hero ? hero.ac : ""
+      };
+    });
+  }
+
   function mount(host, ctx) {
     if (host._mapOff) host._mapOff();
     if (window.ShirmoCodex && window.ShirmoCodex.adopt && window.ShirmoCodex.adopt(ctx.campaign) && ctx.save) ctx.save();
@@ -695,6 +743,7 @@
     let past = [];
     let future = [];
     let timer = 0;
+    let glowHold = 0;
     let binOpen = false;
     let setupEl = null;
     let heroPick = "";
@@ -704,7 +753,10 @@
       '<select id="map-view" aria-label="Вид" title="Какой вид карты открыт"></select>' +
       '<button type="button" id="map-view-add" title="Новый вид карты" aria-label="Новый вид">' + icon('<path d="M12 5v14M5 12h14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "</button>" +
       '<button type="button" id="map-view-del" title="Удалить текущий вид" aria-label="Удалить вид">' + icon('<path d="M6 7h12M9 7V5h6v2M8 7l1 13h6l1-13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>') + "</button>" +
-      '<button type="button" id="map-setup" title="Имя, день и ночь, фоны этого места" aria-label="Настройки карты">' + ACT.setup + "</button></div>" +
+      '<button type="button" id="map-setup" title="Имя, день и ночь, фоны этого места" aria-label="Настройки карты">' + ACT.setup + "</button>" +
+      '<button type="button" id="map-pack-out" title="Скачать karta.shirmo.json" aria-label="Скачать карту">' + icon('<path d="M12 4v10M8 10l4 4 4-4M5 19h14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>') + "</button>" +
+      '<label class="file-btn" title="Открыть karta.shirmo.json" aria-label="Открыть карту">' + icon('<path d="M12 16V6M8 10l4-4 4 4M5 19h14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>') + '<input type="file" id="map-pack-in" accept="application/json,.json,.shirmo.json"></label></div>' +
+      '<div class="map-viewbar map-atlasbar"><span id="map-atlas" class="map-atlas-note">Карты ширмы на map.volkula.com</span></div>' +
       '<div class="map-tools" id="map-tools"></div>' +
       '<div class="map-draw">' +
       '<button type="button" id="map-undo" title="Отменить последний штрих" aria-label="Отмена">' + icon('<path d="M8 8H5v3M5.5 10A7 7 0 1 1 6 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>') + "</button>" +
@@ -746,9 +798,22 @@
       clearTimeout(timer);
       timer = setTimeout(function () { ctx.save(); }, 200);
     }
+    const cams = {};
+    let panning = null;
+    function camOf() {
+      const id = view().id || "map";
+      if (!cams[id]) cams[id] = { x: 0, y: 0, z: 1 };
+      return cams[id];
+    }
+    function applyCam() {
+      const world = board.querySelector(".map-world");
+      if (!world) return;
+      const cam = camOf();
+      world.style.transform = "translate(" + cam.x + "px," + cam.y + "px) scale(" + cam.z + ")";
+    }
     function rel(event) {
-      const stage = board.querySelector(".stage");
-      const rect = stage.getBoundingClientRect();
+      const world = board.querySelector(".map-world") || board.querySelector(".stage");
+      const rect = world.getBoundingClientRect();
       const x = rect.width ? (event.clientX - rect.left) / rect.width : 0;
       const y = rect.height ? (event.clientY - rect.top) / rect.height : 0;
       return { x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) };
@@ -837,27 +902,46 @@
             portraitZoom: item.portraitZoom || (target && target.portraitZoom) || (place && place.portraitZoom) || 1
           });
         }),
-        markers: onLevel(current.markers, here, "locId").map(function (item) {
-          const face = faceOf(item);
-          const faced = face ? Object.assign({}, item, {
-            portrait: face.url,
-            portraitX: face.x,
-            portraitY: face.y,
-            portraitZoom: face.zoom,
-            emoji: face.emoji || "",
-            look: face.look || "",
-            stand: face.stand || null
-          }) : item;
-          const vitals = heroSheet(item);
-          return vitals ? Object.assign({}, faced, vitals) : faced;
-        }),
+        markers: (function () {
+          const level = onLevel(current.markers, here, "locId").map(function (item) {
+            const face = faceOf(item);
+            const faced = face ? Object.assign({}, item, {
+              portrait: face.url,
+              portraitX: face.x,
+              portraitY: face.y,
+              portraitZoom: face.zoom,
+              emoji: face.emoji || "",
+              look: face.look || "",
+              stand: face.stand || null
+            }) : item;
+            const vitals = heroSheet(item);
+            const pin = vitals ? Object.assign({}, faced, vitals) : faced;
+            const who = ((ctx.campaign && ctx.campaign.cast) || []).find(function (row) { return castOwns(row, item); });
+            return who ? Object.assign({}, pin, { owner: who.username, pinSize: who.size ? Math.min(180, Math.max(28, Number(who.size))) : pin.pinSize }) : pin;
+          });
+          return level.concat(castPins(ctx.campaign, current.id, here, level));
+        })(),
         labels: onLevel(current.labels, here, "locId"),
         strokes: onLevel(current.strokes, here, "locId").concat(draft)
       }, true);
       if (window.ShirmoFit) window.ShirmoFit(board);
       const stage = board.querySelector(".stage");
       if (stage) stage.classList.toggle("is-erase", tool === "erase");
+      applyCam();
       tellLight();
+      paintGlow(board, glowHere());
+      if (ctx.campaign && ctx.campaign.tokenCell) {
+        const spot = here ? (current.locations || []).find(function (item) { return item && item.id === here; }) : current;
+        fitTokens(board, { tokenCell: true, cell: spot && spot.cell });
+      }
+    }
+    function glowHere() {
+      const current = view();
+      const here = current.focusId || "";
+      const loc = here && (current.locations || []).find(function (item) { return item && item.id === here; });
+      if (loc && loc.glow) return loc.glow;
+      if (!here && current.glow) return current.glow;
+      return null;
     }
     function passiveSkill(hero, id, names, statId) {
       const skill = (hero.skills || []).find(function (row) {
@@ -952,6 +1036,7 @@
       if (hint) hint.textContent = loc
         ? "Герой стоит в «" + (loc.name || "локация") + "». Правый клик — размер и перенос."
         : "Герой стоит на корне карты. Откройте локацию и кликните ещё раз, чтобы перенести его внутрь.";
+      stampAtlas(marker);
       paintBoard();
       paintTree();
       paintSelected();
@@ -1026,6 +1111,12 @@
       const current = view();
       const loc = findLoc(id);
       const ids = subtree(id);
+      (current.locations || []).forEach(function (item) {
+        if (item && ids[item.id]) noteLocGone(current, item);
+      });
+      (current.markers || []).forEach(function (marker) {
+        if (marker && ids[marker.locId]) noteMarkerGone(current, marker);
+      });
       leaveFocus(ids, loc ? loc.parentId || "" : "");
       ["markers", "labels", "strokes"].forEach(function (key) {
         current[key] = (current[key] || []).filter(function (row) { return !(row && ids[row.locId]); });
@@ -1132,6 +1223,7 @@
       if (!loc || loc.trashed) return;
       const door = loc.linkId ? findLoc(loc.linkId) : null;
       if (loc.linkId || doorTarget(loc)) {
+        noteLocGone(view(), loc);
         const target = door && !door.trashed ? door : doorTarget(loc);
         if (target) retargetInterior(id, target.id);
         view().locations = view().locations.filter(function (item) { return item.id !== id; });
@@ -1147,6 +1239,7 @@
       const ids = subtree(id);
       if (hasStuff(id)) loc.trashed = true;
       else {
+        noteLocGone(view(), loc);
         forgetPlace(loc);
         view().locations = view().locations.filter(function (item) { return item.id !== id; });
       }
@@ -1379,6 +1472,388 @@
         keepShot(file, function (url) { setShot("portrait", url); });
       });
     }
+    const atlasMaps = [];
+    let atlasTimer = 0;
+    let atlasBusy = false;
+    function stampAtlas(item) {
+      if (!item) return;
+      item.rev = Date.now();
+    }
+    function sigOf(row) {
+      return [row.name || "", Math.round((Number(row.x) || 0) * 10000), Math.round((Number(row.y) || 0) * 10000), row.text || "", row.secret ? 1 : 0, row.icon || "", row.face || ""].join("|");
+    }
+    function shotOf(item) {
+      if (!item) return { icon: "", face: "" };
+      let raw = "";
+      let focus = null;
+      if (item.kind === "mark") {
+        raw = item.icon || "";
+        if (!raw && item.emoji) return { icon: String(item.emoji).slice(0, 16), face: "" };
+      } else if (item.kind === "image") {
+        raw = item.url || item.icon || "";
+      } else {
+        const linked = faceOf(item);
+        if (linked && linked.url) {
+          raw = linked.url;
+          focus = linked;
+        } else raw = item.portrait || item.icon || "";
+        if (!raw && item.emoji) return { icon: String(item.emoji).slice(0, 16), face: "" };
+      }
+      raw = String(raw || "").trim();
+      if (!raw || raw.indexOf("data:") === 0) return { icon: "", face: "" };
+      if (raw.charAt(0) === "/") raw = "https://dms.volkula.com" + raw;
+      if (raw.indexOf("https://") !== 0 || raw.length > 400) return { icon: "", face: "" };
+      const nums = focus || focusNums(item);
+      const face = nums.x + "," + nums.y + "," + nums.zoom;
+      return { icon: raw, face: face === "50,50,1" ? "" : face };
+    }
+    function mapsOf(current) {
+      const locs = (current.locations || []).filter(function (loc) { return loc && !loc.trashed; });
+      const mapIds = {};
+      mapIds[current.id] = true;
+      locs.forEach(function (loc) {
+        const nested = locs.some(function (item) { return item.parentId === loc.id; });
+        const marked = (current.markers || []).some(function (item) { return item && item.locId === loc.id; });
+        if (loc.day || loc.night || nested || marked) mapIds[loc.id] = true;
+      });
+      function parentOf(loc) {
+        let parent = loc.parentId || "";
+        const seen = {};
+        while (parent && !mapIds[parent]) {
+          if (seen[parent]) return current.id;
+          seen[parent] = true;
+          const above = locs.find(function (item) { return item.id === parent; });
+          parent = above ? (above.parentId || "") : "";
+        }
+        return parent || current.id;
+      }
+      function pinsFor(owner) {
+        const pins = [];
+        locs.forEach(function (loc) {
+          if ((loc.parentId || "") !== owner) return;
+          const shot = shotOf(loc);
+          pins.push({
+            item: loc,
+            id: loc.id,
+            kind: "location",
+            name: loc.name || "Локация",
+            x: Number(loc.x) || 0,
+            y: Number(loc.y) || 0,
+            text: loc.tip || "",
+            secret: !!loc.hidden,
+            childId: mapIds[loc.id] ? loc.id : "",
+            icon: shot.icon,
+            face: shot.face
+          });
+        });
+        (current.markers || []).forEach(function (marker) {
+          if (!marker || (marker.locId || "") !== owner) return;
+          let kind = marker.kind === "mark" ? "event" : (marker.kind || "event");
+          if (kind !== "event" && kind !== "npc" && kind !== "hero" && kind !== "foe") kind = "event";
+          const shot = shotOf(marker);
+          pins.push({
+            item: marker,
+            id: marker.id,
+            kind: kind,
+            name: marker.name || marker.text || "Метка",
+            x: Number(marker.x) || 0,
+            y: Number(marker.y) || 0,
+            text: marker.tip || marker.text || "",
+            secret: !!marker.hidden,
+            childId: "",
+            icon: shot.icon,
+            face: shot.face
+          });
+        });
+        return pins;
+      }
+      const maps = [{ id: current.id, name: current.name || "Карта", parentId: "", pins: pinsFor("") }];
+      locs.forEach(function (loc) {
+        if (!mapIds[loc.id]) return;
+        maps.push({ id: loc.id, name: loc.name || "Локация", parentId: parentOf(loc), pins: pinsFor(loc.id) });
+      });
+      return maps;
+    }
+    function addRemote(current, pin, parent) {
+      const id = String(pin.id || "");
+      if (!id) return;
+      if (pin.kind === "location") {
+        const loc = {
+          id: id,
+          atlasRev: pin.rev || 0,
+          parentId: parent || "",
+          name: pin.name || "Локация",
+          x: Number(pin.x) || 0,
+          y: Number(pin.y) || 0,
+          tip: pin.text || "",
+          hidden: !!pin.secret,
+          day: "",
+          night: "",
+          mode: "day",
+          trashed: false
+        };
+        loc.atlasSig = sigOf({ name: loc.name, x: loc.x, y: loc.y, text: loc.tip, secret: loc.hidden });
+        current.locations.push(loc);
+        ensurePlace(loc);
+        return;
+      }
+      const kind = pin.kind === "event" ? "mark" : pin.kind;
+      const marker = {
+        id: id,
+        atlasRev: pin.rev || 0,
+        name: pin.name || (kind === "npc" ? "НПС" : "Метка"),
+        x: Number(pin.x) || 0,
+        y: Number(pin.y) || 0,
+        kind: kind,
+        tip: pin.text || "",
+        hidden: !!pin.secret,
+        locId: parent || ""
+      };
+      marker.atlasSig = sigOf({ name: marker.name, x: marker.x, y: marker.y, text: marker.tip, secret: marker.hidden });
+      current.markers.push(marker);
+      if (kind === "npc" && typeof ensureNpc === "function") ensureNpc(marker);
+    }
+    function paintAtlas() {
+      const pick = host.querySelector("#map-atlas");
+      if (pick) pick.textContent = "Карты ширмы на map.volkula.com";
+    }
+    function rememberGone(current, mapId, pinId, parentId, name) {
+      if (!current || !mapId || !pinId) return;
+      if (!current.atlasGone) current.atlasGone = [];
+      if (current.atlasGone.some(function (row) { return row && row.id === pinId; })) return;
+      current.atlasGone.push({
+        mapId: mapId,
+        id: pinId,
+        parentId: parentId || "",
+        name: name || ""
+      });
+    }
+    function noteLocGone(current, loc) {
+      if (!current || !loc || (!loc.atlasSig && !loc.atlasRev)) return;
+      rememberGone(current, loc.parentId || current.id, loc.id, "", current.name || "Карта");
+    }
+    function noteMarkerGone(current, marker) {
+      if (!current || !marker || (!marker.atlasSig && !marker.atlasRev)) return;
+      const owner = marker.locId || "";
+      const loc = owner ? (current.locations || []).find(function (item) { return item && item.id === owner; }) : null;
+      rememberGone(
+        current,
+        owner || current.id,
+        marker.id,
+        loc ? (loc.parentId || current.id) : "",
+        (loc && loc.name) || current.name || "Карта"
+      );
+    }
+    function wipeLoc(current, id, skipped) {
+      const ids = {};
+      function walk(locId) {
+        if (!locId || ids[locId]) return;
+        ids[locId] = true;
+        skipped[locId] = true;
+        (current.locations || []).forEach(function (loc) {
+          if (loc && (loc.parentId || "") === locId) walk(loc.id);
+        });
+      }
+      walk(id);
+      ["markers", "labels", "strokes"].forEach(function (key) {
+        current[key] = (current[key] || []).filter(function (row) { return !(row && ids[row.locId]); });
+      });
+      current.locations = (current.locations || []).filter(function (loc) { return !(loc && ids[loc.id]); });
+      if (ids[current.focusId]) current.focusId = "";
+      if (selected && ids[selected.id]) selected = null;
+    }
+    async function atlasSync() {
+      if (!ctx.atlas || atlasBusy) return;
+      atlasBusy = true;
+      try {
+        const packet = [];
+        const owners = {};
+        const dropped = [];
+        let cleared = false;
+        (page.views || []).forEach(function (current) {
+          if (current.atlasId) {
+            current.atlasId = "";
+            cleared = true;
+          }
+          mapsOf(current).forEach(function (item) {
+            owners[item.id] = current;
+            const pins = [];
+            item.pins.forEach(function (pin) {
+              const sig = sigOf(pin);
+              pin._sig = sig;
+              const hide = !!pin.secret;
+              if (pin.item.atlasOff) pin.item.atlasOff = false;
+              const must = hide ? !pin.item.atlasHide : false;
+              if (!must && pin.item.atlasSig && pin.item.atlasSig === sig) return;
+              const rev = Date.now();
+              pin.item.rev = rev;
+              pin._rev = rev;
+              if (hide) dropped.push(pin.item);
+              else pin.item.atlasHide = false;
+              pins.push({
+                id: pin.id,
+                kind: pin.kind,
+                name: pin.name,
+                x: pin.x,
+                y: pin.y,
+                text: pin.text,
+                secret: false,
+                off: hide,
+                childId: pin.childId || "",
+                icon: pin.icon || "",
+                face: pin.face || "",
+                rev: rev
+              });
+            });
+            (current.atlasGone || []).forEach(function (row) {
+              if (row && row.mapId === item.id) pins.push({ id: row.id, gone: true });
+            });
+            packet.push({ id: item.id, name: item.name, parentId: item.parentId, pins: pins });
+          });
+          const listed = {};
+          packet.forEach(function (item) { listed[item.id] = true; });
+          (current.atlasGone || []).forEach(function (row) {
+            if (!row || !row.mapId || listed[row.mapId]) return;
+            listed[row.mapId] = true;
+            owners[row.mapId] = current;
+            packet.push({
+              id: row.mapId,
+              name: row.name || "Карта",
+              parentId: row.parentId || current.id,
+              pins: (current.atlasGone || []).filter(function (item) { return item && item.mapId === row.mapId; }).map(function (item) {
+                return { id: item.id, gone: true };
+              })
+            });
+          });
+        });
+        const saved = await ctx.atlas("PUT", "tree", { maps: packet });
+        dropped.forEach(function (item) { item.atlasHide = true; item.atlasOff = false; });
+        const sentMaps = {};
+        packet.forEach(function (item) { sentMaps[item.id] = true; });
+        (page.views || []).forEach(function (current) {
+          current.atlasGone = (current.atlasGone || []).filter(function (row) { return !(row && sentMaps[row.mapId]); });
+        });
+        let visual = false;
+        const skipped = {};
+        ((saved && saved.maps) || []).forEach(function (remote) {
+          if (remote.sheet) {
+            (page.views || []).forEach(function (view) {
+              if (String(view.id) === String(remote.id) && view.day !== remote.sheet) {
+                view.day = remote.sheet;
+                visual = true;
+              }
+              (view.locations || []).forEach(function (loc) {
+                if (loc && String(loc.id) === String(remote.id) && loc.day !== remote.sheet) {
+                  loc.day = remote.sheet;
+                  visual = true;
+                }
+              });
+            });
+          }
+          if (remote.cell != null) {
+            const nextCell = Number(remote.cell) || 0;
+            (page.views || []).forEach(function (view) {
+              if (String(view.id) === String(remote.id) && Number(view.cell) !== nextCell) {
+                view.cell = nextCell;
+                visual = true;
+              }
+              (view.locations || []).forEach(function (loc) {
+                if (loc && String(loc.id) === String(remote.id) && Number(loc.cell) !== nextCell) {
+                  loc.cell = nextCell;
+                  visual = true;
+                }
+              });
+            });
+          }
+          if (remote.glow && Date.now() - glowHold > 2000) {
+            const nextGlow = JSON.stringify(remote.glow);
+            (page.views || []).forEach(function (view) {
+              if (String(view.id) === String(remote.id) && JSON.stringify(view.glow || null) !== nextGlow) {
+                view.glow = remote.glow;
+                visual = true;
+              }
+              (view.locations || []).forEach(function (loc) {
+                if (loc && String(loc.id) === String(remote.id) && JSON.stringify(loc.glow || null) !== nextGlow) {
+                  loc.glow = remote.glow;
+                  visual = true;
+                }
+              });
+            });
+          }
+          const current = owners[remote.id];
+          if (!current || !remote.pins || skipped[remote.id]) return;
+          const parent = remote.id === current.id ? "" : remote.id;
+          const source = packet.find(function (item) { return item.id === remote.id; });
+          const sent = {};
+          ((source && source.pins) || []).forEach(function (pin) {
+            if (pin && pin.id && !pin.gone) sent[pin.id] = pin.rev;
+          });
+          const present = {};
+          remote.pins.forEach(function (pin) {
+            if (!pin || !pin.id) return;
+            present[pin.id] = true;
+            const local = (current.locations || []).find(function (item) { return item && item.id === pin.id; })
+              || (current.markers || []).find(function (item) { return item && item.id === pin.id; });
+            if (!local) {
+              addRemote(current, pin, parent);
+              visual = true;
+              return;
+            }
+            const shot = shotOf(local);
+            const live = sigOf({
+              name: local.name,
+              x: local.x,
+              y: local.y,
+              text: local.tip || local.text || "",
+              secret: !!local.hidden,
+              icon: shot.icon,
+              face: shot.face
+            });
+            const dirty = local.atlasSig && local.atlasSig !== live;
+            if (sent[pin.id] && !((pin.rev || 0) > sent[pin.id])) {
+              local.atlasSig = live;
+              local.atlasRev = pin.rev || sent[pin.id];
+              return;
+            }
+            if (dirty) return;
+            if ((pin.rev || 0) <= (local.atlasRev || 0) && local.atlasSig) return;
+            local.name = pin.name || local.name;
+            local.x = Number(pin.x) || 0;
+            local.y = Number(pin.y) || 0;
+            local.tip = pin.text || "";
+            if (pin.secret) local.hidden = true;
+            if (local.locId !== undefined && local.parentId === undefined) local.locId = parent;
+            if (local.parentId !== undefined && local.day !== undefined) local.parentId = parent;
+            local.atlasRev = pin.rev || 0;
+            local.atlasSig = sigOf({ name: local.name, x: local.x, y: local.y, text: local.tip || "", secret: !!local.hidden, icon: shotOf(local).icon, face: shotOf(local).face });
+            visual = true;
+          });
+          (current.locations || []).slice().forEach(function (loc) {
+            if (!loc || (loc.parentId || "") !== parent) return;
+            if (loc.hidden || loc.atlasHide || loc.atlasOff || present[loc.id] || sent[loc.id]) return;
+            if (!loc.atlasSig && !loc.atlasRev) return;
+            wipeLoc(current, loc.id, skipped);
+            visual = true;
+          });
+          current.markers = (current.markers || []).filter(function (marker) {
+            if (!marker || (marker.locId || "") !== parent) return true;
+            if (marker.hidden || marker.atlasHide || marker.atlasOff || present[marker.id] || sent[marker.id]) return true;
+            if (!marker.atlasSig && !marker.atlasRev) return true;
+            if (selected && selected.id === marker.id) selected = null;
+            visual = true;
+            return false;
+          });
+        });
+        if (visual) {
+          paintBoard();
+          paintTree();
+        }
+        const pushed = packet.some(function (item) { return item.pins.length; });
+        if (visual || pushed || cleared) ctx.save();
+      } finally {
+        atlasBusy = false;
+      }
+    }
     function paintLists() {
       const current = view();
       const views = host.querySelector("#map-view");
@@ -1392,6 +1867,7 @@
       }).join("");
       paintTools();
       paintTree();
+      paintAtlas();
     }
     function paintSelected() {}
     function markerPersonId(marker) {
@@ -1459,7 +1935,10 @@
       (ctx.campaign.pages || []).forEach(function (page) {
         (page.views || []).forEach(function (one) {
           (one.markers || []).forEach(function (marker) {
-            if (marker && ids[markerPersonId(marker)]) keepEnemy(marker);
+            if (marker && ids[markerPersonId(marker)]) {
+              keepEnemy(marker);
+              noteMarkerGone(one, marker);
+            }
           });
           one.markers = (one.markers || []).filter(function (marker) {
             return !(marker && ids[markerPersonId(marker)]);
@@ -1491,6 +1970,7 @@
         current.labels = current.labels.filter(function (label) { return label.id !== item.id; });
       } else {
         releaseMarker(item);
+        noteMarkerGone(current, item);
         current.markers = current.markers.filter(function (marker) { return marker.id !== item.id; });
       }
       selected = null;
@@ -2655,7 +3135,10 @@
       const here = keep.locId || "";
       const drop = {};
       hits.forEach(function (marker) {
-        if (marker.id !== keep.id && (marker.locId || "") === here) drop[marker.id] = true;
+        if (marker.id !== keep.id && (marker.locId || "") === here) {
+          drop[marker.id] = true;
+          noteMarkerGone(current, marker);
+        }
       });
       current.markers = current.markers.filter(function (marker) { return !drop[marker.id]; });
       const actors = ctx.campaign.battle && ctx.campaign.battle.actors || [];
@@ -2864,6 +3347,11 @@
         return '<button type="button" class="pin-act" data-act="' + act + '" title="' + label + '" aria-label="' + label + '">' + ACT[act] + "</button>";
       }
       const canHome = selected.kind === "loc" || selected.kind === "npc" || selected.kind === "mark" || selected.kind === "foe" || selected.kind === "hero" || selected.kind === "label" || selected.kind === "image";
+      const npcLook = selected.kind === "npc" ? (linkedNpc(item) || item) : null;
+      const lookNow = npcLook && (npcLook.look === "token" || item.look === "token") ? "token" : "full";
+      const lookRow = npcLook
+        ? '<div class="look-pick"><button type="button" data-act="look" data-look="token"' + (lookNow === "token" ? ' class="is-on"' : "") + ' title="Круглый портрет на карте">Портрет</button><button type="button" data-act="look" data-look="full"' + (lookNow === "full" ? ' class="is-on"' : "") + ' title="Фигура в рост">Фигура</button></div>'
+        : "";
       const personId = markerPersonId(item);
       const inSquad = personId && (book().squads || []).some(function (squad) {
         return squad && (squad.memberIds || []).indexOf(personId) >= 0;
@@ -2874,7 +3362,7 @@
       const actions = '<div class="pin-acts">' + (selected.kind === "label"
         ? actBtn("del", "Удалить надпись") + actBtn("rename", "Изменить текст") + actBtn("rehome", "Перенести в другую локацию")
         : actBtn("del", selected.kind === "image" ? "Удалить картинку" : "Удалить точку") + squadBtn + actBtn("copy", selected.kind === "image" ? "Копировать картинку" : "Копировать точку") + actBtn("move", "Перетащить") + (canHome ? actBtn("rehome", "Перенести в другую локацию") : "") + (selected.kind === "image" ? "" : actBtn("rename", "Изменить имя")) + (selected.kind === "loc" ? actBtn("setup", "Имя, день и ночь, фоны") : "") + (bookBtn ? actBtn("book", "Назначить запись из справочника") : "")) + "</div>";
-      menu.innerHTML = styleHtml(item, selected.kind) + actions;
+      menu.innerHTML = lookRow + styleHtml(item, selected.kind) + actions;
       const x = at && Number.isFinite(at.x) ? at.x : rect.left;
       const y = at && Number.isFinite(at.y) ? at.y : rect.bottom + 6;
       menu.style.left = x + "px";
@@ -3125,6 +3613,18 @@
         const button = event.target.closest("[data-act]");
         if (!button || !menu.contains(button)) return;
         const act = button.getAttribute("data-act");
+        if (act === "look") {
+          const row = findItem();
+          if (!row) return;
+          const look = button.getAttribute("data-look") === "token" ? "token" : "full";
+          row.look = look;
+          const npc = linkedNpc(row);
+          if (npc) npc.look = look;
+          paintBoard();
+          dirty();
+          showMenu(at);
+          return;
+        }
         if (act === "del") removeItem();
         if (act === "unsquad") {
           const row = findItem();
@@ -3393,7 +3893,9 @@
         current.markers.push(marker);
         if (kind === "npc") ensureNpc(marker);
         selected = { kind: kind === "npc" ? "npc" : "mark", id: id };
+        stampAtlas(marker);
       }
+      if (kind === "loc") stampAtlas(current.locations[current.locations.length - 1]);
       shownForm = "";
       paintBoard();
       paintTree();
@@ -3409,6 +3911,52 @@
     paintLists();
     paintBoard();
     paintSelected();
+    if (ctx.atlas) {
+      ctx.atlas("GET").then(function (data) {
+        atlasMaps.splice(0, atlasMaps.length);
+        ((data && data.maps) || []).forEach(function (item) { atlasMaps.push(item); });
+        paintAtlas();
+      }).catch(function (err) {
+        const box = host.querySelector("#map-err");
+        if (box) box.textContent = err.message || "Список глобальных карт не открылся";
+      });
+      atlasTimer = setInterval(function () {
+        atlasSync(false).catch(function (err) {
+          const box = host.querySelector("#map-err");
+          if (box && err && err.message) box.textContent = err.message;
+        });
+      }, 6000);
+      atlasSync(false).catch(function (err) {
+        const box = host.querySelector("#map-err");
+        if (box && err && err.message) box.textContent = err.message;
+      });
+    }
+    board.addEventListener("wheel", function (event) {
+      const tabs = event.target.closest && event.target.closest(".map-tabs");
+      if (tabs && board.contains(tabs)) {
+        const row = tabs.querySelector(".map-tab-row");
+        if (row && tabs.classList.contains("is-open")) {
+          event.preventDefault();
+          const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+          row.scrollLeft += delta;
+        }
+        return;
+      }
+      const world = board.querySelector(".map-world");
+      const stage = board.querySelector(".stage");
+      if (!world || !stage || !stage.contains(event.target)) return;
+      event.preventDefault();
+      const cam = camOf();
+      const rect = stage.getBoundingClientRect();
+      const px = event.clientX - rect.left;
+      const py = event.clientY - rect.top;
+      const next = Math.min(6, Math.max(0.35, cam.z * (event.deltaY < 0 ? 1.12 : 1 / 1.12)));
+      const scale = next / cam.z;
+      cam.x = px - (px - cam.x) * scale;
+      cam.y = py - (py - cam.y) * scale;
+      cam.z = next;
+      applyCam();
+    }, { passive: false });
     syncPlaces();
 
     host.querySelector("#map-tools").addEventListener("click", function (event) {
@@ -3457,7 +4005,36 @@
       paintSelected();
       ctx.save();
     });
+    host.querySelector("#map-atlas").addEventListener("change", function () {});
     host.querySelector("#map-setup").addEventListener("click", function () { openSetup(view().focusId || ""); });
+    host.querySelector("#map-pack-out").addEventListener("click", function () {
+      volkulaExport(page).then(function (pack) {
+        const blob = new Blob([JSON.stringify(pack)], { type: "application/json" });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "karta.shirmo.json";
+        link.click();
+        URL.revokeObjectURL(link.href);
+      }).catch(function (err) {
+        const box = host.querySelector("#map-err");
+        if (box) box.textContent = err.message || "Выгрузка не вышла";
+      });
+    });
+    host.querySelector("#map-pack-in").addEventListener("change", function (event) {
+      const file = event.target.files && event.target.files[0];
+      event.target.value = "";
+      if (!file) return;
+      file.text().then(function (text) {
+        return volkulaApply(page, JSON.parse(text), ctx.upload);
+      }).then(function () {
+        if (ctx.save) ctx.save();
+        paintBoard();
+        paintTree();
+      }).catch(function (err) {
+        const box = host.querySelector("#map-err");
+        if (box) box.textContent = err.message || "Файл не подошёл";
+      });
+    });
     host.querySelector("#map-loc-add").addEventListener("click", function () { addLocation(view().focusId || ""); });
     host.querySelector("#map-bin").addEventListener("click", function () {
       binOpen = !binOpen;
@@ -3605,8 +4182,13 @@
     }
     function flipFlag(item, which) {
       if (item.screen == null) item.screen = !item.hidden;
-      if (which === "map") item.hidden = !item.hidden;
-      else item.screen = item.screen === false;
+      if (which === "map") {
+        item.hidden = !item.hidden;
+        if (!item.hidden) {
+          item.atlasOff = false;
+          item.atlasHide = false;
+        }
+      } else item.screen = item.screen === false;
       if (item.kind === "image") {
         const url = item.url || item.icon || "";
         if (which === "screen" && shownScreen(item) && url && ctx.showImage) ctx.showImage(url);
@@ -3615,6 +4197,7 @@
       paintBoard();
       paintTree();
       dirty();
+      atlasSync().catch(function () {});
     }
     function onFlag(node) {
       const which = node.getAttribute("data-flag");
@@ -3640,7 +4223,34 @@
       const loc = findLoc(view().focusId || "");
       if (loc) flipFlag(loc, which);
     }
+    function toggleOpening(event) {
+      if (tool !== "choose" || event.button !== 0 || !window.VolkulaLight) return false;
+      if (event.target.closest && event.target.closest("[data-pin], .map-tabs, .map-back, .pin-flags")) return false;
+      const canvas = board.querySelector(".map-glow");
+      if (!canvas || !canvas._img || !canvas._glow) return false;
+      const rect = canvas.getBoundingClientRect();
+      if (!rect.width || event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) return false;
+      const x = (event.clientX - rect.left) / rect.width * canvas._img.w;
+      const y = (event.clientY - rect.top) / rect.height * canvas._img.h;
+      const hit = window.VolkulaLight.hitOpening(canvas._glow, x, y, 22);
+      if (!hit) return false;
+      const op = canvas._glow.walls[hit.wall] && canvas._glow.walls[hit.wall].openings[hit.index];
+      if (!op) return false;
+      event.preventDefault();
+      event.stopPropagation();
+      op.open = op.open === false;
+      glowHold = Date.now();
+      const current = view();
+      const mapKey = current.focusId || current.id;
+      paintGlow(board, canvas._glow);
+      ctx.save();
+      if (ctx.atlas) {
+        ctx.atlas("PUT", mapKey, { openings: [{ wall: hit.wall, index: hit.index, open: op.open !== false }] }).catch(function () {});
+      }
+      return true;
+    }
     function onDown(event) {
+      if (toggleOpening(event)) return;
       const flag = event.target.closest && event.target.closest("[data-flag]");
       if (flag && board.contains(flag)) {
         if (event.button === 0) {
@@ -3672,8 +4282,32 @@
         return;
       }
       if (view().talkId) return;
+      if (event.button === 0 && event.altKey) {
+        const cam = camOf();
+        panning = { x: event.clientX, y: event.clientY, cx: cam.x, cy: cam.y, moved: true };
+        const stagePan = board.querySelector(".stage");
+        if (stagePan) stagePan.classList.add("is-pan");
+        event.preventDefault();
+        return;
+      }
       const stage = board.querySelector(".stage");
       if (!stage || !board.contains(event.target)) return;
+      const tabs = event.target.closest(".map-tabs");
+      if (tabs && board.contains(tabs)) {
+        const fold = event.target.closest("[data-tabs-fold]");
+        if (fold && event.button === 0) {
+          event.preventDefault();
+          tabsOpen = !tabsOpen;
+          paintBoard();
+          return;
+        }
+        const go = event.target.closest("[data-go]");
+        if (go && event.button === 0) {
+          event.preventDefault();
+          enter(go.getAttribute("data-go") || "");
+        }
+        return;
+      }
       const at = rel(event);
       const go = event.target.closest("[data-go]");
       if (go && board.contains(go)) {
@@ -3715,10 +4349,9 @@
       if (tool === "choose") {
         closeMenu();
         if (!hit || !board.contains(hit)) {
-          selected = null;
-          shownForm = "";
-          paintSelected();
-          paintTree();
+          const cam = camOf();
+          panning = { x: event.clientX, y: event.clientY, cx: cam.x, cy: cam.y, moved: false };
+          if (stage) stage.classList.add("is-pan");
           return;
         }
         selected = { kind: hit.getAttribute("data-kind"), id: hit.getAttribute("data-pin") };
@@ -3761,6 +4394,16 @@
           wheel.index = next;
           paintWheel();
         }
+        return;
+      }
+      if (panning) {
+        const dx = event.clientX - panning.x;
+        const dy = event.clientY - panning.y;
+        if (dx * dx + dy * dy > 9) panning.moved = true;
+        const cam = camOf();
+        cam.x = panning.cx + dx;
+        cam.y = panning.cy + dy;
+        applyCam();
         return;
       }
       if (press && !press.moved) {
@@ -3872,6 +4515,19 @@
         return;
       }
       finishErase();
+      if (panning) {
+        const moved = panning.moved;
+        panning = null;
+        const stagePan = board.querySelector(".stage");
+        if (stagePan) stagePan.classList.remove("is-pan");
+        if (!moved) {
+          selected = null;
+          shownForm = "";
+          paintSelected();
+          paintTree();
+        }
+        return;
+      }
       if (press) {
         const open = !press.moved;
         const kind = selected && selected.kind;
@@ -3971,6 +4627,7 @@
       const rename = document.getElementById("pin-rename");
       if (rename) rename.remove();
       clearTimeout(timer);
+      clearInterval(atlasTimer);
     };
   }
 
@@ -4435,6 +5092,248 @@
     }
   };
 
+  function volkulaBytes(buffer) {
+    const bytes = new Uint8Array(buffer);
+    const chunks = [];
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      chunks.push(String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)));
+    }
+    return btoa(chunks.join(""));
+  }
+
+  function volkulaFile(url, files) {
+    return files[url || ""] || { name: "", type: "", data: "" };
+  }
+
+  function volkulaFromView(view, files) {
+    const maps = [];
+    function emit(id, name, parentId, imageUrl, pins) {
+      const file = volkulaFile(imageUrl, files);
+      maps.push({
+        id: id,
+        name: name || "Карта",
+        parentId: parentId || "",
+        public: true,
+        parties: [],
+        imageName: file.name,
+        imageType: file.type,
+        image: file.data,
+        layers: [
+          { name: "Общее", public: true, parties: [] },
+          { name: "Тайны", public: false, parties: [] }
+        ],
+        pins: pins
+      });
+    }
+    function pinsFor(parentId) {
+      const pins = [];
+      (view.locations || []).forEach(function (loc) {
+        if (loc.trashed || (loc.parentId || "") !== parentId) return;
+        const nested = (view.locations || []).some(function (item) { return !item.trashed && item.parentId === loc.id; });
+        const marked = (view.markers || []).some(function (item) { return (item.locId || "") === loc.id; });
+        const child = !!(loc.day || loc.night || nested || marked);
+        pins.push({
+          id: loc.id,
+          name: loc.name || "Локация",
+          kind: "location",
+          layer: loc.hidden ? "Тайны" : "Общее",
+          layerPublic: !loc.hidden,
+          place: "",
+          x: Number(loc.x) || 0,
+          y: Number(loc.y) || 0,
+          text: loc.tip || "",
+          event: "",
+          link: "",
+          childId: child ? loc.id : ""
+        });
+      });
+      (view.markers || []).forEach(function (mark) {
+        if ((mark.locId || "") !== parentId) return;
+        pins.push({
+          id: mark.id,
+          name: mark.name || mark.text || "Метка",
+          kind: "event",
+          layer: mark.hidden ? "Тайны" : "Общее",
+          layerPublic: !mark.hidden,
+          place: "",
+          x: Number(mark.x) || 0,
+          y: Number(mark.y) || 0,
+          text: mark.tip || mark.text || "",
+          event: "",
+          link: "",
+          childId: ""
+        });
+      });
+      return pins;
+    }
+    emit(view.id, view.name || "Карта", "", view.day || "", pinsFor(""));
+    (view.locations || []).forEach(function (loc) {
+      if (loc.trashed) return;
+      const nested = (view.locations || []).some(function (item) { return !item.trashed && item.parentId === loc.id; });
+      const marked = (view.markers || []).some(function (item) { return (item.locId || "") === loc.id; });
+      if (!loc.day && !loc.night && !nested && !marked) return;
+      emit(loc.id, loc.name || "Локация", loc.parentId || view.id, loc.day || "", pinsFor(loc.id));
+    });
+    return maps;
+  }
+
+  async function volkulaExport(page) {
+    const files = {};
+    async function take(url) {
+      if (!url || files[url]) return;
+      const response = await fetch(url);
+      if (!response.ok) return;
+      const type = (response.headers.get("content-type") || "image/jpeg").split(";")[0];
+      files[url] = {
+        name: decodeURIComponent((url.split("/").pop() || "map").split("?")[0]),
+        type: type,
+        data: volkulaBytes(await response.arrayBuffer())
+      };
+    }
+    const maps = [];
+    for (const view of page.views || []) {
+      await take(view.day || "");
+      for (const loc of view.locations || []) await take(loc.day || "");
+      volkulaFromView(view, files).forEach(function (item) { maps.push(item); });
+    }
+    return { format: "shirmo-map", version: 1, maps: maps };
+  }
+
+  async function volkulaUrl(item, upload) {
+    if (!item || !item.image) return "";
+    const binary = atob(item.image);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    const file = new File([bytes], item.imageName || "map.jpg", { type: item.imageType || "image/jpeg" });
+    if (upload) return upload(file);
+    return "data:" + (item.imageType || "image/jpeg") + ";base64," + item.image;
+  }
+
+  async function volkulaApply(page, pack, upload) {
+    if (!pack || (pack.format !== "shirmo-map" && pack.format !== "volkula-map") || pack.version !== 1) throw new Error("нужен файл karta.shirmo.json");
+    const maps = Array.isArray(pack.maps) ? pack.maps : [];
+    if (!maps.length) throw new Error("в файле нет карт");
+    const byId = {};
+    maps.forEach(function (item) { if (item && item.id) byId[item.id] = item; });
+    const roots = maps.filter(function (item) { return item && (!item.parentId || !byId[item.parentId]); });
+    const views = [];
+    for (const root of roots) {
+      const locations = [];
+      const markers = [];
+      function walk(map, parentLoc) {
+        (map.pins || []).forEach(function (pin) {
+          const child = pin.childId && byId[pin.childId] ? byId[pin.childId] : null;
+          const hidden = pin.layerPublic === false || pin.layer === "Тайны";
+          if ((pin.kind || "location") !== "event" || child) {
+            const id = child ? pin.childId : (pin.id || crypto.randomUUID());
+            locations.push({
+              id: id,
+              parentId: parentLoc,
+              name: pin.name || "Локация",
+              x: Number(pin.x) || 0,
+              y: Number(pin.y) || 0,
+              tip: pin.text || "",
+              hidden: hidden,
+              day: "",
+              night: "",
+              mode: "day",
+              trashed: false
+            });
+            if (child) walk(child, id);
+            return;
+          }
+          markers.push({
+            id: pin.id || crypto.randomUUID(),
+            name: pin.name || "Метка",
+            x: Number(pin.x) || 0,
+            y: Number(pin.y) || 0,
+            kind: "mark",
+            tip: pin.text || pin.event || "",
+            hidden: hidden,
+            locId: parentLoc
+          });
+        });
+      }
+      walk(root, "");
+      for (const loc of locations) {
+        const child = byId[loc.id];
+        if (child && child !== root) loc.day = await volkulaUrl(child, upload);
+      }
+      views.push({
+        id: root.id || crypto.randomUUID(),
+        name: root.name || "Карта",
+        day: await volkulaUrl(root, upload),
+        night: "",
+        mode: "day",
+        locations: locations,
+        markers: markers,
+        labels: [],
+        strokes: [],
+        focusId: ""
+      });
+    }
+    page.views = views;
+    page.activeViewId = views[0].id;
+  }
+
+  function fitTokens(root, page) {
+    if (!root || !page || !page.tokenCell || !(Number(page.cell) > 0)) return;
+    const photo = root.querySelector(".map-photo");
+    const src = photo && (photo.getAttribute("data-src") || "");
+    if (!photo || !src) return;
+    const img = new Image();
+    img.onload = function () {
+      if (!photo.isConnected || !img.naturalWidth) return;
+      const scale = Math.min(photo.clientWidth / img.naturalWidth, photo.clientHeight / img.naturalHeight);
+      const size = Math.max(28, Math.round(Number(page.cell) * scale));
+      root.querySelectorAll(".map-pin[data-owner]").forEach(function (pin) {
+        pin.style.setProperty("--pin", size + "px");
+      });
+    };
+    img.src = src;
+  }
+
+  function paintGlow(root, glow) {
+    if (!root) return;
+    const world = root.querySelector(".map-world");
+    const photo = world && world.querySelector(".map-photo");
+    if (!photo) return;
+    const src = photo.getAttribute("data-src") || "";
+    if (!glow || !src || !window.VolkulaLight) {
+      const old = world.querySelector(".map-glow");
+      if (old) old.remove();
+      return;
+    }
+    photo.classList.remove("is-night");
+    const token = (photo._glowToken = (photo._glowToken || 0) + 1);
+    const img = new Image();
+    img.onload = function () {
+      if (photo._glowToken !== token || !photo.isConnected) return;
+      const bw = photo.clientWidth;
+      const bh = photo.clientHeight;
+      if (!bw || !bh || !img.naturalWidth) return;
+      const scale = Math.min(bw / img.naturalWidth, bh / img.naturalHeight);
+      const w = img.naturalWidth * scale;
+      const h = img.naturalHeight * scale;
+      let canvas = world.querySelector(".map-glow");
+      if (!canvas) {
+        canvas = document.createElement("canvas");
+        canvas.className = "map-glow";
+        photo.after(canvas);
+      }
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      canvas.style.left = ((bw - w) / 2) + "px";
+      canvas.style.top = ((bh - h) / 2) + "px";
+      canvas.style.width = w + "px";
+      canvas.style.height = h + "px";
+      canvas._img = { w: img.naturalWidth, h: img.naturalHeight };
+      canvas._glow = glow;
+      window.VolkulaLight.paint(canvas, glow);
+    };
+    img.src = src;
+  }
+
   window.ShirmoMap = {
     ensure: ensure,
     mount: mount,
@@ -4442,6 +5341,8 @@
     ping: ping,
     zoomImage: zoomImage,
     closeZoomImage: closeZoomImage,
-    bindImages: bindImages
+    bindImages: bindImages,
+    paintGlow: paintGlow,
+    fitTokens: fitTokens
   };
 })();

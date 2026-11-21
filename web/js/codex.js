@@ -4110,5 +4110,5 @@ window.ShirmoCodex = (function () {
     paint();
   }
 
-  return { mount: mount, ensure: ensure, adopt: adopt, pickMonsterFace: pickMonsterFace, writePortrait: writePortrait };
+  return { mount: mount, ensure: ensure, adopt: adopt, pickMonsterFace: pickMonsterFace, writePortrait: writePortrait, readLss: readLss };
 })();

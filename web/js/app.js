@@ -4,8 +4,6 @@
   const masterMatch = path.match(/^\/m\/([^/]+)$/);
   const viewerMatch = path.match(/^\/v\/([^/]+)$/);
   const isAdminPage = path === "/admin";
-  const ADMIN_KEY = "shirmo-admin";
-
   function esc(value) {
     return String(value == null ? "" : value)
       .replace(/&/g, "&amp;")
@@ -99,7 +97,10 @@
     const response = await fetch(url, { headers: headers });
     if (!response.ok) {
       const data = await response.json().catch(function () { return {}; });
-      throw new Error(data.error || "ошибка выгрузки");
+      const message = data.error || "ошибка выгрузки";
+      backupToast(message, "err");
+      setTimeout(function () { backupToast(""); }, 4000);
+      throw new Error(message);
     }
     const total = Number(response.headers.get("content-length")) || 0;
     const reader = response.body && response.body.getReader ? response.body.getReader() : null;
@@ -126,10 +127,15 @@
       blob = new Blob(chunks, { type: "application/json" });
     }
     const cd = response.headers.get("content-disposition") || "";
-    const match = /filename="([^"]+)"/.exec(cd);
+    const star = /filename\*=UTF-8''([^;]+)/i.exec(cd);
+    const plain = /filename="([^"]+)"/.exec(cd);
+    let fileName = "room.shirmo.json";
+    if (star) {
+      try { fileName = decodeURIComponent(star[1]); } catch (err) { fileName = "room.shirmo.json"; }
+    } else if (plain) fileName = plain[1];
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
-    link.download = match ? match[1] : "room.shirmo.json";
+    link.download = fileName;
     link.click();
     URL.revokeObjectURL(link.href);
     backupToast("Готово: " + formatBytes(blob.size), "ok");
@@ -277,16 +283,31 @@
     } catch (err) { /* старый api */ }
     const stack = app.querySelector("#home-stack");
     if (!stack) return;
+    let who = null;
+    try { who = await api("/who"); } catch (err) { who = null; }
+    if (who && who.role === "player") {
+      const rooms = who.rooms || [];
+      stack.innerHTML = '<div class="card"><h1>Твои комнаты</h1>' +
+        '<p class="note">Выбери комнату. Внутри видно то, что открыто всем в ней.</p>' +
+        (rooms.length
+          ? rooms.map(function (room) {
+            return '<article class="room-row"><b>' + esc(room.title || "Комната") + '</b><div class="row"><a href="/enter/' + esc(room.id) + '">Войти</a></div></article>';
+          }).join("")
+          : '<p class="note">Мастер ещё не открыл тебе комнату.</p>') +
+        '</div>';
+      return;
+    }
     // Загрузка выгрузки — только у админа. Выгрузка — в комнате или у админа.
     const createCard = publicCreate
       ? '<form class="card" id="create">' +
         "<h1>Ширма</h1>" +
         '<p class="note">Пароль мастера нужен для входа и удаления. Его можно сохранить в браузере.</p>' +
+        '<p class="note"><a href="/admin">Админ: комнаты и доступ</a></p>' +
         '<label title="Имя новой комнаты">Название<input name="title" value="Новая комната" required></label>' +
         '<label title="Пароль мастера">Пароль<input name="password" type="password" minlength="4" required autocomplete="new-password"></label>' +
         '<div class="row"><button class="primary" type="submit">Создать комнату</button></div>' +
         '<p class="error" id="err"></p></form>'
-      : '<div class="card"><h1>Ширма</h1><p class="note">Публичное создание комнат выключено. Новые комнаты и загрузка выгрузок — в /admin.</p></div>';
+      : '<div class="card"><h1>Ширма</h1><p class="note">Публичное создание комнат выключено. Новые комнаты и загрузка выгрузок — в /admin.</p><p class="note"><a href="/admin">Админ: комнаты и доступ</a></p></div>';
     stack.innerHTML = createCard +
       '<section class="card" id="shelf"><h2>Комнаты</h2><p class="note">Загрузка…</p></section>';
     const create = app.querySelector("#create");
@@ -309,231 +330,813 @@
     fillShelf();
   }
 
-  function adminHeaders() {
-    const token = sessionStorage.getItem(ADMIN_KEY) || "";
-    return { authorization: "Bearer " + token, "content-type": "application/json" };
-  }
-
   async function admin() {
-    const token = sessionStorage.getItem(ADMIN_KEY) || "";
-    if (!token) {
-      app.innerHTML = '<section class="gate"><form class="card" id="admin-login"><h1>Админ</h1>' +
-        '<p class="note">Глобальный пароль из окружения сервера.</p>' +
-        '<label>Пароль<input name="password" type="password" minlength="1" required autocomplete="current-password"></label>' +
-        '<div class="row"><button class="primary" type="submit">Войти</button><a href="/">На главную</a></div>' +
-        '<p class="error" id="err"></p></form></section>';
-      app.querySelector("#admin-login").addEventListener("submit", async function (event) {
-        event.preventDefault();
-        const password = String(new FormData(event.target).get("password") || "");
-        try {
-          await api("/api/admin/login", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ password: password })
-          });
-          sessionStorage.setItem(ADMIN_KEY, password);
-          admin();
-        } catch (err) {
-          app.querySelector("#err").textContent = err.message;
-        }
-      });
-      return;
-    }
-    let data;
+    let me;
     try {
-      data = await api("/api/admin", { headers: adminHeaders() });
+      me = await api("/admin/v1/me");
     } catch (err) {
-      sessionStorage.removeItem(ADMIN_KEY);
       app.innerHTML = '<section class="gate"><div class="card"><h1>Админ</h1><p class="error">' + esc(err.message) +
-        '</p><a href="/admin">Снова</a></div></section>';
+        '</p><a href="/">На главную</a></div></section>';
       return;
     }
-    function bytes(n) {
-      const v = Number(n) || 0;
-      if (v < 1024) return v + " B";
-      if (v < 1048576) return (v / 1024).toFixed(1) + " KB";
-      if (v < 1073741824) return (v / 1048576).toFixed(1) + " MB";
-      return (v / 1073741824).toFixed(2) + " GB";
-    }
-    const rooms = (data.rooms || []).map(function (room) {
-      const bin = room.deletedAt ? ' <span class="note">корзина</span>' : "";
-      return '<article class="room-row"><b>' + esc(room.title || "Комната") + "</b>" + bin +
-        '<span class="note">' + esc(room.id) + " · " + bytes(room.filesBytes) + " / " + bytes(data.roomFilesMax) + "</span>" +
-        '<div class="row">' +
-        '<a href="/m/' + esc(room.id) + '">Мастер</a>' +
-        '<button type="button" data-dump="' + esc(room.id) + '">Выгрузка</button>' +
-        '<button type="button" data-reset="' + esc(room.id) + '">Сбросить пароль</button>' +
-        (room.deletedAt
-          ? '<button type="button" data-restore="' + esc(room.id) + '">Вернуть</button><button type="button" data-purge="' + esc(room.id) + '">Удалить навсегда</button>'
-          : '<button type="button" data-drop="' + esc(room.id) + '">В корзину</button>') +
-        "</div></article>";
-    }).join("") || '<p class="note">Комнат нет.</p>';
-    app.innerHTML = '<section class="gate"><div class="gate-stack">' +
-      '<div class="card"><h1>Админ</h1>' +
-      '<label class="check" title="Разрешить создание комнат с главной"><input id="public-create" type="checkbox"' +
-      (data.publicCreate !== false ? " checked" : "") + "> Публичное создание комнат</label>" +
-      '<div class="row"><button type="button" id="save-config">Сохранить</button>' +
-      '<button type="button" id="clear-trash">Очистить корзину</button>' +
-      '<button type="button" id="backup-all">Полный бэкап на диск</button>' +
-      '<button type="button" id="reset-all">Сбросить все пароли</button>' +
-      '<a href="/">На главную</a></div>' +
-      '<p class="error" id="err"></p><p class="note" id="ok"></p></div>' +
-      '<form class="card" id="admin-create"><h2>Создать комнату</h2>' +
-      '<label>Название<input name="title" value="Комната" required></label>' +
-      '<label>Пароль<input name="password" type="password" minlength="4" autocomplete="new-password" placeholder="пусто = случайный"></label>' +
-      '<div class="row"><button class="primary" type="submit">Создать</button></div></form>' +
-      '<form class="card" id="admin-import"><h2>Загрузить выгрузку</h2>' +
-      '<p class="note">Только для админа. Создаёт новую комнату из .shirmo.json.</p>' +
-      '<label>Пароль<input name="password" type="password" minlength="4" autocomplete="new-password" placeholder="пусто = случайный"></label>' +
-      '<div class="row"><label class="file-btn" title="Файл выгрузки">' +
-      '<input id="admin-pack" type="file" accept="application/json,.json" required>' +
-      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v10M8 8l4-4 4 4M5 18h14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
-      "Файл</label><button class=\"primary\" type=\"submit\">Загрузить</button></div>" +
-      '<span class="file-name" id="admin-pack-name"></span></form>' +
-      '<section class="card"><h2>Комнаты</h2>' + rooms + "</section></div></section>";
-    const err = app.querySelector("#err");
-    const ok = app.querySelector("#ok");
-    app.querySelector("#save-config").addEventListener("click", async function () {
-      try {
-        const saved = await api("/api/admin/config", {
-          method: "PUT",
-          headers: adminHeaders(),
-          body: JSON.stringify({ publicCreate: !!app.querySelector("#public-create").checked })
-        });
-        ok.textContent = saved.publicCreate ? "Сохранено: создание с главной включено." : "Сохранено: создание с главной выключено.";
-        err.textContent = "";
-        app.querySelector("#public-create").checked = saved.publicCreate !== false;
-      } catch (fail) {
-        err.textContent = fail.message;
-      }
-    });
-    const packInput = app.querySelector("#admin-pack");
-    const packName = app.querySelector("#admin-pack-name");
-    if (packInput && packName) {
-      packInput.addEventListener("change", function () {
-        packName.textContent = (this.files && this.files[0] && this.files[0].name) || "";
-      });
-    }
-    app.querySelector("#admin-import").addEventListener("submit", async function (event) {
-      event.preventDefault();
-      const password = new FormData(event.target).get("password");
-      const file = packInput && packInput.files && packInput.files[0];
-      if (!file) {
-        err.textContent = "Выберите файл выгрузки";
+    app.innerHTML = '<section class="desk">' +
+      '<header class="desk-bar"><h1>Админ</h1><span class="note">' + esc(me.username) + '</span><a href="/">На главную</a></header>' +
+      '<div class="desk-split"><aside class="desk-list" id="desk-list"></aside><main class="desk-room" id="desk-room"></main></div>' +
+      '</section>';
+    const listEl = app.querySelector("#desk-list");
+    const roomEl = app.querySelector("#desk-room");
+    function paintRoomSheets(room, host) {
+      const section = document.createElement("section");
+      section.className = "desk-section sheet-desk";
+      const head = document.createElement("div");
+      head.className = "sheet-desk-head";
+      const journal = document.createElement("button");
+      journal.type = "button";
+      journal.textContent = "Журнал";
+      const cellBtn = document.createElement("button");
+      cellBtn.type = "button";
+      cellBtn.id = "token-cell";
+      cellBtn.textContent = "В клетку";
+      head.append(journal, cellBtn);
+      section.append(head);
+      const key = shelfKey(room.id);
+      if (!key) {
+        section.append(note("Открой комнату как мастер, чтобы присваивать листы."));
+        host.append(section);
         return;
       }
-      try {
-        const pack = JSON.parse(await file.text());
-        const room = await api("/api/rooms/import", {
-          method: "POST",
-          headers: adminHeaders(),
-          body: JSON.stringify(Object.assign({}, pack, { password: password || undefined }))
+      const headers = { authorization: "Bearer " + key, "content-type": "application/json" };
+      const bar = document.createElement("div");
+      bar.className = "sheet-assign";
+      const who = document.createElement("select");
+      who.setAttribute("aria-label", "Игрок");
+      const people = seated(room.id);
+      who.innerHTML = people.map(function (person) {
+        return '<option value="' + esc(person.username) + '">' + esc(person.username) + "</option>";
+      }).join("") || '<option value="">Нет игроков</option>';
+      const pick = document.createElement("select");
+      pick.setAttribute("aria-label", "Персонаж");
+      const assign = document.createElement("button");
+      assign.type = "button";
+      assign.textContent = "Присвоить";
+      const lss = document.createElement("input");
+      lss.type = "file";
+      lss.accept = "application/json,.json,.lss";
+      lss.hidden = true;
+      const lssBtn = document.createElement("button");
+      lssBtn.type = "button";
+      lssBtn.textContent = "LSS";
+      const list = document.createElement("div");
+      bar.append(who, pick, assign, lssBtn, lss);
+      section.append(bar, list);
+      host.append(section);
+      let sheetLog = [];
+      function openLog() {
+        const old = document.getElementById("sheet-log-pop");
+        if (old) old.remove();
+        const pop = document.createElement("div");
+        pop.id = "sheet-log-pop";
+        pop.className = "pop";
+        const rows = sheetLog.map(function (row) {
+          const when = new Date(row.at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+          return "<p>" + esc(when) + " · " + esc(row.name || row.user) + " · " + esc(row.text) + "</p>";
+        }).join("") || "<p>Пусто.</p>";
+        pop.innerHTML = '<div class="pop-card sheet-log-card"><div class="pop-head"><h2>Журнал листа</h2><button type="button" data-close aria-label="Закрыть">×</button></div><div class="sheet-log">' + rows + "</div></div>";
+        document.body.appendChild(pop);
+        pop.addEventListener("click", function (event) {
+          if (event.target === pop || event.target.closest("[data-close]")) pop.remove();
         });
-        rememberRoom({ id: room.id, title: room.title, key: room.masterKey });
-        window.alert("Комната " + room.id + "\nПароль: " + room.masterKey);
-        admin();
-      } catch (fail) {
-        err.textContent = fail.message;
       }
-    });
-    app.querySelector("#clear-trash").addEventListener("click", async function () {
-      if (!window.confirm("Удалить все комнаты из корзины навсегда?")) return;
-      try {
-        const res = await api("/api/admin/trash", { method: "DELETE", headers: adminHeaders() });
-        ok.textContent = "Удалено из корзины: " + (res.purged || 0);
-        admin();
-      } catch (fail) {
-        err.textContent = fail.message;
+      function reloadCast() {
+        return api("/api/rooms/" + room.id + "/cast", { headers: headers }).then(function (data) {
+          sheetLog = data.log || [];
+          const cellBtn = document.getElementById("token-cell");
+          if (cellBtn) cellBtn.classList.toggle("is-on", data.tokenCell === true);
+          const heroes = data.heroes || [];
+          const npcs = data.npcs || [];
+          pick.innerHTML = '<option value="">Кого присвоить</option>' +
+            '<optgroup label="Герои">' + heroes.map(function (item) {
+              return '<option value="hero:' + esc(item.id) + '">' + esc(item.name) + "</option>";
+            }).join("") + "</optgroup>" +
+            '<optgroup label="НПС">' + npcs.map(function (item) {
+              return '<option value="npc:' + esc(item.id) + '">' + esc(item.name) + "</option>";
+            }).join("") + "</optgroup>";
+          list.innerHTML = (data.cast || []).map(function (row) {
+            const hero = heroes.find(function (item) { return item.id === row.heroId; }) || npcs.find(function (item) { return item.id === row.npcId; });
+            const rights = rightsOfRow(row);
+            const chips = SHEET_RIGHTS.map(function (pair) {
+              return '<button type="button" data-right="' + pair[0] + '" data-user="' + esc(row.username) + '"' + (rights[pair[0]] ? ' class="is-on"' : "") + ">" + pair[1] + "</button>";
+            }).join("");
+            return '<div class="sheet-seat"><div class="seat"><b>' + esc(row.username) + "</b><span>" + esc(hero && hero.name || "без листа") + "</span>" +
+              '<button type="button" data-look="' + esc(row.username) + '">Лист</button>' +
+              '<button type="button" data-face="' + esc(row.username) + '">Портрет</button>' +
+              '<button type="button" data-drop="' + esc(row.username) + '">Убрать</button></div>' +
+              '<div class="sheet-rights">' + chips + "</div></div>";
+          }).join("") || "<p class=\"note\">Никому не присвоен.</p>";
+        }).catch(function (error) { list.textContent = error.message; });
       }
-    });
-    app.querySelector("#backup-all").addEventListener("click", async function () {
-      try {
-        const res = await api("/api/admin/backup", { method: "POST", headers: adminHeaders(), body: "{}" });
-        ok.textContent = "Бэкап: " + res.dir + " (" + res.rooms + " комн.)";
-      } catch (fail) {
-        err.textContent = fail.message;
-      }
-    });
-    app.querySelector("#reset-all").addEventListener("click", async function () {
-      if (!window.confirm("Сбросить пароли всех комнат? Новые пароли покажутся один раз.")) return;
-      try {
-        const res = await api("/api/admin/passwords/reset-all", { method: "POST", headers: adminHeaders(), body: "{}" });
-        ok.textContent = (res.rooms || []).map(function (row) {
-          return row.id + " · " + (row.title || "") + " · " + row.masterKey;
-        }).join(" | ");
-      } catch (fail) {
-        err.textContent = fail.message;
-      }
-    });
-    app.querySelector("#admin-create").addEventListener("submit", async function (event) {
-      event.preventDefault();
-      const form = new FormData(event.target);
-      try {
-        const room = await api("/api/admin/rooms", {
-          method: "POST",
-          headers: adminHeaders(),
-          body: JSON.stringify({ title: form.get("title"), password: form.get("password") || undefined })
-        });
-        rememberRoom({ id: room.id, title: room.title, key: room.masterKey });
-        ok.textContent = "Создано. Пароль: " + room.masterKey;
-        window.alert("Комната " + room.id + "\nПароль: " + room.masterKey);
-        admin();
-      } catch (fail) {
-        err.textContent = fail.message;
-      }
-    });
-    app.querySelector(".gate-stack").addEventListener("click", async function (event) {
-      const reset = event.target.closest("[data-reset]");
-      const dump = event.target.closest("[data-dump]");
-      const drop = event.target.closest("[data-drop]");
-      const back = event.target.closest("[data-restore]");
-      const purge = event.target.closest("[data-purge]");
-      const button = reset || dump || drop || back || purge;
-      if (!button) return;
-      const id = button.getAttribute("data-reset") || button.getAttribute("data-dump") ||
-        button.getAttribute("data-drop") || button.getAttribute("data-restore") ||
-        button.getAttribute("data-purge");
-      try {
-        if (dump) {
-          if (dump.disabled) return;
-          dump.disabled = true;
-          const label = dump.textContent;
-          dump.textContent = "…";
-          try {
-            await downloadBackup("/api/admin/rooms/" + id + "/backup", adminHeaders());
-          } catch (fail) {
-            backupToast(fail.message || "ошибка выгрузки", "err");
-            setTimeout(function () { backupToast(""); }, 4000);
-            throw fail;
-          } finally {
-            dump.disabled = false;
-            dump.textContent = label;
-          }
+      journal.addEventListener("click", openLog);
+      cellBtn.addEventListener("click", function () {
+        const on = !cellBtn.classList.contains("is-on");
+        api("/api/rooms/" + room.id + "/token-cell", { method: "POST", headers: headers, body: JSON.stringify({ on: on }) }).then(function () {
+          cellBtn.classList.toggle("is-on", on);
+        }).catch(function (error) { list.textContent = error.message; });
+      });
+      list.addEventListener("click", function (event) {
+        const right = event.target.closest("[data-right]");
+        if (right) {
+          const box = right.parentElement;
+          const rights = {};
+          box.querySelectorAll("[data-right]").forEach(function (button) {
+            const key = button.getAttribute("data-right");
+            rights[key] = button === right ? !button.classList.contains("is-on") : button.classList.contains("is-on");
+          });
+          api("/api/rooms/" + room.id + "/cast", { method: "POST", headers: headers, body: JSON.stringify({ username: right.getAttribute("data-user"), rights: rights }) }).then(reloadCast).catch(function (error) { list.textContent = error.message; });
           return;
         }
-        if (reset) {
-          const res = await api("/api/admin/rooms/" + id + "/password", {
-            method: "POST",
-            headers: adminHeaders(),
-            body: "{}"
-          });
-          window.alert("Новый пароль:\n" + res.masterKey);
-          rememberRoom({ id: id, key: res.masterKey });
-        } else if (drop) {
-          await api("/api/rooms/" + id, { method: "DELETE", headers: adminHeaders() });
-          admin();
-        } else if (back) {
-          await api("/api/rooms/" + id + "/restore", { method: "POST", headers: adminHeaders(), body: "{}" });
-          admin();
-        } else if (purge) {
-          if (!window.confirm("Удалить навсегда?")) return;
-          await api("/api/rooms/" + id + "/purge", { method: "DELETE", headers: adminHeaders() });
-          admin();
+        const look = event.target.closest("[data-look]");
+        if (look) {
+          fetch("/api/rooms/" + room.id + "/sheet?user=" + encodeURIComponent(look.getAttribute("data-look")), { headers: { authorization: "Bearer " + key } }).then(function (res) { return res.json(); }).then(function (data) {
+            sheetWindow((data.hero && window.ShirmoSheet ? window.ShirmoSheet.html(data.hero, false) : "<p>Листа нет.</p>"));
+          }).catch(function (error) { list.textContent = error.message; });
+          return;
         }
-      } catch (fail) {
-        err.textContent = fail.message;
+        const drop = event.target.closest("[data-drop]");
+        if (drop) {
+          api("/api/rooms/" + room.id + "/cast", { method: "DELETE", headers: headers, body: JSON.stringify({ username: drop.getAttribute("data-drop") }) }).then(reloadCast).catch(function (error) { list.textContent = error.message; });
+          return;
+        }
+        const face = event.target.closest("[data-face]");
+        if (!face) return;
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "image/png,image/jpeg,image/webp";
+        input.addEventListener("change", function () {
+          const picked = input.files && input.files[0];
+          if (!picked) return;
+          fetch("/api/rooms/" + room.id + "/files", {
+            method: "POST",
+            headers: { authorization: "Bearer " + key, "content-type": picked.type || "image/png" },
+            body: picked
+          }).then(function (res) { return res.json(); }).then(function (data) {
+            if (!data.url) throw new Error(data.error || "портрет не сохранился");
+            return api("/api/rooms/" + room.id + "/cast", { method: "POST", headers: headers, body: JSON.stringify({ username: face.getAttribute("data-face"), portrait: data.url }) });
+          }).then(reloadCast).catch(function (error) { list.textContent = error.message; });
+        });
+        input.click();
+      });
+      assign.addEventListener("click", function () {
+        const username = who.value;
+        const value = pick.value;
+        if (!username || !value) return;
+        const body = { username: username };
+        if (value.indexOf("hero:") === 0) body.heroId = value.slice(5);
+        else body.npcId = value.slice(4);
+        api("/api/rooms/" + room.id + "/cast", { method: "POST", headers: headers, body: JSON.stringify(body) }).then(reloadCast).catch(function (error) { list.textContent = error.message; });
+      });
+      lssBtn.addEventListener("click", function () { lss.click(); });
+      lss.addEventListener("change", function () {
+        const picked = lss.files && lss.files[0];
+        lss.value = "";
+        const username = who.value;
+        if (!picked || !username) return;
+        const reader = new FileReader();
+        reader.onload = function () {
+          let hero;
+          try { hero = window.ShirmoCodex.readLss(String(reader.result || "")); }
+          catch (error) { list.textContent = error.message; return; }
+          hero.portrait = "";
+          api("/api/rooms/" + room.id + "/cast", { method: "POST", headers: headers, body: JSON.stringify({ username: username, hero: hero }) }).then(reloadCast).catch(function (error) { list.textContent = error.message; });
+        };
+        reader.readAsText(picked);
+      });
+      reloadCast();
+    }
+    let rooms = [];
+    let board = { people: [], rooms: [], maps: [], hides: [], rooms_ok: true, maps_ok: true };
+    let selected = "";
+    let focusUser = "";
+    let roomTab = "people";
+    let showCreate = false;
+    let publicCreate = false;
+    let maxBytes = 0;
+    let errText = "";
+    let secret = null;
+    let keyList = null;
+
+    function bytes(n) {
+      const v = Number(n) || 0;
+      if (v < 1024) return v + " Б";
+      if (v < 1048576) return (v / 1024).toFixed(1) + " КБ";
+      if (v < 1073741824) return (v / 1048576).toFixed(1) + " МБ";
+      return (v / 1073741824).toFixed(2) + " ГБ";
+    }
+    function shareKey(room, id) {
+      return String(room || "").toLowerCase() + "|" + String(id || "").toLowerCase();
+    }
+    function players() {
+      return (board.people || []).filter(function (person) { return person.role !== "master"; });
+    }
+    function seated(roomId) {
+      const key = String(roomId || "").toLowerCase();
+      return players().filter(function (person) {
+        return (person.rooms || []).some(function (id) { return String(id).toLowerCase() === key; });
+      });
+    }
+    function campaignOf(roomId) {
+      const key = String(roomId || "").toLowerCase();
+      return (board.rooms || []).find(function (room) { return String(room.id || "").toLowerCase() === key; }) || { id: roomId, maps: [] };
+    }
+    function roomRows(room) {
+      const ids = new Set((room.maps || []).map(function (item) { return String(item.id || "").toLowerCase(); }));
+      const rows = (board.maps || []).filter(function (item) { return ids.has(String(item.id || "").toLowerCase()); });
+      const have = new Set(rows.map(function (item) { return String(item.id).toLowerCase(); }));
+      (room.maps || []).forEach(function (item) {
+        const id = String(item.id || "");
+        if (!id || have.has(id.toLowerCase())) return;
+        rows.push({ id: id, name: item.name || id, parentId: item.parentId || "" });
+        have.add(id.toLowerCase());
+      });
+      return rows;
+    }
+    function tick(on, label, change) {
+      const labelEl = document.createElement("label");
+      labelEl.className = "check";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      input.checked = !!on;
+      input.addEventListener("change", function () { change(input.checked); });
+      labelEl.append(input, document.createTextNode(label));
+      return labelEl;
+    }
+    function note(text, kind) {
+      const p = document.createElement("p");
+      p.className = kind || "note";
+      p.textContent = text;
+      return p;
+    }
+    async function reload(keepScroll) {
+      const top = keepScroll ? roomEl.scrollTop : 0;
+      try {
+        const listed = await api("/admin/v1/rooms");
+        rooms = listed.rooms || [];
+        publicCreate = listed.publicCreate !== false;
+        maxBytes = listed.roomFilesMax || 0;
+      } catch (error) {
+        errText = error.message;
       }
-    });
+      try {
+        board = await api("/admin/v1/access");
+      } catch (error) {
+        errText = error.message;
+      }
+      if (selected && !rooms.some(function (room) { return room.id === selected; })) selected = "";
+      if (!selected && !showCreate) {
+        const first = rooms.find(function (room) { return !room.deletedAt; }) || rooms[0];
+        selected = first ? first.id : "";
+      }
+      paint();
+      if (keepScroll) roomEl.scrollTop = top;
+    }
+    async function postAccess(url, payload) {
+      try {
+        errText = "";
+        await api(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+        await reload(true);
+      } catch (error) {
+        errText = error.message;
+        paint();
+      }
+    }
+    function roomMark(kind) {
+      const d = {
+        map: "M4 6.5l5-2 6 2 5-2v13l-5 2-6-2-5 2zM9 4.5v13M15 6.5v13",
+        player: "M12 12a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM6.5 19c.8-2.5 2.8-4 5.5-4s4.7 1.5 5.5 4",
+        master: "M4 16l2.2-8L12 12l5.8-4L20 16zM5 18.5h14"
+      }[kind];
+      return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + d + '" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    }
+    function roomLink(href, label, kind) {
+      const link = document.createElement("a");
+      link.className = "map-act";
+      link.href = href;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.title = label;
+      link.setAttribute("aria-label", label);
+      link.innerHTML = roomMark(kind);
+      return link;
+    }
+    function roomButton(room) {
+      const line = document.createElement("div");
+      line.className = "room-line";
+      const button = document.createElement("button");
+      button.type = "button";
+      if (room.id === selected && !showCreate) button.classList.add("is-on");
+      if (room.deletedAt) button.classList.add("is-bin");
+      const count = seated(room.id).length;
+      button.textContent = (room.title || "Комната") + (count ? " · " + count : "");
+      button.addEventListener("click", function () {
+        selected = room.id;
+        showCreate = false;
+        focusUser = "";
+        paint();
+      });
+      line.append(button);
+      if (!room.deletedAt) {
+        line.append(roomLink("/enter/" + room.id, "Открыть как игрок", "player"));
+        line.append(roomLink("/m/" + room.id, "Открыть как мастер", "master"));
+      }
+      return line;
+    }
+    function paintList() {
+      listEl.replaceChildren();
+      const alive = rooms.filter(function (room) { return !room.deletedAt; });
+      const bin = rooms.filter(function (room) { return room.deletedAt; });
+      if (!alive.length) listEl.append(note("Живых комнат нет."));
+      alive.forEach(function (room) { listEl.append(roomButton(room)); });
+      if (bin.length) {
+        const kicker = document.createElement("div");
+        kicker.className = "desk-kicker";
+        kicker.textContent = "Корзина";
+        listEl.append(kicker);
+        bin.forEach(function (room) { listEl.append(roomButton(room)); });
+      }
+      const add = document.createElement("button");
+      add.type = "button";
+      add.textContent = "Новая комната";
+      if (showCreate) add.classList.add("is-on");
+      add.addEventListener("click", function () {
+        showCreate = true;
+        focusUser = "";
+        paint();
+      });
+      listEl.append(add);
+      const upload = document.createElement("details");
+      const uploadSum = document.createElement("summary");
+      uploadSum.textContent = "Загрузить выгрузку";
+      const uploadForm = document.createElement("form");
+      const pass = document.createElement("input");
+      pass.name = "password";
+      pass.type = "password";
+      pass.placeholder = "пароль, можно пусто";
+      pass.autocomplete = "new-password";
+      const file = document.createElement("input");
+      file.type = "file";
+      file.accept = "application/json,.json";
+      const fileLabel = document.createElement("label");
+      fileLabel.className = "file-btn";
+      fileLabel.append(file, document.createTextNode("Файл"));
+      const go = document.createElement("button");
+      go.className = "primary";
+      go.type = "submit";
+      go.textContent = "Открыть";
+      const fileName = document.createElement("span");
+      fileName.className = "file-name";
+      file.addEventListener("change", function () {
+        fileName.textContent = (file.files && file.files[0] && file.files[0].name) || "";
+      });
+      uploadForm.append(pass, fileLabel, go, fileName);
+      uploadForm.addEventListener("submit", async function (event) {
+        event.preventDefault();
+        const picked = file.files && file.files[0];
+        if (!picked) { errText = "Выберите файл выгрузки"; paint(); return; }
+        try {
+          const pack = JSON.parse(await picked.text());
+          const room = await api("/admin/v1/import", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(Object.assign({}, pack, { password: pass.value || undefined }))
+          });
+          rememberRoom({ id: room.id, title: room.title, key: room.masterKey });
+          selected = room.id;
+          showCreate = false;
+          secret = { id: room.id, key: room.masterKey };
+          errText = "";
+          await reload(false);
+        } catch (error) {
+          errText = error.message;
+          paint();
+        }
+      });
+      upload.append(uploadSum, uploadForm);
+      listEl.append(upload);
+      const tools = document.createElement("details");
+      const toolsSum = document.createElement("summary");
+      toolsSum.textContent = "Служебное";
+      const pub = tick(publicCreate, "Создание комнат с главной", async function (on) {
+        try {
+          const saved = await api("/admin/v1/config", {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ publicCreate: on })
+          });
+          publicCreate = saved.publicCreate !== false;
+          errText = "";
+        } catch (error) {
+          errText = error.message;
+          paint();
+        }
+      });
+      const backup = document.createElement("button");
+      backup.type = "button";
+      backup.textContent = "Полный бэкап на диск";
+      backup.addEventListener("click", async function () {
+        try {
+          const res = await api("/admin/v1/backup", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+          errText = "";
+          keyList = null;
+          secret = null;
+          roomEl.replaceChildren(note("Бэкап записан: " + res.dir + " (" + res.rooms + ")"));
+        } catch (error) {
+          errText = error.message;
+          paint();
+        }
+      });
+      const resetAll = document.createElement("button");
+      resetAll.type = "button";
+      resetAll.textContent = "Новые пароли всем комнатам";
+      resetAll.addEventListener("click", async function () {
+        if (!window.confirm("Сбросить пароли всех комнат? Новые покажутся один раз.")) return;
+        try {
+          const res = await api("/admin/v1/passwords/reset-all", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+          keyList = res.rooms || [];
+          secret = null;
+          errText = "";
+          paint();
+        } catch (error) {
+          errText = error.message;
+          paint();
+        }
+      });
+      const clearBin = document.createElement("button");
+      clearBin.type = "button";
+      clearBin.textContent = "Очистить корзину";
+      clearBin.addEventListener("click", async function () {
+        if (!window.confirm("Удалить комнаты из корзины навсегда?")) return;
+        try {
+          await api("/admin/v1/trash", { method: "DELETE" });
+          errText = "";
+          await reload(false);
+        } catch (error) {
+          errText = error.message;
+          paint();
+        }
+      });
+      tools.append(toolsSum, pub, backup, resetAll, clearBin);
+      listEl.append(tools);
+    }
+    function mapMark(kind) {
+      const tree = "M9 3h6v4H9zM4 11h6v4H4zM14 11h6v4h-6z";
+      const kids = "M11 3h2v2h-2zM4 10h6v4H4zM14 10h6v4h-6z";
+      const slash = "M4 20L20 4";
+      const check = "M14 17l2.2 2.2L21 14";
+      const d = {
+        "all-off": tree + slash,
+        "all-on": tree + check,
+        "kids-off": kids + "M4 19L20 9",
+        "kids-on": kids + "M15 16l2 2 4-4"
+      }[kind] || tree;
+      return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="' + d + '" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    }
+    function drawMaps(host, rows, roomId) {
+      const idset = new Set(rows.map(function (item) { return String(item.id).toLowerCase(); }));
+      const hides = new Set((board.hides || []).map(function (row) { return shareKey(row.room, row.object); }));
+      function childrenOf(parentId) {
+        return rows.filter(function (item) {
+          const parent = String(item.parentId || "").toLowerCase();
+          if (!parentId) return !idset.has(parent);
+          return parent === String(parentId).toLowerCase();
+        }).sort(function (a, b) {
+          return String(a.name || "").localeCompare(String(b.name || ""), "ru");
+        });
+      }
+      function branch(parentId, depth, seen) {
+        childrenOf(parentId).forEach(function (item) {
+          const id = String(item.id);
+          if (seen[id.toLowerCase()]) return;
+          seen[id.toLowerCase()] = true;
+          const line = document.createElement("div");
+          line.className = "map-line";
+          line.style.paddingLeft = (depth * 16) + "px";
+          const kids = [];
+          (function collect(parent) {
+            childrenOf(parent).forEach(function (child) {
+              const cid = String(child.id);
+              if (kids.indexOf(cid) >= 0) return;
+              kids.push(cid);
+              collect(cid);
+            });
+          })(id);
+          const acts = document.createElement("span");
+          acts.className = "map-acts";
+          function act(label, kind, objects, hidden) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "map-act";
+            button.title = label;
+            button.setAttribute("aria-label", label);
+            button.innerHTML = mapMark(kind);
+            button.addEventListener("click", function () {
+              postAccess("/admin/v1/access/hide", { room: roomId, objects: objects, on: hidden });
+            });
+            acts.append(button);
+          }
+          act("Выключить все", "all-off", [id].concat(kids), true);
+          act("Включить все", "all-on", [id].concat(kids), false);
+          if (kids.length) {
+            act("Выключить все дочерние", "kids-off", kids, true);
+            act("Включить все дочерние", "kids-on", kids, false);
+          }
+          acts.append(roomLink("https://map.volkula.com/#" + encodeURIComponent(id), "Посмотреть карту", "map"));
+          line.append(acts);
+          line.append(tick(!hides.has(shareKey(roomId, id)), item.name || id, function (on) {
+            postAccess("/admin/v1/access/hide", { room: roomId, objects: [id], on: !on });
+          }));
+          host.append(line);
+          branch(id, depth + 1, seen);
+        });
+      }
+      branch("", 0, {});
+    }
+    function paintRoom() {
+      roomEl.replaceChildren();
+      if (errText) roomEl.append(note(errText, "error"));
+      if (keyList) {
+        const box = document.createElement("div");
+        box.className = "desk-secret";
+        box.append(note("Новые пароли. Дальше они здесь не покажутся."));
+        keyList.forEach(function (row) {
+          const line = document.createElement("p");
+          line.textContent = (row.title || "Комната") + " — " + row.masterKey;
+          box.append(line);
+        });
+        const hide = document.createElement("button");
+        hide.type = "button";
+        hide.textContent = "Скрыть";
+        hide.addEventListener("click", function () { keyList = null; paint(); });
+        box.append(hide);
+        roomEl.append(box);
+      }
+      if (showCreate) {
+        const form = document.createElement("form");
+        form.className = "desk-section";
+        const title = document.createElement("h2");
+        title.textContent = "Новая комната";
+        const name = document.createElement("input");
+        name.name = "title";
+        name.required = true;
+        name.value = "Комната";
+        name.placeholder = "Название";
+        const password = document.createElement("input");
+        password.name = "password";
+        password.type = "password";
+        password.placeholder = "Пароль, можно пусто";
+        password.autocomplete = "new-password";
+        const submit = document.createElement("button");
+        submit.className = "primary";
+        submit.type = "submit";
+        submit.textContent = "Создать";
+        form.append(title, name, password, submit);
+        form.addEventListener("submit", async function (event) {
+          event.preventDefault();
+          try {
+            const room = await api("/admin/v1/rooms", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ title: name.value, password: password.value || undefined })
+            });
+            rememberRoom({ id: room.id, title: room.title, key: room.masterKey });
+            selected = room.id;
+            showCreate = false;
+            secret = { id: room.id, key: room.masterKey };
+            errText = "";
+            await reload(false);
+          } catch (error) {
+            errText = error.message;
+            paint();
+          }
+        });
+        roomEl.append(form);
+        return;
+      }
+      const room = rooms.find(function (item) { return item.id === selected; });
+      if (!room) {
+        roomEl.append(note("Выбери комнату слева."));
+        return;
+      }
+      const head = document.createElement("div");
+      const title = document.createElement("h2");
+      title.textContent = room.title || "Комната";
+      const meta = note((room.deletedAt ? "В корзине. " : "") + bytes(room.filesBytes) + " / " + bytes(maxBytes));
+      const actions = document.createElement("div");
+      actions.className = "row";
+      if (!room.deletedAt) {
+        actions.append(roomLink("/enter/" + room.id, "Открыть как игрок", "player"));
+        actions.append(roomLink("/m/" + room.id, "Открыть как мастер", "master"));
+      }
+      const dump = document.createElement("button");
+      dump.type = "button";
+      dump.textContent = "Выгрузить";
+      dump.addEventListener("click", async function () {
+        if (dump.disabled) return;
+        dump.disabled = true;
+        try { await downloadBackup("/admin/v1/rooms/" + room.id + "/backup"); }
+        catch (error) { errText = error.message; paint(); }
+        dump.disabled = false;
+        dump.textContent = "Выгрузить";
+      });
+      actions.append(dump);
+      if (room.deletedAt) {
+        const back = document.createElement("button");
+        back.type = "button";
+        back.textContent = "Вернуть";
+        back.addEventListener("click", async function () {
+          try {
+            await api("/admin/v1/rooms/" + room.id + "/restore", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+            await reload(false);
+          } catch (error) { errText = error.message; paint(); }
+        });
+        const purge = document.createElement("button");
+        purge.type = "button";
+        purge.textContent = "Удалить навсегда";
+        purge.addEventListener("click", async function () {
+          if (!window.confirm("Удалить комнату навсегда?")) return;
+          try {
+            await api("/admin/v1/rooms/" + room.id + "/purge", { method: "DELETE" });
+            selected = "";
+            await reload(false);
+          } catch (error) { errText = error.message; paint(); }
+        });
+        actions.append(back, purge);
+      } else {
+        const reset = document.createElement("button");
+        reset.type = "button";
+        reset.textContent = "Новый пароль";
+        reset.addEventListener("click", async function () {
+          try {
+            const res = await api("/admin/v1/rooms/" + room.id + "/password", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+            rememberRoom({ id: room.id, key: res.masterKey });
+            secret = { id: room.id, key: res.masterKey };
+            errText = "";
+            paint();
+          } catch (error) { errText = error.message; paint(); }
+        });
+        const drop = document.createElement("button");
+        drop.type = "button";
+        drop.textContent = "В корзину";
+        drop.addEventListener("click", async function () {
+          try {
+            await api("/admin/v1/rooms/" + room.id, { method: "DELETE" });
+            await reload(false);
+          } catch (error) { errText = error.message; paint(); }
+        });
+        actions.append(reset, drop);
+      }
+      head.append(title, meta, actions);
+      roomEl.append(head);
+      if (secret && secret.id === room.id) {
+        const box = document.createElement("div");
+        box.className = "desk-secret";
+        box.append(note("Пароль комнаты. Запиши его: дальше он здесь не покажется."));
+        const line = document.createElement("p");
+        line.textContent = secret.key;
+        const hide = document.createElement("button");
+        hide.type = "button";
+        hide.textContent = "Скрыть";
+        hide.addEventListener("click", function () { secret = null; paint(); });
+        box.append(line, hide);
+        roomEl.append(box);
+      }
+      if (room.deletedAt) return;
+      const tabs = document.createElement("div");
+      tabs.className = "desk-tabs";
+      [["people", "Игроки"], ["sheets", "Листы"], ["maps", "Карты"]].forEach(function (item) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = item[1];
+        if (roomTab === item[0]) button.classList.add("is-on");
+        button.addEventListener("click", function () {
+          roomTab = item[0];
+          paint();
+        });
+        tabs.append(button);
+      });
+      const panel = document.createElement("div");
+      panel.className = "desk-panel";
+      roomEl.append(tabs, panel);
+      const people = document.createElement("section");
+      people.className = "desk-section";
+      const here = seated(room.id);
+      const hereIds = new Set(here.map(function (person) { return person.username; }));
+      const ordered = here.concat(players().filter(function (person) { return !hereIds.has(person.username); }));
+      if (!ordered.length) people.append(note("Игроков пока нет."));
+      ordered.forEach(function (person) {
+        const row = document.createElement("div");
+        row.className = "seat";
+        const inside = hereIds.has(person.username);
+        row.append(tick(inside, person.username, function (on) {
+          focusUser = on ? person.username : "";
+          postAccess("/admin/v1/access/grants", { username: person.username, service: "screen", objects: [room.id], on: on });
+        }));
+        if (inside) {
+          const more = document.createElement("button");
+          more.type = "button";
+          more.textContent = "Особое";
+          if (focusUser === person.username) more.classList.add("is-on");
+          more.addEventListener("click", function () {
+            focusUser = focusUser === person.username ? "" : person.username;
+            paint();
+          });
+          row.append(more);
+        }
+        people.append(row);
+      });
+      const maps = document.createElement("section");
+      maps.className = "desk-section";
+      maps.append(note("Галочка — карта видна всем, кто сидит в комнате."));
+      if (!board.maps_ok) maps.append(note("Список карт сейчас не прочитался."));
+      const rows = roomRows(campaignOf(room.id));
+      const tree = document.createElement("div");
+      tree.className = "map-tree";
+      if (!rows.length) tree.append(note("У этой комнаты пока нет своих карт."));
+      else drawMaps(tree, rows, room.id);
+      maps.append(tree);
+      const person = players().find(function (item) { return item.username === focusUser && hereIds.has(item.username); });
+      let extraBox = null;
+      if (person) {
+      extraBox = document.createElement("section");
+      extraBox.className = "desk-section";
+      const extraHead = document.createElement("h3");
+      extraHead.textContent = "Особое · " + person.username;
+      extraBox.append(extraHead, note("Снятая галочка прячет карту только у этого игрока."));
+      const hides = new Set((board.hides || []).map(function (row) { return shareKey(row.room, row.object); }));
+      const denied = new Set((person.deny || []).map(function (id) { return String(id).toLowerCase(); }));
+      const extra = new Set((person.extra || []).map(function (id) { return String(id).toLowerCase(); }));
+      const sharedHere = rows.filter(function (item) { return !hides.has(shareKey(room.id, item.id)); });
+      if (!sharedHere.length) extraBox.append(note("Общих карт, которые можно закрыть лично, нет."));
+      sharedHere.forEach(function (item) {
+        extraBox.append(tick(!denied.has(String(item.id).toLowerCase()), item.name || item.id, function (on) {
+          postAccess("/admin/v1/access/grants", { username: person.username, service: "deny", objects: [item.id], on: !on });
+        }));
+      });
+      const foreign = document.createElement("details");
+      const foreignSum = document.createElement("summary");
+      foreignSum.textContent = "Карта из другой комнаты";
+      foreign.append(foreignSum);
+      (board.rooms || []).forEach(function (other) {
+        if (String(other.id).toLowerCase() === String(room.id).toLowerCase()) return;
+        const items = roomRows(other);
+        if (!items.length) return;
+        const otherHead = document.createElement("p");
+        otherHead.className = "note";
+        otherHead.textContent = other.title || "Комната";
+        foreign.append(otherHead);
+        items.forEach(function (item) {
+          foreign.append(tick(extra.has(String(item.id).toLowerCase()), item.name || item.id, function (on) {
+            postAccess("/admin/v1/access/grants", { username: person.username, service: "map", objects: [item.id], on: on });
+          }));
+        });
+      });
+      const placed = new Set();
+      (board.rooms || []).forEach(function (other) {
+        roomRows(other).forEach(function (item) { placed.add(String(item.id).toLowerCase()); });
+      });
+      const loose = (board.maps || []).filter(function (item) { return !placed.has(String(item.id).toLowerCase()); });
+      if (loose.length) {
+        const looseHead = document.createElement("p");
+        looseHead.className = "note";
+        looseHead.textContent = "Без комнаты";
+        foreign.append(looseHead);
+        loose.forEach(function (item) {
+          foreign.append(tick(extra.has(String(item.id).toLowerCase()), item.name || item.id, function (on) {
+            postAccess("/admin/v1/access/grants", { username: person.username, service: "map", objects: [item.id], on: on });
+          }));
+        });
+      }
+      extraBox.append(foreign);
+      const later = document.createElement("div");
+      later.className = "row";
+      later.append(tick(!!person.sheet, "Лист персонажа", function (on) {
+        postAccess("/admin/v1/access/grants", { username: person.username, service: "sheet", objects: ["*"], on: on });
+      }));
+      later.append(tick(!!person.journal, "Журнал заметок", function (on) {
+        postAccess("/admin/v1/access/grants", { username: person.username, service: "journal", objects: ["*"], on: on });
+      }));
+      extraBox.append(later);
+      }
+      if (roomTab === "sheets") paintRoomSheets(room, panel);
+      else if (roomTab === "maps") panel.append(maps);
+      else {
+        panel.append(people);
+        if (person) panel.append(extraBox);
+      }
+    }
+    function paint() {
+      paintList();
+      paintRoom();
+    }
+    reload(false);
   }
 
   async function fillShelf() {
@@ -566,7 +1169,7 @@
         "</div></article>";
     };
     shelf.innerHTML = "<h2>Комнаты</h2>" +
-      '<p class="note">Вход и удаление — по паролю мастера. Выгрузка — внутри комнаты.</p>' +
+      '<p class="note">Вход мастера — по паролю комнаты. Ссылка «Игроки» открывает экран и ждёт, пока здесь нажать «Пустить». Так можно пустить и headless-браузер: он сам просит вход и сам заходит, когда разрешили.</p>' +
       (rooms.map(function (room) { return rowHtml(room, false); }).join("") || '<p class="note">Пока нет комнат.</p>') +
       "<h2>Корзина</h2>" +
       (trash.map(function (room) { return rowHtml(room, true); }).join("") || '<p class="note">Корзина пуста.</p>');
@@ -992,8 +1595,56 @@
   }
 
   function viewer(id) {
-    app.innerHTML = '<section class="viewer"><div class="stage-wrap" id="view"></div></section>';
+    if (!viewer.ready) {
+      fetch("/api/rooms/" + id + "/frame", { credentials: "same-origin" }).then(function (res) {
+        if (res.status === 401) {
+          waitForMaster();
+          return;
+        }
+        viewer.ready = true;
+        viewer(id);
+        viewer.ready = false;
+      }).catch(function () { waitForMaster(); });
+      return;
+    }
+    function waitForMaster() {
+      app.innerHTML = '<section class="viewer wait-screen"><p>Ждём, пока мастер пустит этот экран.</p></section>';
+      fetch("/api/rooms/" + id + "/knock", { method: "POST", credentials: "same-origin" })
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          if (!data || !data.ask) throw new Error("нет");
+          (function poll() {
+            fetch("/api/rooms/" + id + "/knock/" + encodeURIComponent(data.ask), { credentials: "same-origin" })
+              .then(function (res) { return res.json(); })
+              .then(function (row) {
+                if (row && row.ok) {
+                  location.reload();
+                  return;
+                }
+                if (row && row.no) {
+                  const line = app.querySelector(".wait-screen p");
+                  if (line) line.textContent = "Мастер не пустил этот экран.";
+                  return;
+                }
+                setTimeout(poll, 1500);
+              })
+              .catch(function () { setTimeout(poll, 2000); });
+          })();
+        })
+        .catch(function () {
+          const line = app.querySelector(".wait-screen p");
+          if (line) line.textContent = "Не удалось попросить вход.";
+        });
+    }
+    app.innerHTML = '<section class="viewer"><div class="stage-wrap" id="view"></div><button type="button" class="sheet-launch die-launch" id="die-launch">Кубик</button><button type="button" class="sheet-launch" id="sheet-launch">Лист</button></section>';
     const view = app.querySelector("#view");
+    let viewerUser = "";
+    fetch("/who", { credentials: "same-origin" }).then(function (res) { return res.json(); }).then(function (data) {
+      viewerUser = data && data.username || "";
+      bindOwnToken(view, id, viewerUser);
+    }).catch(function () {});
+    app.querySelector("#sheet-launch").addEventListener("click", function () { openPlayerSheet(id); });
+    app.querySelector("#die-launch").addEventListener("click", function () { openDice(id); });
     let flashTimer = 0;
     function paint(frame, event) {
       if (event && event.type === "timer") {
@@ -1071,7 +1722,11 @@
       view.innerHTML = stageHtml(frame) + (event ? '<div class="flash" style="' + look.flash + '">' + esc(event.text) + "</div>" : "");
       bindShopFonts(view);
       if (window.ShirmoMap && window.ShirmoMap.bindImages) window.ShirmoMap.bindImages(view);
+      if (window.ShirmoMap && window.ShirmoMap.paintGlow && frame && frame.page && frame.page.kind === "map") window.ShirmoMap.paintGlow(view, frame.page.glow);
       fit(view);
+      bindOwnToken(view, id, viewerUser);
+      view._tokenCell = !!(frame && frame.page && frame.page.tokenCell);
+      if (window.ShirmoMap && window.ShirmoMap.fitTokens && frame && frame.page) window.ShirmoMap.fitTokens(view, frame.page);
       if (actors && battle) {
         if (follow && battle.revealActive) battle.revealActive(view);
         else if (battle.restorePan) battle.restorePan(view);
@@ -1121,6 +1776,15 @@
         const layer = document.getElementById("play-timer");
         if (!battleOn && layer && layer.dataset.fight === "1") showPlayerTimer({ on: false });
         paint(frame, null);
+      }
+      if (data.type === "event" && data.event && data.event.type === "ask-roll") {
+        showAsk(id, data.event, viewerUser);
+        return;
+      }
+      if (data.type === "event" && data.event && data.event.type === "arm") {
+        const pop = document.getElementById("sheet-pop");
+        if (pop && (!data.event.user || data.event.user === viewerUser || data.event.user === "*")) markArm(pop, data.event);
+        return;
       }
       if (data.type === "event" && data.event && (frame || data.event.type === "clock" || data.event.type === "timer" || data.event.type === "place-frame")) paint(frame, data.event);
     };
@@ -1673,6 +2337,43 @@
       return state.campaign.pages.find(function (item) { return item.kind !== "map"; }) || state.campaign.pages[0];
     };
     const viewerUrl = location.origin + "/v/" + id;
+    (function watchKnocks() {
+      let shown = "";
+      function paintAsk(ask) {
+        let bar = document.getElementById("play-asks");
+        if (!ask) {
+          if (bar) bar.remove();
+          shown = "";
+          return;
+        }
+        if (shown === ask.id && bar) return;
+        shown = ask.id;
+        if (!bar) {
+          bar = document.createElement("div");
+          bar.id = "play-asks";
+          document.body.appendChild(bar);
+        }
+        bar.innerHTML = "<p>Экран игроков просит вход.</p>" +
+          '<button type="button" data-yes>Пустить</button><button type="button" data-no>Не пускать</button>';
+        bar.querySelector("[data-yes]").addEventListener("click", function () { decide(ask.id, true); });
+        bar.querySelector("[data-no]").addEventListener("click", function () { decide(ask.id, false); });
+      }
+      function decide(ask, allow) {
+        api("/api/rooms/" + id + "/knocks/" + ask, {
+          method: "POST",
+          headers: headers,
+          body: JSON.stringify({ allow: allow })
+        }).then(tick).catch(function () {});
+      }
+      function tick() {
+        if (!document.body.contains(app) || !document.querySelector(".topbar")) return;
+        api("/api/rooms/" + id + "/knocks", { headers: { authorization: headers.authorization } }).then(function (data) {
+          paintAsk((data.asks || [])[0] || null);
+        }).catch(function () {});
+      }
+      tick();
+      setInterval(tick, 2000);
+    })();
 
     function glyph(body) {
       return '<svg viewBox="0 0 24 24" aria-hidden="true">' + body + "</svg>";
@@ -1699,6 +2400,7 @@
       '<button type="button" id="mod-codex" title="Справочник" aria-label="Справочник">' + glyph('<path d="M5 5.5h5.5A2.5 2.5 0 0113 8v11H8a3 3 0 00-3 3zM19 5.5h-5.5A2.5 2.5 0 0011 8v11h5a3 3 0 013 3z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>') + "</button>" +
       '<button type="button" id="mod-battle" title="Бой" aria-label="Бой">' + glyph('<path d="M14.5 3.5l6 6M4.5 13.5l6 6M9.5 16.5l7-7M16.5 9.5l2-2M8.5 17.5l-2 2M5 19l2-2M19 5l-2 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "</button>" +
       '<button type="button" id="mod-library" title="Библиотека" aria-label="Библиотека">' + glyph('<path d="M4 6h16v12H4zM8 6V4h8v2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M8 10h8M8 14h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "</button>" +
+      '<button type="button" id="mod-sheets" title="Листы игроков" aria-label="Листы">' + glyph('<circle cx="12" cy="9" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M6 19c1.2-3 3.2-4.5 6-4.5S16.8 16 18 19" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>') + "</button>" +
       "</nav>" +
       '<input id="title" class="room-title" type="text" value="' + esc(state.title) + '" aria-label="Название комнаты" title="Название комнаты">' +
       '<div class="plug-bar">' +
@@ -1726,6 +2428,59 @@
 
     const err = app.querySelector("#err");
     const preview = app.querySelector("#preview");
+    let pinPress = null;
+    app.addEventListener("pointerdown", function (event) {
+      if (event.button !== 0) { pinPress = null; return; }
+      const pin = event.target.closest && event.target.closest(".map-pin");
+      if (!pin || (event.target.closest && event.target.closest(".pin-flags"))) { pinPress = null; return; }
+      pinPress = { pin: pin, x: event.clientX, y: event.clientY };
+    }, true);
+    app.addEventListener("pointerup", function (event) {
+      const press = pinPress;
+      pinPress = null;
+      if (!press || event.button !== 0) return;
+      if (Math.hypot(event.clientX - press.x, event.clientY - press.y) > 6) return;
+      if (!press.pin.isConnected) return;
+      openMasterPin(press.pin);
+    }, true);
+    function characterOf(pin) {
+      const book = (state.campaign && state.campaign.codex) || {};
+      const heroes = book.heroes || [];
+      const npcs = book.npcs || [];
+      function byId(value) {
+        if (!value) return null;
+        return heroes.find(function (row) { return row && row.id === value; }) || npcs.find(function (row) { return row && row.id === value; }) || null;
+      }
+      const direct = byId(pin.getAttribute("data-hero")) || byId(pin.getAttribute("data-npc"));
+      if (direct) return direct;
+      const owner = pin.getAttribute("data-owner") || "";
+      const cast = owner && (state.campaign.cast || []).find(function (row) { return row && row.username === owner; });
+      if (cast) {
+        const linked = byId(cast.heroId) || byId(cast.npcId);
+        if (linked) return linked;
+      }
+      const pinId = pin.getAttribute("data-pin") || "";
+      let marker = null;
+      (state.campaign.pages || []).forEach(function (page) {
+        (page.views || []).forEach(function (view) {
+          (view.markers || []).forEach(function (item) {
+            if (item && item.id === pinId) marker = item;
+          });
+        });
+      });
+      if (!marker) return null;
+      return byId(marker.heroId) || byId(marker.npcId) || byId(marker.codexId);
+    }
+    function openMasterPin(pin) {
+      const kind = pin.getAttribute("data-kind");
+      if (kind !== "hero" && kind !== "npc" && kind !== "foe") return;
+      const hero = characterOf(pin);
+      const pop = sheetWindow(hero && window.ShirmoSheet ? window.ShirmoSheet.html(hero, false) : "<p>Листа нет.</p>");
+      const owner = hero && (state.campaign.cast || []).find(function (row) {
+        return row && (row.heroId === hero.id || row.npcId === hero.id);
+      });
+      bindSheetRolls(pop, id, owner ? { user: owner.username, headers: headers } : null);
+    }
 
     function shelf() {
       if (!state.campaign.library) state.campaign.library = { fonts: [], images: [], notes: [] };
@@ -2247,6 +3002,14 @@
             const host = app.querySelector("#work-battle");
             if (host && host._battleFocus) host._battleFocus(markerId);
           },
+          atlas: function (method, mapId, body) {
+            const path = "/api/rooms/" + id + "/atlas" + (mapId ? "/" + encodeURIComponent(mapId) : "");
+            return api(path, {
+              method: method,
+              headers: headers,
+              body: body ? JSON.stringify(body) : undefined
+            });
+          },
           ping: function (at, look) {
             return api("/api/rooms/" + id + "/events", {
               method: "POST",
@@ -2282,6 +3045,7 @@
     app.querySelector("#library").addEventListener("click", function () { showModule("library"); });
     app.querySelector("#mod-scene").addEventListener("click", function () { showModule("scene"); });
     app.querySelector("#mod-map").addEventListener("click", function () { showModule("map"); });
+    app.querySelector("#mod-sheets").addEventListener("click", function () { openMasterSheets(id, key, state.campaign); });
     app.querySelector("#mod-codex").addEventListener("click", function () { showModule("codex"); });
     app.querySelector("#mod-battle").addEventListener("click", function () { showModule("battle"); });
     app.querySelector("#mod-library").addEventListener("click", function () { showModule("library"); });
@@ -2808,6 +3572,48 @@
     playSource.onmessage = function (message) {
       let data = null;
       try { data = JSON.parse(message.data); } catch (err) { return; }
+      if (data && data.type === "cast" && data.cast && state.campaign) {
+        if (!Array.isArray(state.campaign.cast)) state.campaign.cast = [];
+        let row = state.campaign.cast.find(function (item) { return item && item.username === data.cast.username; });
+        if (!row) {
+          row = { username: data.cast.username };
+          state.campaign.cast.push(row);
+        }
+        Object.assign(row, data.cast);
+        if (data.marker && data.marker.id) {
+          (state.campaign.pages || []).forEach(function (page) {
+            (page.views || []).forEach(function (view) {
+              (view.markers || []).forEach(function (marker) {
+                if (marker && marker.id === data.marker.id) {
+                  if (data.marker.x != null) marker.x = data.marker.x;
+                  if (data.marker.y != null) marker.y = data.marker.y;
+                  if (data.marker.pinSize) marker.pinSize = data.marker.pinSize;
+                }
+              });
+            });
+          });
+        }
+        if (window.ShirmoMap && window.ShirmoMap.sync) window.ShirmoMap.sync();
+        return;
+      }
+      if (data && data.type === "event" && data.event && data.event.type === "die" && data.event.roll) {
+        showDie(data.event.roll);
+        return;
+      }
+      if (data && data.type === "event" && data.event && data.event.type === "arm") {
+        const pop = document.getElementById("sheet-pop");
+        if (pop) markArm(pop, data.event);
+        return;
+      }
+      if (data && data.type === "sheet" && data.heroId && state.campaign && state.campaign.codex) {
+        const lists = [state.campaign.codex.heroes, state.campaign.codex.npcs];
+        lists.forEach(function (list) {
+          const hero = (list || []).find(function (item) { return item && item.id === data.heroId; });
+          if (hero) { hero.hp = data.hp; hero.hpAt = data.hpAt; }
+        });
+        if (window.ShirmoMap && window.ShirmoMap.sync) window.ShirmoMap.sync();
+        return;
+      }
       if (!data || data.type !== "play") return;
       applyPlay(data);
     };
@@ -3556,6 +4362,7 @@
   let popLayer = 30;
   function armPop(pop) {
     if (!pop || !pop.classList || !pop.classList.contains("pop")) return;
+    if (pop.id === "sheet-pop" || pop.id === "sheet-log-pop") return;
     const card = pop.querySelector(":scope > .pop-card");
     if (!card || card.dataset.fit === "1") return;
     if (!pop._box) {
@@ -3669,8 +4476,498 @@
     });
   }).observe(document.body, { childList: true, subtree: true });
 
+  function bindOwnToken(root, roomId, username) {
+    if (!root || !username) return;
+    root.querySelectorAll("[data-owner]").forEach(function (pin) {
+      if (pin.getAttribute("data-owner") === username) pin.classList.add("is-mine");
+    });
+    if (root._ownUser === username) return;
+    root._ownUser = username;
+    root.addEventListener("pointerdown", function (event) {
+      const pin = event.target.closest && event.target.closest("[data-owner]");
+      if (!pin || pin.getAttribute("data-owner") !== root._ownUser || event.button !== 0) return;
+      const world = root.querySelector(".map-world") || root.querySelector(".stage");
+      const startX = event.clientX;
+      const startY = event.clientY;
+      let dragged = false;
+      function move(ev) {
+        if (!dragged && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 5) return;
+        dragged = true;
+        const rect = world.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
+        const x = Math.min(1, Math.max(0, (ev.clientX - rect.left) / rect.width));
+        const y = Math.min(1, Math.max(0, (ev.clientY - rect.top) / rect.height));
+        pin.style.left = (x * 100) + "%";
+        pin.style.top = (y * 100) + "%";
+        pin._at = { x: x, y: y };
+      }
+      function up() {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        if (!dragged) {
+          openPlayerSheet(roomId);
+          return;
+        }
+        if (!pin._at) return;
+        const stage = root.querySelector("[data-view]");
+        fetch("/api/rooms/" + roomId + "/token", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            x: pin._at.x,
+            y: pin._at.y,
+            placed: true,
+            move: true,
+            viewId: stage ? stage.getAttribute("data-view") || "" : "",
+            focusId: stage ? stage.getAttribute("data-focus") || "" : ""
+          })
+        }).catch(function () {});
+      }
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+    });
+    root.addEventListener("wheel", function (event) {
+      const pin = event.target.closest && event.target.closest("[data-owner]");
+      if (!pin || pin.getAttribute("data-owner") !== root._ownUser || root._tokenCell) return;
+      event.preventDefault();
+      const current = parseFloat(pin.style.getPropertyValue("--pin")) || Number(pin.style.getPropertyValue("--pin")) || 56;
+      const next = Math.min(180, Math.max(28, current + (event.deltaY < 0 ? 8 : -8)));
+      pin.style.setProperty("--pin", next + "px");
+      clearTimeout(pin._sizeTimer);
+      pin._sizeTimer = setTimeout(function () {
+        fetch("/api/rooms/" + roomId + "/token", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ size: Math.round(next) })
+        }).catch(function () {});
+      }, 180);
+    }, { passive: false });
+  }
+
+  const SHEET_RIGHTS = [["hp", "Хиты"], ["ac", "КД"], ["init", "Инициатива"], ["speed", "Скорость"], ["name", "Имя"], ["stats", "Статы"], ["skills", "Навыки"], ["attacks", "Атаки"]];
+
+  function rightsOfRow(row) {
+    const saved = row && row.rights && typeof row.rights === "object" ? row.rights : null;
+    const all = !!(row && row.edit && !saved);
+    const out = {};
+    SHEET_RIGHTS.forEach(function (pair) { out[pair[0]] = saved ? saved[pair[0]] === true : all; });
+    return out;
+  }
+
+  function diceHtml() {
+    const dice = [4, 6, 8, 10, 12, 20, 100].map(function (n) {
+      return '<button type="button" data-sides="' + n + '"' + (n === 20 ? ' class="is-on"' : "") + ">d" + n + "</button>";
+    }).join("");
+    return '<div class="sheet-dice"><div class="die-sides">' + dice + "</div>" +
+      '<div class="sheet-dice-row"><label>Сколько <input data-die-count type="number" min="1" max="12" value="1"></label>' +
+      '<label>Мод <input data-die-mod type="number" value="0"></label></div>' +
+      '<div class="die-sides"><button type="button" data-mode="disadvantage">Помеха</button><button type="button" data-mode="advantage">Преимущество</button><button type="button" data-die-throw>Бросить</button></div>' +
+      '<div class="sheet-saved" data-saved></div>' +
+      '<p class="sheet-die-result" data-die-result></p></div>';
+  }
+
+  function bindDice(root, roomId) {
+    const box = root.querySelector(".sheet-dice");
+    if (!box || box._die) return;
+    box._die = true;
+    let sides = 20;
+    let mode = "normal";
+    fetch("/api/rooms/" + roomId + "/pins", { credentials: "same-origin" }).then(function (res) {
+      return res.json();
+    }).then(function (data) {
+      const host = box.querySelector("[data-saved]");
+      const pins = data && data.pins || [];
+      if (!host || !pins.length) return;
+      host.innerHTML = "<b>Сохранённые</b>" + pins.map(function (pin) {
+        const sign = (Number(pin.mod) || 0) > 0 ? "+" + pin.mod : (Number(pin.mod) ? String(pin.mod) : "");
+        const formula = pin.mode === "advantage" ? "преимущество" : pin.mode === "disadvantage" ? "помеха" : (pin.count || 1) + "d" + (pin.sides || 20) + sign;
+        return '<button type="button" data-saved-pin="1" data-name="' + esc(pin.name || formula) + '" data-mod="' + esc(pin.mod || 0) + '" data-pin-sides="' + esc(pin.sides || 20) + '" data-count="' + esc(pin.count || 1) + '" data-pin-mode="' + esc(pin.mode || "normal") + '">' + esc(pin.name || formula) + " — " + esc(formula) + "</button>";
+      }).join("");
+    }).catch(function () {});
+    box.addEventListener("click", function (event) {
+      const saved = event.target.closest("[data-saved-pin]");
+      if (saved && box.contains(saved)) {
+        postRoll(roomId, {
+          name: saved.getAttribute("data-name") || "Бросок",
+          mod: saved.getAttribute("data-mod") || 0,
+          sides: Number(saved.getAttribute("data-pin-sides")) || 20,
+          count: Number(saved.getAttribute("data-count")) || 1,
+          mode: saved.getAttribute("data-pin-mode") || "normal"
+        }).then(function (data) {
+          const line = box.querySelector("[data-die-result]");
+          if (line) line.textContent = data && data.roll ? data.roll.log : "Не бросилось";
+        }).catch(function () {});
+        return;
+      }
+      const side = event.target.closest("[data-sides]");
+      if (side && box.contains(side)) {
+        sides = Number(side.getAttribute("data-sides")) || 20;
+        box.querySelectorAll("[data-sides]").forEach(function (node) { node.classList.toggle("is-on", node === side); });
+        return;
+      }
+      const pick = event.target.closest("[data-mode]");
+      if (pick && box.contains(pick)) {
+        const next = pick.getAttribute("data-mode");
+        mode = mode === next ? "normal" : next;
+        box.querySelectorAll("[data-mode]").forEach(function (node) {
+          node.classList.toggle("is-on", node.getAttribute("data-mode") === mode);
+        });
+        return;
+      }
+      if (!event.target.closest("[data-die-throw]")) return;
+      const count = Math.min(12, Math.max(1, Number((box.querySelector("[data-die-count]") || {}).value) || 1));
+      const mod = (box.querySelector("[data-die-mod]") || {}).value || 0;
+      const name = mode === "advantage" ? "Преимущество" : mode === "disadvantage" ? "Помеха" : count + "d" + sides;
+      postRoll(roomId, { name: name, mod: mod, sides: sides, count: count, mode: mode }).then(function (data) {
+        const line = box.querySelector("[data-die-result]");
+        if (line) line.textContent = data && data.roll ? data.roll.log : "Не бросилось";
+      }).catch(function () {
+        const line = box.querySelector("[data-die-result]");
+        if (line) line.textContent = "Не бросилось";
+      });
+    });
+  }
+
+  function openDice(roomId) {
+    const old = document.getElementById("die-pop");
+    if (old) { old.remove(); return; }
+    const pop = document.createElement("div");
+    pop.id = "die-pop";
+    pop.className = "sheet-float die-float";
+    pop.innerHTML = '<div class="sheet-pop-bar"><span class="sheet-grip">Кубик</span><button type="button" data-close>Закрыть</button></div>' + diceHtml();
+    document.body.appendChild(pop);
+    pop.querySelector("[data-close]").addEventListener("click", function () { pop.remove(); });
+    dragSheet(pop);
+    bindDice(pop, roomId);
+  }
+
+  function postRoll(roomId, spec) {
+    return fetch("/api/rooms/" + roomId + "/roll", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(spec)
+    }).then(function (res) { return res.json(); });
+  }
+
+  function dragSheet(pop) {
+    const bar = pop.querySelector(".sheet-pop-bar");
+    if (!bar || bar.dataset.drag) return;
+    bar.dataset.drag = "1";
+    bar.addEventListener("pointerdown", function (event) {
+      if (event.button !== 0) return;
+      if (event.target.closest("button, input, select, textarea, a, label")) return;
+      event.preventDefault();
+      const rect = pop.getBoundingClientRect();
+      const startX = event.clientX;
+      const startY = event.clientY;
+      const originX = rect.left;
+      const originY = rect.top;
+      pop.style.right = "auto";
+      pop.style.width = rect.width + "px";
+      function move(ev) {
+        const x = Math.min(window.innerWidth - 48, Math.max(-rect.width + 80, originX + ev.clientX - startX));
+        const y = Math.min(window.innerHeight - 40, Math.max(0, originY + ev.clientY - startY));
+        pop.style.left = x + "px";
+        pop.style.top = y + "px";
+      }
+      function up() {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        window.removeEventListener("pointercancel", up);
+      }
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+      window.addEventListener("pointercancel", up);
+      try { bar.setPointerCapture(event.pointerId); } catch (e) {}
+    });
+  }
+
+  function sheetWindow(body) {
+    const old = document.getElementById("sheet-pop");
+    if (old) old.remove();
+    const pop = document.createElement("div");
+    pop.id = "sheet-pop";
+    pop.className = "sheet-float";
+    pop.innerHTML = '<div class="sheet-pop-bar"><span class="sheet-grip">Лист</span><span class="sheet-pop-acts"></span><button type="button" data-close>Закрыть</button></div>' + body;
+    document.body.appendChild(pop);
+    pop.querySelector("[data-close]").addEventListener("click", function () { pop.remove(); });
+    dragSheet(pop);
+    return pop;
+  }
+
+  function sheetBody(pop) {
+    const hp = pop.querySelector("[data-hp]");
+    const max = pop.querySelector("[data-hp-max]");
+    const ac = pop.querySelector("[data-ac]");
+    const init = pop.querySelector("[data-init]");
+    const speed = pop.querySelector("[data-speed]");
+    const name = pop.querySelector("[data-name-field]");
+    const title = pop.querySelector("[data-title-field]");
+    const body = {};
+    if (hp) body.hp = hp.value;
+    if (max) body.hpMax = max.value;
+    if (ac) body.ac = ac.value;
+    if (init) body.init = init.value;
+    if (speed) body.speed = speed.value;
+    if (name) body.name = name.value;
+    if (title) body.title = title.value;
+    body.stats = Array.prototype.map.call(pop.querySelectorAll("[data-score]"), function (input) {
+      return { id: input.getAttribute("data-score"), score: input.value };
+    });
+    body.skills = Array.prototype.map.call(pop.querySelectorAll("[data-skill]"), function (input) {
+      return { name: input.getAttribute("data-skill"), bonus: input.value };
+    });
+    const attacks = [];
+    pop.querySelectorAll("[data-hit-name]").forEach(function (input) {
+      const index = Number(input.getAttribute("data-hit-name"));
+      attacks[index] = {
+        name: input.value,
+        bonus: (pop.querySelector('[data-hit-bonus="' + index + '"]') || {}).value,
+        damage: (pop.querySelector('[data-hit-dmg="' + index + '"]') || {}).value
+      };
+    });
+    if (attacks.length) body.attacks = attacks;
+    return body;
+  }
+
+  function openPlayerSheet(roomId) {
+    const pop = sheetWindow("<p>Открываю лист…</p>");
+    fetch("/api/rooms/" + roomId + "/mine", { credentials: "same-origin" }).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        if (!res.ok) throw new Error(data.error || "нет листа");
+        return data;
+      });
+    }).then(function (data) {
+      if (!pop.isConnected) return;
+      if (!data.hero) {
+        const loading = pop.querySelector("p");
+        if (loading) loading.textContent = "Мастер ещё не привязал тебе лист.";
+        pop.insertAdjacentHTML("beforeend", diceHtml());
+        bindDice(pop, roomId);
+        return;
+      }
+      const onMap = !!document.querySelector("[data-view]");
+      pop.querySelector("p").remove();
+      if (onMap && !document.querySelector(".map-pin.is-mine")) pop.querySelector(".sheet-pop-acts").insertAdjacentHTML("beforeend", '<button type="button" id="sheet-place">Поставить токен</button>');
+      pop.insertAdjacentHTML("beforeend", window.ShirmoSheet ? window.ShirmoSheet.html(data.hero, data.rights || data.edit) : "");
+      if (!data.tokenCell) {
+        pop.insertAdjacentHTML("beforeend", '<label class="sheet-size">Размер токена <input data-token-size type="range" min="28" max="180" value="' + esc(data.size || 56) + '"></label>');
+      }
+      pop.insertAdjacentHTML("beforeend", diceHtml());
+      bindDice(pop, roomId);
+      bindSheetRolls(pop, roomId);
+      (data.arms || []).forEach(function (arm) { markArm(pop, { name: arm.name, mod: arm.mod, on: true }); });
+      const size = pop.querySelector("[data-token-size]");
+      if (size) size.addEventListener("input", function () {
+        const pin = document.querySelector(".map-pin.is-mine");
+        if (pin) pin.style.setProperty("--pin", size.value + "px");
+        clearTimeout(size._timer);
+        size._timer = setTimeout(function () {
+          fetch("/api/rooms/" + roomId + "/token", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ size: Number(size.value) || 56 })
+          }).catch(function () {});
+        }, 180);
+      });
+      const rights = data.rights || {};
+      const canEdit = data.edit === true || SHEET_RIGHTS.some(function (pair) { return rights[pair[0]]; });
+      if (canEdit) pop.addEventListener("change", function (event) {
+        if (!event.target.closest("input")) return;
+        fetch("/api/rooms/" + roomId + "/mine", {
+          method: "PUT",
+          credentials: "same-origin",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(sheetBody(pop))
+        }).catch(function () {});
+      });
+      const place = pop.querySelector("#sheet-place");
+      if (place) place.addEventListener("click", function () {
+        const stage = document.querySelector("[data-view]");
+        fetch("/api/rooms/" + roomId + "/token", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            x: 0.5,
+            y: 0.5,
+            placed: true,
+            viewId: stage ? stage.getAttribute("data-view") || "" : "",
+            focusId: stage ? stage.getAttribute("data-focus") || "" : ""
+          })
+        }).then(function () { place.textContent = "Токен на карте"; });
+      });
+    }).catch(function (error) {
+      if (!pop.isConnected) return;
+      pop.innerHTML = '<div class="sheet-pop-bar"><span class="sheet-grip">Лист</span><span class="sheet-pop-acts"></span><button type="button" data-close>Закрыть</button></div><p>' + esc(error.message || "Лист не открылся.") + "</p>";
+      pop.querySelector("[data-close]").addEventListener("click", function () { pop.remove(); });
+      dragSheet(pop);
+    });
+  }
+
+  function showAsk(roomId, ask, username) {
+    if (!ask || ask.until <= Date.now()) return;
+    if (ask.user !== "*" && ask.user !== username) return;
+    let pop = document.getElementById("ask-roll");
+    if (pop && pop.dataset.ask === ask.id) return;
+    if (pop) pop.remove();
+    pop = document.createElement("div");
+    pop.id = "ask-roll";
+    pop.className = "ask-roll";
+    pop.dataset.ask = ask.id;
+    const mod = Math.round(Number(ask.mod) || 0);
+    const sign = mod > 0 ? "+" + mod : String(mod);
+    pop.innerHTML = '<b>' + esc(ask.name || "Проверка") + " " + esc(sign) + '</b><em data-left></em><div class="row"><button type="button" data-mode="disadvantage">Помеха</button><button type="button" data-mode="normal">Бросить</button><button type="button" data-mode="advantage">Преимущество</button></div>';
+    document.body.appendChild(pop);
+    const left = pop.querySelector("[data-left]");
+    const timer = setInterval(function () {
+      const sec = Math.max(0, Math.ceil((ask.until - Date.now()) / 1000));
+      left.textContent = sec + " с";
+      if (!sec) { clearInterval(timer); pop.remove(); }
+    }, 200);
+    pop.addEventListener("click", function (event) {
+      const button = event.target.closest("[data-mode]");
+      if (!button) return;
+      clearInterval(timer);
+      postRoll(roomId, { name: ask.name || "Проверка", mod: mod, sides: 20, count: 1, mode: button.getAttribute("data-mode") });
+      pop.remove();
+    });
+  }
+
+  function markArm(pop, arm) {
+    if (!pop || !arm) return;
+    pop.querySelectorAll("[data-roll]").forEach(function (button) {
+      const same = button.getAttribute("data-name") === arm.name && String(button.getAttribute("data-mod") || 0) === String(arm.mod == null ? button.getAttribute("data-mod") || 0 : arm.mod);
+      if (!arm.name || !same) return;
+      button.classList.toggle("is-on", arm.on !== false);
+    });
+  }
+
+  function throwSheetRoll(roomId, roll) {
+    const name = roll.getAttribute("data-name") || "Проверка";
+    return postRoll(roomId, { name: name, mod: roll.getAttribute("data-mod") || 0, sides: 20, count: 1 }).then(function () {
+      const dmg = String(roll.getAttribute("data-dmg") || "");
+      const hit = dmg.match(/(\d+)\s*d\s*(\d+)\s*([+-]\s*\d+)?/i);
+      if (!hit) return;
+      return postRoll(roomId, { name: name + " · урон", mod: hit[3] ? hit[3].replace(/\s/g, "") : 0, sides: Number(hit[2]), count: Number(hit[1]) });
+    });
+  }
+
+  function bindSheetRolls(pop, roomId, opt) {
+    if (!pop || pop._rolls) return;
+    pop._rolls = true;
+    const owner = opt && opt.user || "";
+    const auth = opt && opt.headers || { "content-type": "application/json" };
+    pop.addEventListener("click", function (event) {
+      const roll = event.target.closest("[data-roll]");
+      if (!roll || !pop.contains(roll)) return;
+      if (!owner) {
+        throwSheetRoll(roomId, roll);
+        return;
+      }
+      const name = roll.getAttribute("data-name") || "Проверка";
+      const mod = roll.getAttribute("data-mod") || 0;
+      if (roll.classList.contains("is-on")) {
+        roll.classList.remove("is-on");
+        fetch("/api/rooms/" + roomId + "/arm", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: auth,
+          body: JSON.stringify({ user: owner, name: name, mod: mod, on: false })
+        }).catch(function () {});
+        throwSheetRoll(roomId, roll);
+        return;
+      }
+      roll.classList.add("is-on");
+      fetch("/api/rooms/" + roomId + "/arm", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: auth,
+        body: JSON.stringify({ user: owner, name: name, mod: mod, dmg: roll.getAttribute("data-dmg") || "", on: true })
+      }).catch(function () {});
+    });
+  }
+
+  function openMasterSheets(roomId, key, campaign) {
+    const book = (campaign && campaign.codex) || {};
+    const heroes = book.heroes || [];
+    const npcs = book.npcs || [];
+    const cast = (campaign && campaign.cast) || [];
+    function rowHtml(item, kind) {
+      const linked = cast.find(function (row) {
+        return row && (kind === "hero" ? row.heroId === item.id : row.npcId === item.id);
+      });
+      const who = linked ? " · " + linked.username : "";
+      const ask = linked ? '<button type="button" data-ask="' + esc(linked.username) + '">Бросок</button>' : "";
+      return '<div class="sheet-pick-row"><button type="button" class="sheet-pick" data-kind="' + kind + '" data-id="' + esc(item.id) + '">' + esc(item.name || "Без имени") + esc(who) + "</button>" + ask + "</div>";
+    }
+    const body = '<div class="sheet-picks"><h3>Герои</h3>' +
+      (heroes.length ? heroes.map(function (item) { return rowHtml(item, "hero"); }).join("") : "<p>Пока нет.</p>") +
+      "<h3>НПС</h3>" +
+      (npcs.length ? npcs.map(function (item) { return rowHtml(item, "npc"); }).join("") : "<p>Пока нет.</p>") +
+      "</div>" +
+      '<div class="row"><button type="button" data-ask="*">Попросить у всех</button></div>' +
+      '<label>Проверка <input id="ask-name" value="Проверка"></label>' +
+      '<label>Модификатор <input id="ask-mod" type="number" value="0"></label>';
+    const pop = sheetWindow(body);
+    const headers = { authorization: "Bearer " + key, "content-type": "application/json" };
+    pop.addEventListener("click", function (event) {
+      const ask = event.target.closest("[data-ask]");
+      if (ask) {
+        const mod = pop.querySelector("#ask-mod").value;
+        const name = pop.querySelector("#ask-name").value || "Проверка";
+        fetch("/api/rooms/" + roomId + "/ask", {
+          method: "POST",
+          headers: headers,
+          body: JSON.stringify({ user: ask.getAttribute("data-ask"), name: name, mod: mod })
+        });
+        return;
+      }
+      const pick = event.target.closest("[data-id]");
+      if (!pick) return;
+      const list = pick.getAttribute("data-kind") === "npc" ? npcs : heroes;
+      const hero = list.find(function (item) { return item && item.id === pick.getAttribute("data-id"); });
+      if (!hero) return;
+      const sheet = sheetWindow(window.ShirmoSheet ? window.ShirmoSheet.html(hero, false) : "<p>Листа нет.</p>");
+      const owner = cast.find(function (row) {
+        return row && (row.heroId === hero.id || row.npcId === hero.id);
+      });
+      bindSheetRolls(sheet, roomId, owner ? { user: owner.username, headers: headers } : null);
+    });
+  }
+
+  function sheetPage() {
+    app.innerHTML = '<section class="desk"><h1>Лист</h1><div id="sheet-list"></div></section>';
+    const list = app.querySelector("#sheet-list");
+    fetch("/api/me/sheets", { credentials: "same-origin" }).then(function (res) {
+      if (res.status === 401) { location.href = "/"; return null; }
+      return res.json();
+    }).then(function (data) {
+      if (!data) return;
+      const sheets = data.sheets || [];
+      if (!sheets.length) {
+        list.innerHTML = "<p>Мастер ещё не привязал тебе персонажа.</p>";
+        return;
+      }
+      if (sheets.length === 1) { openPlayerSheet(sheets[0].roomId); }
+      list.innerHTML = sheets.map(function (row) {
+        return '<button type="button" data-room="' + esc(row.roomId) + '">' + esc(row.name) + " · " + esc(row.title) + "</button>";
+      }).join("");
+      list.addEventListener("click", function (event) {
+        const button = event.target.closest("[data-room]");
+        if (button) openPlayerSheet(button.getAttribute("data-room"));
+      });
+    }).catch(function () { list.textContent = "Лист не открылся."; });
+  }
+
+  const isSheetPage = path === "/sheet" || path.indexOf("/sheet/") === 0;
   if (masterMatch) master(decodeURIComponent(masterMatch[1]));
   else if (viewerMatch) viewer(decodeURIComponent(viewerMatch[1]));
+  else if (isSheetPage) sheetPage();
   else if (isAdminPage) admin();
   else home();
 })();
